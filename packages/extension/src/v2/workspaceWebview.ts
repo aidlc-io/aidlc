@@ -1359,7 +1359,12 @@ ${sections.join('\n').trimEnd()}
    * the user starts an epic.
    */
   private ensureWorkflowTemplates(root: string): void {
-    // SDLC built-in templates (bundled — no network / CLI needed).
+    // Scaffold full SDLC workspace (agents, skills, workspace.yaml, commands)
+    // eagerly so agents/skills appear as soon as the panel opens — not only
+    // after the first epic is started.
+    this.ensureSdlcInWorkspace(root);
+
+    // SDLC built-in artifact templates (bundled — no network / CLI needed).
     const sdlcTemplatesDir = path.join(root, WORKSPACE_DIR, 'aidlc-templates', SDLC_PIPELINE_ID);
     fs.mkdirSync(sdlcTemplatesDir, { recursive: true });
     const sdlcTemplates = getSdlcArtifactTemplates(this.extensionUri.fsPath);
