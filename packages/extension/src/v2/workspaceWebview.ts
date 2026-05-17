@@ -1317,7 +1317,19 @@ ${sections.join('\n').trimEnd()}
       for (const c of (preset.workspace.slash_commands as Array<Record<string, unknown>>) ?? []) {
         if (!existingCmds.has(String(c.name))) { doc.slash_commands.push(c); }
       }
-      doc.pipelines.push({ id: SDLC_PIPELINE_ID, steps: getSdlcBuiltinPipelineSummary().steps.map((s) => s.agent), on_failure: 'stop' });
+      const sdlcSteps = getSdlcBuiltinPipelineSummary().steps.map((s) => {
+        const step: Record<string, unknown> = {
+          agent: s.agent,
+          enabled: true,
+          requires: [],
+          produces: [],
+          human_review: s.human_review,
+          auto_review: s.auto_review,
+        };
+        if (s.auto_review && s.auto_review_runner) { step.auto_review_runner = s.auto_review_runner; }
+        return step;
+      });
+      doc.pipelines.push({ id: SDLC_PIPELINE_ID, steps: sdlcSteps, on_failure: 'stop' });
 
       writeYaml(root, doc);
     }
@@ -1340,6 +1352,15 @@ ${sections.join('\n').trimEnd()}
         const skillBody = preset.skillContents[phase.id] ?? `# ${phase.name}\n\n${phase.description}\n`;
         fs.writeFileSync(commandFile, sdlcClaudeCommand(phase, skillBody, epicRoot), 'utf8');
       }
+    }
+
+    // Write the CI runner script for the implement step's auto-review if missing.
+    const ciScriptSrc = path.join(this.extensionUri.fsPath, 'templates', 'sdlc', 'scripts', 'ci.sh');
+    const ciScriptDest = path.join(root, WORKSPACE_DIR, 'scripts', 'ci.sh');
+    if (!fs.existsSync(ciScriptDest) && fs.existsSync(ciScriptSrc)) {
+      fs.mkdirSync(path.dirname(ciScriptDest), { recursive: true });
+      fs.copyFileSync(ciScriptSrc, ciScriptDest);
+      try { fs.chmodSync(ciScriptDest, 0o755); } catch { /* non-fatal on Windows */ }
     }
 
     // Bundled SDLC artifact templates are written by ensureWorkflowTemplates(),

@@ -33,6 +33,9 @@ interface PhaseDef {
   inputs: string;
   outputs: string;
   artifact: string;
+  humanReview: boolean;
+  autoReview: boolean;
+  autoReviewRunner?: string; // path to runner script, required when autoReview is true
 }
 
 const PHASES: PhaseDef[] = [
@@ -42,6 +45,7 @@ const PHASES: PhaseDef[] = [
     inputs: 'Jira ticket, business context, Figma designs',
     outputs: 'Epic doc + PRD with measurable acceptance criteria',
     artifact: 'PRD.md',
+    humanReview: true, autoReview: false,
   },
   {
     id: 'design', name: 'Design', persona: 'tech-lead', skillFile: 'tech-design', model: 'claude-opus-4-7',
@@ -49,6 +53,7 @@ const PHASES: PhaseDef[] = [
     inputs: 'PRD, existing code, dependency graph',
     outputs: 'Architecture, API contract, DI plan, file impact list',
     artifact: 'TECH-DESIGN.md',
+    humanReview: true, autoReview: false,
   },
   {
     id: 'test-plan', name: 'Test Plan', persona: 'qa', skillFile: 'test-plan', model: 'claude-sonnet-4-6',
@@ -56,6 +61,7 @@ const PHASES: PhaseDef[] = [
     inputs: 'PRD acceptance criteria, tech design, ITS / device matrix',
     outputs: 'Test cases (UT / UI / integration / performance), device matrix',
     artifact: 'TEST-PLAN.md',
+    humanReview: true, autoReview: false,
   },
   {
     id: 'implement', name: 'Implement', persona: 'developer', skillFile: null, model: 'claude-sonnet-4-6',
@@ -63,6 +69,7 @@ const PHASES: PhaseDef[] = [
     inputs: 'Tech design, test plan, project coding rules',
     outputs: 'Code + unit tests on feature branch, PR opened',
     artifact: 'feature/<EPIC>-<slug>',
+    humanReview: true, autoReview: true, autoReviewRunner: '.aidlc/scripts/ci.sh',
   },
   {
     id: 'review', name: 'Review', persona: 'auto-reviewer', skillFile: 'review', model: 'claude-opus-4-7',
@@ -70,6 +77,7 @@ const PHASES: PhaseDef[] = [
     inputs: 'Git diff, PRD, tech design, test plan',
     outputs: 'AC validation table, architecture check, verdict (pass / reject)',
     artifact: 'APPROVAL.md',
+    humanReview: true, autoReview: false,
   },
   {
     id: 'execute-test', name: 'Execute Test', persona: 'qa', skillFile: 'execute-test', model: 'claude-sonnet-4-6',
@@ -77,6 +85,7 @@ const PHASES: PhaseDef[] = [
     inputs: 'Merged code, test plan, UAT environment',
     outputs: 'Test execution report, tester sign-off',
     artifact: 'TEST-SCRIPT.md',
+    humanReview: true, autoReview: false,
   },
   {
     id: 'release', name: 'Release', persona: 'release-manager', skillFile: 'release', model: 'claude-sonnet-4-6',
@@ -84,6 +93,7 @@ const PHASES: PhaseDef[] = [
     inputs: 'Git log since last tag, epic test execution status',
     outputs: 'Release checklist, app store / changelog notes, version tag',
     artifact: 'v<X.Y.Z> tag',
+    humanReview: true, autoReview: false,
   },
   {
     id: 'monitor', name: 'Monitor', persona: 'sre', skillFile: 'monitor', model: 'claude-sonnet-4-6',
@@ -91,6 +101,7 @@ const PHASES: PhaseDef[] = [
     inputs: 'App Store crashes, analytics events, support tickets',
     outputs: 'Health report, KHI table, Go / Hotfix decision',
     artifact: 'HEALTH-REPORT.md',
+    humanReview: true, autoReview: false,
   },
   {
     id: 'doc-sync', name: 'Doc Sync', persona: 'archivist', skillFile: 'doc-sync', model: 'claude-sonnet-4-6',
@@ -98,6 +109,7 @@ const PHASES: PhaseDef[] = [
     inputs: 'PRD plan, tech design plan, actual git commits',
     outputs: 'Updated core-business / architecture docs, reverse-sync checklist',
     artifact: 'DOC-REVERSE-SYNC.md',
+    humanReview: true, autoReview: false,
   },
 ];
 
@@ -174,7 +186,20 @@ export function loadSdlcPreset(extensionPath: string): WorkspacePreset {
 
   const pipeline = {
     id: 'sdlc-full',
-    steps: PHASES.map((p) => p.id),
+    steps: PHASES.map((p) => {
+      const step: Record<string, unknown> = {
+        agent: p.id,
+        enabled: true,
+        requires: [],
+        produces: [],
+        human_review: p.humanReview,
+        auto_review: p.autoReview,
+      };
+      if (p.autoReview && p.autoReviewRunner) {
+        step.auto_review_runner = p.autoReviewRunner;
+      }
+      return step;
+    }),
     on_failure: 'stop' as const,
   };
 
@@ -252,8 +277,9 @@ export function getSdlcBuiltinPipelineSummary() {
       enabled: true,
       produces: [] as string[],
       requires: [] as string[],
-      human_review: false,
-      auto_review: false,
+      human_review: p.humanReview,
+      auto_review: p.autoReview,
+      ...(p.autoReview && p.autoReviewRunner ? { auto_review_runner: p.autoReviewRunner } : {}),
     })),
   };
 }
