@@ -230,6 +230,100 @@ function composeSkill(persona: string, instruction: string, phaseId: string): st
   ].join('\n');
 }
 
+/** Pipeline id for the built-in SDLC workflow in workspace.yaml. */
+export const SDLC_PIPELINE_ID = 'sdlc-full';
+
+export { PHASES };
+
+/**
+ * Returns a static pipeline summary for the SDLC built-in, built from the
+ * PHASES constant — no file I/O needed. Used by buildState() to inject the
+ * SDLC option into every project's pipeline picker without requiring the
+ * user to apply the preset first.
+ */
+export function getSdlcBuiltinPipelineSummary() {
+  return {
+    id: SDLC_PIPELINE_ID,
+    builtin: true as const,
+    on_failure: 'stop' as const,
+    steps: PHASES.map((p) => ({
+      agent: p.id,
+      name: p.name,
+      enabled: true,
+      produces: [] as string[],
+      requires: [] as string[],
+      human_review: false,
+      auto_review: false,
+    })),
+  };
+}
+
+/**
+ * Generate the content of `.claude/commands/<phase.id>.md` for a given SDLC
+ * phase. Inlines the composed skill + AIDLC task wiring (read state/inputs,
+ * write artifact, tell user to mark done).
+ *
+ * For phases whose artifact is not a plain file (implement → branch,
+ * release → tag), we still ask Claude to write a summary .md to the
+ * artifacts/ folder so the AIDLC gate can validate something exists.
+ */
+export function sdlcClaudeCommand(
+  phase: PhaseDef,
+  skillBody: string,
+  epicRoot: string,
+): string {
+  const isFilePath = !phase.artifact.includes('<') && !phase.artifact.includes('>');
+  const artifactInstruction = isFilePath
+    ? `3. Write your output to \`${epicRoot}/$ARGUMENTS/artifacts/${phase.artifact}\`. The AIDLC validator checks for this file when the step is marked done.`
+    : `3. Complete the work (${phase.artifact}), then write a summary to \`${epicRoot}/$ARGUMENTS/artifacts/${phase.id.toUpperCase()}-SUMMARY.md\` so the AIDLC validator has a file to check.`;
+
+  return `---
+description: ${phase.description}
+---
+
+${skillBody.trim()}
+
+## Task
+
+The user invoked you with epic id \`$ARGUMENTS\`.
+
+1. Read \`${epicRoot}/$ARGUMENTS/state.json\` to understand the current run state.
+   - If the step has \`feedback\` from a prior rejection, address it explicitly in this revision.
+   - Check \`history\` entries for rejection reasons and context.
+2. Read \`${epicRoot}/$ARGUMENTS/inputs.json\` for capability inputs (Jira ticket, Figma URL, files glob, GitHub repo, etc.).
+${artifactInstruction}
+4. When finished, summarize what you produced and tell the user to click **"Mark step done"** in the AIDLC panel to advance the pipeline.
+`;
+}
+
+/**
+ * Returns the artifact output filename for a phase.
+ * Phases whose artifact contains < > (non-file, e.g. branch / tag) get a
+ * synthetic SUMMARY file name instead.
+ */
+export function phaseArtifactFileName(phase: PhaseDef): string {
+  const isFilePath = !phase.artifact.includes('<') && !phase.artifact.includes('>');
+  return isFilePath ? phase.artifact : `${phase.id.toUpperCase()}-SUMMARY.md`;
+}
+
+/**
+ * Read the bundled SDLC artifact templates from `templates/sdlc/artifacts/`.
+ * Returns a map of `<outputFileName>` → template content.
+ * Falls back gracefully if a template file is missing.
+ */
+export function getSdlcArtifactTemplates(extensionPath: string): Record<string, string> {
+  const artifactsDir = path.join(extensionPath, 'templates', 'sdlc', 'artifacts');
+  const result: Record<string, string> = {};
+  for (const phase of PHASES) {
+    const templatePath = path.join(artifactsDir, `${phase.id}.md`);
+    const outFile = phaseArtifactFileName(phase);
+    result[outFile] = fs.existsSync(templatePath)
+      ? fs.readFileSync(templatePath, 'utf8')
+      : `# ${phase.name} Artifact\n\n*(template missing — fill in your output here)*\n`;
+  }
+  return result;
+}
+
 /**
  * List of built-in preset ids — used by wizards to flag them as undeletable
  * and to skip them when listing user presets only.

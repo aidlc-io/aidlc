@@ -225,6 +225,7 @@ export interface PipelineSummary {
   id: string;
   steps: PipelineStepSummary[];
   on_failure: 'stop' | 'continue';
+  builtin?: boolean;
 }
 
 export interface AutoReviewVerdict {

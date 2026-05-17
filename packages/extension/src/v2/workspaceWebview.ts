@@ -15,6 +15,10 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
+
+const execFileAsync = promisify(execFile);
 
 import { readYaml, writeYaml, type YamlDocument } from './yamlIO';
 import {
@@ -28,6 +32,8 @@ import {
   targetPath,
 } from '@aidlc/core';
 import { SKILL_TEMPLATES } from './skillTemplates';
+import { loadSdlcPreset, getSdlcBuiltinPipelineSummary, getSdlcArtifactTemplates, SDLC_PIPELINE_ID, PHASES, sdlcClaudeCommand } from './builtinPresets';
+import { PresetStore } from './presetStore';
 import type {
   PipelineStepConfig,
   AssetScope,
@@ -89,6 +95,7 @@ interface PipelineSummary {
   id: string;
   steps: PipelineStepSummary[];
   on_failure: 'stop' | 'continue';
+  builtin?: boolean;
 }
 
 interface AgentMeta {
@@ -242,6 +249,8 @@ function buildState(initialView: WorkspaceView): WorkspaceState {
 
   const epics = listEpics(root, doc).map((e) => toEpicSummaryUi(e));
 
+  const sdlcBuiltin = getSdlcBuiltinPipelineSummary();
+
   if (!doc) {
     const agents = mergeAgents(null, discovered.agents);
     const skills = mergeSkills(null, root, discovered.skills);
@@ -251,12 +260,12 @@ function buildState(initialView: WorkspaceView): WorkspaceState {
       workspaceName: folder.name,
       configExists: false,
       agents, skills,
-      pipelines: [],
+      pipelines: [sdlcBuiltin],
       epics,
       agentMeta, slashCommandsByAgent,
       agentsCount: agents.length,
       skillsCount: skills.length,
-      pipelinesCount: 0,
+      pipelinesCount: 1,
       epicsCount: epics.length,
       runIds: listRunIds(root),
       skillTemplates: SKILL_TEMPLATE_REFS,
@@ -287,6 +296,10 @@ function buildState(initialView: WorkspaceView): WorkspaceState {
         })
       : [],
   }));
+  // Inject built-in SDLC at the top if not already defined in workspace.yaml
+  if (!pipelines.some((p) => p.id === SDLC_PIPELINE_ID)) {
+    pipelines.unshift(sdlcBuiltin);
+  }
 
   const epicRoot = readEpicRoot(doc);
   const epicIds = listEpicIdsFromDir(root, epicRoot);
@@ -621,6 +634,8 @@ export class WorkspaceWebview {
   }
 
   private async refreshAsync(): Promise<void> {
+    const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (root) { this.ensureWorkflowTemplates(root); }
     const state = buildState(this.currentView);
     await mergeEpicTokenUsageInto(state);
     void this.panel.webview.postMessage({ type: 'state', state });
@@ -664,6 +679,9 @@ export class WorkspaceWebview {
       // Delegations
       case 'init':         await vscode.commands.executeCommand('aidlc.initWorkspace'); return;
       case 'applyPreset':  await vscode.commands.executeCommand('aidlc.applyPreset');   return;
+      case 'initSdlcPreset':
+        await vscode.commands.executeCommand('aidlc.applyPreset', 'sdlc-pipeline', true);
+        return;
       case 'savePreset':   await vscode.commands.executeCommand('aidlc.savePreset');    return;
       case 'startEpic':    await vscode.commands.executeCommand('aidlc.startEpic');     return;
       case 'addAgent':     await vscode.commands.executeCommand('aidlc.addAgent');      return;
@@ -1264,6 +1282,106 @@ ${sections.join('\n').trimEnd()}
   }
 
   /**
+   * Ensure the SDLC preset is installed in this workspace. If workspace.yaml
+   * doesn't exist, applies the full preset. If it exists but lacks the SDLC
+   * pipeline, merges agents/skills/pipeline/slash_commands non-destructively.
+   */
+  private ensureSdlcInWorkspace(root: string): void {
+    const doc = readYaml(root);
+    if (doc?.pipelines.some((p) => String(p.id) === SDLC_PIPELINE_ID)) { return; }
+
+    const preset = loadSdlcPreset(this.extensionUri.fsPath);
+    const workspaceName = vscode.workspace.workspaceFolders?.[0]?.name ?? path.basename(root);
+
+    if (!doc) {
+      PresetStore.applyTo(root, preset, workspaceName);
+    } else {
+      // workspace.yaml exists — merge SDLC content in without overwriting existing config
+      const skillsDir = path.join(root, WORKSPACE_DIR, 'skills');
+      fs.mkdirSync(skillsDir, { recursive: true });
+      for (const [id, content] of Object.entries(preset.skillContents)) {
+        const skillFile = path.join(skillsDir, `${id}.md`);
+        if (!fs.existsSync(skillFile)) { fs.writeFileSync(skillFile, content, 'utf8'); }
+      }
+
+      const existingAgentIds = new Set(doc.agents.map((a) => String(a.id)));
+      const existingSkillIds = new Set(doc.skills.map((s) => String(s.id)));
+      const existingCmds = new Set(doc.slash_commands.map((c) => String(c.name)));
+
+      for (const a of (preset.workspace.agents as Array<Record<string, unknown>>) ?? []) {
+        if (!existingAgentIds.has(String(a.id))) { doc.agents.push(a); }
+      }
+      for (const s of (preset.workspace.skills as Array<Record<string, unknown>>) ?? []) {
+        if (!existingSkillIds.has(String(s.id))) { doc.skills.push(s); }
+      }
+      for (const c of (preset.workspace.slash_commands as Array<Record<string, unknown>>) ?? []) {
+        if (!existingCmds.has(String(c.name))) { doc.slash_commands.push(c); }
+      }
+      doc.pipelines.push({ id: SDLC_PIPELINE_ID, steps: getSdlcBuiltinPipelineSummary().steps.map((s) => s.agent), on_failure: 'stop' });
+
+      writeYaml(root, doc);
+    }
+
+    // Create .claude/commands/<phase>.md so each slash command is wired as a
+    // real Claude Code command (not just a slash_commands entry in workspace.yaml).
+    const freshDoc = readYaml(root);
+    const epicRoot = freshDoc
+      ? (() => {
+          const state = freshDoc.state as Record<string, unknown> | undefined;
+          return typeof state?.root === 'string' ? state.root : 'docs/epics';
+        })()
+      : 'docs/epics';
+
+    const commandsDir = path.join(root, '.claude', 'commands');
+    fs.mkdirSync(commandsDir, { recursive: true });
+    for (const phase of PHASES) {
+      const commandFile = path.join(commandsDir, `${phase.id}.md`);
+      if (!fs.existsSync(commandFile)) {
+        const skillBody = preset.skillContents[phase.id] ?? `# ${phase.name}\n\n${phase.description}\n`;
+        fs.writeFileSync(commandFile, sdlcClaudeCommand(phase, skillBody, epicRoot), 'utf8');
+      }
+    }
+
+    // Bundled SDLC artifact templates are written by ensureWorkflowTemplates(),
+    // which is called eagerly on every refresh — nothing to do here.
+  }
+
+  /**
+   * Ensure artifact templates exist for every known pipeline in this workspace.
+   *
+   * - SDLC (built-in): writes bundled templates from `templates/sdlc/artifacts/`
+   *   to `.aidlc/aidlc-templates/sdlc-full/` — idempotent, no file I/O if
+   *   files already exist.
+   * - Custom pipelines: templates are generated by `generatePipelineTemplates`
+   *   at pipeline-creation time; this method just ensures the directory exists.
+   *
+   * Called on every panel refresh so templates are always available before
+   * the user starts an epic.
+   */
+  private ensureWorkflowTemplates(root: string): void {
+    // SDLC built-in templates (bundled — no network / CLI needed).
+    const sdlcTemplatesDir = path.join(root, WORKSPACE_DIR, 'aidlc-templates', SDLC_PIPELINE_ID);
+    fs.mkdirSync(sdlcTemplatesDir, { recursive: true });
+    const sdlcTemplates = getSdlcArtifactTemplates(this.extensionUri.fsPath);
+    for (const [fileName, content] of Object.entries(sdlcTemplates)) {
+      const dest = path.join(sdlcTemplatesDir, fileName);
+      if (!fs.existsSync(dest)) { fs.writeFileSync(dest, content, 'utf8'); }
+    }
+
+    // Custom pipelines: ensure their template dir exists. Templates themselves
+    // are generated by generatePipelineTemplates() when the pipeline is created.
+    const doc = readYaml(root);
+    if (doc) {
+      for (const p of doc.pipelines) {
+        const pId = String(p.id);
+        if (pId === SDLC_PIPELINE_ID) { continue; }
+        const dir = path.join(root, WORKSPACE_DIR, 'aidlc-templates', pId);
+        fs.mkdirSync(dir, { recursive: true });
+      }
+    }
+  }
+
+  /**
    * Apply the StartEpicModal draft. Mirrors `startEpicCommand`:
    * - writes <epicRoot>/<id>/state.json + inputs.json + artifacts/.
    * - when target is a pipeline, scaffolds a RunState (runId === epicId) so
@@ -1275,14 +1393,26 @@ ${sections.join('\n').trimEnd()}
   private async startEpicInline(draft: Record<string, unknown>): Promise<void> {
     const root = this.getRootOrWarn();
     if (!root) { return; }
+
+    const targetRaw = draft.target as Record<string, unknown> | undefined;
+    const epicId = String(draft.epicId ?? '').trim();
+    if (!targetRaw || !epicId) { return; }
+    const targetKind = String(targetRaw.kind ?? '');
+    const targetId = String(targetRaw.id ?? '').trim();
+    if (!targetId) { return; }
+    if (targetKind !== 'pipeline' && targetKind !== 'agent') { return; }
+
+    // Auto-scaffold agents/skills/workspace.yaml when the built-in SDLC pipeline is selected
+    if (targetKind === 'pipeline' && targetId === SDLC_PIPELINE_ID) {
+      this.ensureSdlcInWorkspace(root);
+    }
+
     const doc = readYaml(root);
     if (!doc) {
       void vscode.window.showWarningMessage('AIDLC: no workspace.yaml — initialize first.');
       return;
     }
 
-    const targetRaw = draft.target as Record<string, unknown> | undefined;
-    const epicId = String(draft.epicId ?? '').trim();
     const title = String(draft.title ?? '').trim();
     const description = String(draft.description ?? '').trim();
     const inputsRaw = draft.inputs && typeof draft.inputs === 'object'
@@ -1292,12 +1422,6 @@ ${sections.join('\n').trimEnd()}
     for (const [k, v] of Object.entries(inputsRaw)) {
       if (typeof v === 'string' && v.trim()) { inputs[k] = v; }
     }
-
-    if (!targetRaw || !epicId) { return; }
-    const targetKind = String(targetRaw.kind ?? '');
-    const targetId = String(targetRaw.id ?? '').trim();
-    if (!targetId) { return; }
-    if (targetKind !== 'pipeline' && targetKind !== 'agent') { return; }
 
     let agents: string[] = [];
     if (targetKind === 'pipeline') {
@@ -1332,7 +1456,21 @@ ${sections.join('\n').trimEnd()}
     }
 
     fs.mkdirSync(epicDir, { recursive: true });
-    fs.mkdirSync(path.join(epicDir, 'artifacts'), { recursive: true });
+    const artifactsDir = path.join(epicDir, 'artifacts');
+    fs.mkdirSync(artifactsDir, { recursive: true });
+
+    // Copy artifact templates from .aidlc/aidlc-templates/<pipelineId>/ into
+    // the epic's artifacts/ folder so Claude has a structured starting point.
+    if (targetKind === 'pipeline') {
+      const templatesDir = path.join(root, WORKSPACE_DIR, 'aidlc-templates', targetId);
+      if (fs.existsSync(templatesDir)) {
+        for (const fileName of fs.readdirSync(templatesDir)) {
+          const src = path.join(templatesDir, fileName);
+          const dest = path.join(artifactsDir, fileName);
+          if (!fs.existsSync(dest)) { fs.copyFileSync(src, dest); }
+        }
+      }
+    }
 
     const state = {
       id: epicId,
@@ -1390,6 +1528,7 @@ ${sections.join('\n').trimEnd()}
     void vscode.window.showInformationMessage(
       `Started epic "${epicId}" — ${agents[0]}. Run /${agents[0]} ${epicId} in Claude to begin.`,
     );
+    this.refresh();
   }
 
   /**
@@ -1465,6 +1604,103 @@ ${sections.join('\n').trimEnd()}
       `Pipeline "${id}" added: ${steps
         .map((s) => (s as { agent: string }).agent)
         .join(' → ')}`,
+    );
+
+    // Generate artifact templates immediately so they exist before the user
+    // starts an epic. Refresh fires after generation completes.
+    await this.generatePipelineTemplates(root, id, steps as Array<{ agent: string }>);
+    this.refresh();
+  }
+
+  /**
+   * Use the local `claude` CLI (already authenticated) to generate a per-step
+   * artifact template for a custom pipeline. Reads each step's agent description
+   * + linked skill content, passes it to `claude -p` and writes the result to
+   * `.aidlc/aidlc-templates/<pipelineId>/<stepAgent>.md`.
+   *
+   * Runs asynchronously after the pipeline is saved — failures are surfaced as
+   * a VS Code warning rather than blocking the pipeline creation flow.
+   */
+  private async generatePipelineTemplates(
+    root: string,
+    pipelineId: string,
+    steps: Array<{ agent: string }>,
+  ): Promise<void> {
+    const doc = readYaml(root);
+    if (!doc) { return; }
+
+    const templatesDir = path.join(root, WORKSPACE_DIR, 'aidlc-templates', pipelineId);
+    fs.mkdirSync(templatesDir, { recursive: true });
+
+    await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: `Generating artifact templates for pipeline "${pipelineId}"…`,
+        cancellable: false,
+      },
+      async (progress) => {
+        const total = steps.length;
+        let done = 0;
+
+        for (const step of steps) {
+          const agentId = step.agent;
+          const destFile = path.join(templatesDir, `${agentId}.md`);
+          if (fs.existsSync(destFile)) { done++; continue; }
+
+          // Collect agent + skill context.
+          const agentDecl = doc.agents.find((a) => String(a.id) === agentId) as Record<string, unknown> | undefined;
+          const agentDesc = agentDecl?.description ?? agentId;
+          const skillIds: string[] = Array.isArray(agentDecl?.skills)
+            ? (agentDecl!.skills as string[])
+            : typeof agentDecl?.skill === 'string'
+              ? [agentDecl.skill as string]
+              : [];
+
+          const skillBodies: string[] = [];
+          for (const skillId of skillIds) {
+            const decl = doc.skills.find((s) => String(s.id) === skillId) as Record<string, unknown> | undefined;
+            const declPath = typeof decl?.path === 'string' ? decl.path : '';
+            if (declPath) {
+              const resolved = path.isAbsolute(declPath) ? declPath : path.resolve(root, declPath);
+              if (fs.existsSync(resolved)) {
+                skillBodies.push(fs.readFileSync(resolved, 'utf8'));
+              }
+            }
+          }
+
+          const prompt = [
+            'You are an SDLC assistant. Given this agent\'s role, generate a concise markdown artifact template that Claude should fill in when it runs this step.',
+            'Use placeholder text and structured sections (headers, tables, checklists) appropriate to the agent\'s deliverable.',
+            'Output ONLY the markdown — no explanation, no code fences around the whole response.',
+            '',
+            `Agent: ${agentId}`,
+            `Description: ${agentDesc}`,
+            skillBodies.length > 0
+              ? `\nSkill content:\n---\n${skillBodies.join('\n---\n')}`
+              : '',
+          ].filter(Boolean).join('\n');
+
+          try {
+            const { stdout } = await execFileAsync('claude', ['-p', prompt], {
+              cwd: root,
+              maxBuffer: 2 * 1024 * 1024,
+              timeout: 60_000,
+            });
+            if (stdout.trim()) {
+              fs.writeFileSync(destFile, stdout.trim() + '\n', 'utf8');
+            }
+          } catch {
+            // Non-fatal — epic can still start without a pre-generated template.
+          }
+
+          done++;
+          progress.report({ increment: (done / total) * 100, message: `${done}/${total}` });
+        }
+      },
+    );
+
+    void vscode.window.showInformationMessage(
+      `Artifact templates ready at .aidlc/aidlc-templates/${pipelineId}/`,
     );
   }
 
@@ -1750,6 +1986,8 @@ ${sections.join('\n').trimEnd()}
     const nonce = makeNonce();
     const webview = this.panel.webview;
     const cspSource = webview.cspSource;
+    const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (root) { this.ensureWorkflowTemplates(root); }
     const initialState = buildState(this.currentView);
     const initialTheme = themeManager.current;
 

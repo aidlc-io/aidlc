@@ -117,12 +117,12 @@ export function EpicsView({ state }: { state: WorkspaceState }) {
       {startEpicOpen && (
         <StartEpicModal
           pipelines={state.pipelines}
-          agents={state.agents}
           agentMeta={state.agentMeta}
           nextEpicId={state.nextEpicId}
           existingEpicIds={state.existingEpicIds}
           onSubmit={(draft) => postMessage({ type: 'startEpicInline', draft })}
           onClose={() => setStartEpicOpen(false)}
+
         />
       )}
     </div>
