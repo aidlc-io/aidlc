@@ -55,41 +55,6 @@ import {
  * name so the Builder / sidebar header reads naturally instead of showing
  * a hardcoded "My AIDLC Workspace" label.
  */
-function sampleWorkspaceYaml(workspaceName: string): string {
-  // Quote the name to handle spaces, dashes, and unicode safely. js-yaml
-  // would handle this on round-trip but we hand-write the template here.
-  const escapedName = workspaceName.replace(/"/g, '\\"');
-  return `version: "1.0"
-name: "${escapedName}"
-
-agents:
-  - id: hello
-    name: "Hello World Agent"
-    skill: hello-skill
-    model: claude-sonnet-4-5
-
-skills:
-  - id: hello-skill
-    path: ./.aidlc/skills/hello-skill.md
-
-environment: {}
-
-slash_commands:
-  - name: "/hello"
-    agent: hello
-
-sidebar:
-  views:
-    - type: agents-list
-    - type: skills-list
-`;
-}
-
-const SAMPLE_HELLO_SKILL = `# Hello World Skill
-
-You are a friendly assistant. Greet the user warmly and ask what they would
-like help with today. Keep your reply to two sentences.
-`;
 
 export function registerV2WorkspaceCommands(
   context: vscode.ExtensionContext,
@@ -601,10 +566,7 @@ async function initWorkspace(output: vscode.OutputChannel): Promise<void> {
   const root = requireWorkspaceRoot();
   if (!root) { return; }
 
-  const aidlcDir = path.join(root, WORKSPACE_DIR);
-  const workspaceFile = path.join(aidlcDir, WORKSPACE_FILENAME);
-  const skillsDir = path.join(aidlcDir, 'skills');
-  const skillFile = path.join(skillsDir, 'hello-skill.md');
+  const workspaceFile = path.join(root, WORKSPACE_DIR, WORKSPACE_FILENAME);
 
   if (fs.existsSync(workspaceFile)) {
     const choice = await vscode.window.showWarningMessage(
@@ -613,25 +575,20 @@ async function initWorkspace(output: vscode.OutputChannel): Promise<void> {
       'Overwrite',
       'Cancel',
     );
-    if (choice !== 'Overwrite') {
-      return;
-    }
+    if (choice !== 'Overwrite') { return; }
   }
 
   try {
-    fs.mkdirSync(skillsDir, { recursive: true });
-    const workspaceName = vscode.workspace.workspaceFolders?.[0]?.name
-      ?? path.basename(root);
-    fs.writeFileSync(workspaceFile, sampleWorkspaceYaml(workspaceName), 'utf8');
-    if (!fs.existsSync(skillFile)) {
-      fs.writeFileSync(skillFile, SAMPLE_HELLO_SKILL, 'utf8');
-    }
-    output.appendLine(`[init] wrote ${workspaceFile}`);
-    output.appendLine(`[init] wrote ${skillFile}`);
+    const extensionPath = vscode.extensions.getExtension('aidlc-io.aidlc')?.extensionPath
+      ?? path.join(__dirname, '..', '..', '..');
+    const workspaceName = vscode.workspace.workspaceFolders?.[0]?.name ?? path.basename(root);
+    const preset = loadSdlcPreset(extensionPath);
+    PresetStore.applyTo(root, preset, workspaceName);
+    output.appendLine(`[init] wrote ${workspaceFile} with SDLC pipeline preset`);
 
     void vscode.window
       .showInformationMessage(
-        'AIDLC workspace initialized at .aidlc/. Open Builder?',
+        'AIDLC workspace initialized with SDLC pipeline. Open Builder?',
         'Open Builder',
       )
       .then((choice) => {
@@ -639,7 +596,7 @@ async function initWorkspace(output: vscode.OutputChannel): Promise<void> {
           void vscode.commands.executeCommand('aidlc.openBuilder');
         }
       });
-    // Open the new workspace.yaml so the user can edit it
+
     const doc = await vscode.workspace.openTextDocument(workspaceFile);
     await vscode.window.showTextDocument(doc, { preview: false });
   } catch (err) {
