@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.1
+
+- feat(skill-templates): expand library to 45 templates across 9 categories
+
 ## 1.0.0
 
 - feat(workflow): non-destructive preset apply, DAG-aware modal, scoped skill picker
