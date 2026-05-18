@@ -19,7 +19,7 @@ const RUNS_DIR = path.join('.aidlc', 'runs');
 /**
  * Filesystem-safe id check — same rules as preset ids: lowercase letters,
  * digits, dashes, underscores, plus a leading letter or digit. Epic keys
- * like `DRM-2100` need uppercase, so we widen to `[A-Za-z0-9._-]`.
+ * like `EPIC-2100` need uppercase, so we widen to `[A-Za-z0-9._-]`.
  */
 const RUN_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 

@@ -50,12 +50,18 @@ export function Modal({
     >
       <div
         ref={panelRef}
-        className={cn('w-full rounded-lg border border-border bg-popover p-5 shadow-2xl', maxWidth)}
+        className={cn(
+          'flex max-h-[90vh] w-full flex-col rounded-lg border border-border bg-popover p-5 shadow-2xl',
+          maxWidth,
+        )}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
       >
-        <div className="mb-3 flex items-start justify-between gap-3">
+        {/* Sticky header so the close button + title stay reachable as the
+            body scrolls. Negative margins line up with the panel's padding
+            so the sticky background covers the full edge-to-edge width. */}
+        <div className="sticky top-0 z-10 -mx-5 -mt-5 mb-3 flex items-start justify-between gap-3 bg-popover px-5 pt-5 pb-3">
           <div className="min-w-0">
             <h2 className="text-sm font-semibold text-foreground">{title}</h2>
             {subtitle && <div className="mt-0.5 text-[11.5px] text-muted-foreground">{subtitle}</div>}
@@ -69,7 +75,9 @@ export function Modal({
             <X className="h-3.5 w-3.5" />
           </button>
         </div>
-        {children}
+        <div className="-mx-5 flex-1 overflow-y-auto px-5">
+          {children}
+        </div>
       </div>
     </div>
   );

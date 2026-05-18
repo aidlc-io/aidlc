@@ -201,8 +201,8 @@ export async function startPipelineRunCommand(pipelineIdArg?: string): Promise<v
   if (!pickedPipeline) { return; }
 
   const runId = await vscode.window.showInputBox({
-    prompt: 'Run id (typically the epic key — e.g. DRM-2100)',
-    placeHolder: 'DRM-2100',
+    prompt: 'Run id (typically the epic key — e.g. EPIC-2100)',
+    placeHolder: 'EPIC-2100',
     ignoreFocusOut: true,
     validateInput: (v) => {
       const t = v.trim();
@@ -235,7 +235,7 @@ export async function startPipelineRunCommand(pipelineIdArg?: string): Promise<v
 
 // ── markStepDone ─────────────────────────────────────────────────────────
 
-export async function markStepDoneCommand(runIdArg?: string): Promise<void> {
+export async function markStepDoneCommand(runIdArg?: string, stepIdxArg?: number): Promise<void> {
   const root = requireRoot('Mark Step Done');
   if (!root) { return; }
 
@@ -257,13 +257,15 @@ export async function markStepDoneCommand(runIdArg?: string): Promise<void> {
     return;
   }
 
+  const stepIdx = resolveStepIdx(state, stepIdxArg, 'awaiting_work');
+
   // Soft gate-check: surface missing requires as a warning before we attempt
   // markStepDone. The user can still proceed (they may know the requires
   // path is wrong / outdated); we just don't want them to be surprised.
-  const gate = canStartStep({ state, pipeline, workspaceRoot: root });
+  const gate = canStartStep({ state, pipeline, workspaceRoot: root, stepIdx });
   if (!gate.ok) {
     const choice = await vscode.window.showWarningMessage(
-      `Step "${state.steps[state.currentStepIdx].agent}" is missing required upstream artifacts:\n${gate.missing.join(', ')}`,
+      `Step "${state.steps[stepIdx].agent}" is missing required upstream artifacts:\n${gate.missing.join(', ')}`,
       { modal: false },
       'Mark done anyway',
       'Cancel',
@@ -272,9 +274,9 @@ export async function markStepDoneCommand(runIdArg?: string): Promise<void> {
   }
 
   try {
-    const next = markStepDone({ state, pipeline, workspaceRoot: root });
+    const next = markStepDone({ state, pipeline, workspaceRoot: root, stepIdx });
     saveRun(root, next);
-    notifyStepTransition(next, state.currentStepIdx);
+    notifyStepTransition(next, stepIdx);
   } catch (err) {
     surfaceRunError(err);
   }
@@ -282,7 +284,7 @@ export async function markStepDoneCommand(runIdArg?: string): Promise<void> {
 
 // ── runAutoReview ────────────────────────────────────────────────────────
 
-export async function runAutoReviewCommand(runIdArg?: string): Promise<void> {
+export async function runAutoReviewCommand(runIdArg?: string, stepIdxArg?: number): Promise<void> {
   const root = requireRoot('Run Auto-Review');
   if (!root) { return; }
   const runId = await resolveRunId(
@@ -302,13 +304,14 @@ export async function runAutoReviewCommand(runIdArg?: string): Promise<void> {
     return;
   }
 
-  const step = state.steps[state.currentStepIdx];
+  const stepIdx = resolveStepIdx(state, stepIdxArg, 'awaiting_auto_review');
+  const step = state.steps[stepIdx];
   await vscode.window.withProgress(
     { location: vscode.ProgressLocation.Notification, title: `Auto-reviewing "${step.agent}"…`, cancellable: false },
     async () => {
       try {
-        const verdict = await runAutoReview({ workspaceRoot: root, state, pipeline });
-        const next = submitAutoReviewVerdict({ state, pipeline, verdict });
+        const verdict = await runAutoReview({ workspaceRoot: root, state, pipeline, stepIdx });
+        const next = submitAutoReviewVerdict({ state, pipeline, verdict, stepIdx });
         saveRun(root, next);
 
         const tag = verdict.decision === 'pass' ? '✅ pass' : '❌ reject';
@@ -335,7 +338,7 @@ export async function runAutoReviewCommand(runIdArg?: string): Promise<void> {
 
 // ── approveStep ──────────────────────────────────────────────────────────
 
-export async function approveStepCommand(runIdArg?: string): Promise<void> {
+export async function approveStepCommand(runIdArg?: string, stepIdxArg?: number): Promise<void> {
   const root = requireRoot('Approve Step');
   if (!root) { return; }
   const runId = await resolveRunId(
@@ -355,10 +358,11 @@ export async function approveStepCommand(runIdArg?: string): Promise<void> {
     return;
   }
 
+  const stepIdx = resolveStepIdx(state, stepIdxArg, 'awaiting_review');
   try {
-    const next = approveStep({ state, pipeline });
+    const next = approveStep({ state, pipeline, stepIdx });
     saveRun(root, next);
-    notifyStepTransition(next, state.currentStepIdx);
+    notifyStepTransition(next, stepIdx);
   } catch (err) {
     surfaceRunError(err);
   }
@@ -366,7 +370,7 @@ export async function approveStepCommand(runIdArg?: string): Promise<void> {
 
 // ── rejectStep ───────────────────────────────────────────────────────────
 
-export async function rejectStepCommand(runIdArg?: string): Promise<void> {
+export async function rejectStepCommand(runIdArg?: string, stepIdxArg?: number): Promise<void> {
   const root = requireRoot('Reject Step');
   if (!root) { return; }
   const runId = await resolveRunId(
@@ -389,16 +393,19 @@ export async function rejectStepCommand(runIdArg?: string): Promise<void> {
   // Ask which step to send work back to. The default is "stay on this step"
   // (in-place rerun); upstream choices cascade-reset intermediate steps to
   // pending so the user redoes the chain after fixing the upstream cause.
-  const idx = state.currentStepIdx;
+  const idx = resolveStepIdx(state, stepIdxArg, 'awaiting_review');
   const currentStep = state.steps[idx];
-  const targetIdx = await pickRejectTarget(state);
+  const targetIdx = await pickRejectTarget(state, idx);
   if (targetIdx === undefined) { return; }
 
   try {
+    const pipeline = loadPipeline(root, state.pipelineId);
     const next = rejectStep({
       state,
       reason: reason.trim() || undefined,
+      stepIdx: idx,
       targetIdx: targetIdx === idx ? undefined : targetIdx,
+      pipeline: pipeline ?? undefined,
     });
     saveRun(root, next);
     if (targetIdx === idx) {
@@ -426,21 +433,25 @@ export async function rejectStepInlineCommand(
   runId: string,
   reason: string,
   targetIdx: number,
+  stepIdxArg?: number,
 ): Promise<void> {
   const root = requireRoot('Reject Step');
   if (!root) { return; }
   const state = RunStateStore.load(root, runId);
   if (!state) { return; }
-  const idx = state.currentStepIdx;
+  const idx = resolveStepIdx(state, stepIdxArg, 'awaiting_review');
   const currentStep = state.steps[idx];
   if (!currentStep) { return; }
   if (!Number.isInteger(targetIdx) || targetIdx < 0 || targetIdx > idx) { return; }
 
   try {
+    const pipeline = loadPipeline(root, state.pipelineId);
     const next = rejectStep({
       state,
       reason: reason.trim() || undefined,
+      stepIdx: idx,
       targetIdx: targetIdx === idx ? undefined : targetIdx,
+      pipeline: pipeline ?? undefined,
     });
     saveRun(root, next);
     if (targetIdx === idx) {
@@ -465,8 +476,8 @@ export async function rejectStepInlineCommand(
  * default behavior and stays prominent so the user doesn't have to navigate
  * to keep the existing flow.
  */
-async function pickRejectTarget(state: RunState): Promise<number | undefined> {
-  const idx = state.currentStepIdx;
+async function pickRejectTarget(state: RunState, fromIdx?: number): Promise<number | undefined> {
+  const idx = fromIdx ?? state.currentStepIdx;
   const items: Array<vscode.QuickPickItem & { stepIdx: number }> = [
     {
       label: `$(refresh) Stay on step ${idx + 1} — ${state.steps[idx].agent}`,
@@ -498,7 +509,7 @@ async function pickRejectTarget(state: RunState): Promise<number | undefined> {
 
 // ── rerunStep ────────────────────────────────────────────────────────────
 
-export async function rerunStepCommand(runIdArg?: string): Promise<void> {
+export async function rerunStepCommand(runIdArg?: string, stepIdxArg?: number): Promise<void> {
   const root = requireRoot('Rerun Step');
   if (!root) { return; }
   const runId = await resolveRunId(
@@ -510,7 +521,8 @@ export async function rerunStepCommand(runIdArg?: string): Promise<void> {
 
   const state = RunStateStore.load(root, runId);
   if (!state) { return; }
-  const step = state.steps[state.currentStepIdx];
+  const stepIdx = resolveStepIdx(state, stepIdxArg, 'rejected');
+  const step = state.steps[stepIdx];
 
   const feedback = await vscode.window.showInputBox({
     prompt: 'Feedback for the rerun (optional — kept on the step for context)',
@@ -521,10 +533,10 @@ export async function rerunStepCommand(runIdArg?: string): Promise<void> {
   if (feedback === undefined) { return; }
 
   try {
-    const next = rerunStep({ state, feedback: feedback.trim() || undefined });
+    const next = rerunStep({ state, feedback: feedback.trim() || undefined, stepIdx });
     saveRun(root, next);
     void vscode.window.showInformationMessage(
-      `Step "${step.agent}" reset (revision ${next.steps[state.currentStepIdx].revision}). Run the slash command again, then "Mark step done".`,
+      `Step "${step.agent}" reset (revision ${next.steps[stepIdx].revision}). Run the slash command again, then "Mark step done".`,
     );
   } catch (err) {
     surfaceRunError(err);
@@ -538,19 +550,21 @@ export async function rerunStepCommand(runIdArg?: string): Promise<void> {
 export async function rerunStepInlineCommand(
   runId: string,
   feedback: string,
+  stepIdxArg?: number,
 ): Promise<void> {
   const root = requireRoot('Rerun Step');
   if (!root) { return; }
   const state = RunStateStore.load(root, runId);
   if (!state) { return; }
-  const step = state.steps[state.currentStepIdx];
+  const stepIdx = resolveStepIdx(state, stepIdxArg, 'rejected');
+  const step = state.steps[stepIdx];
   if (!step) { return; }
 
   try {
-    const next = rerunStep({ state, feedback: feedback.trim() || undefined });
+    const next = rerunStep({ state, feedback: feedback.trim() || undefined, stepIdx });
     saveRun(root, next);
     void vscode.window.showInformationMessage(
-      `Step "${step.agent}" reset (revision ${next.steps[state.currentStepIdx].revision}). Run the slash command again, then "Mark step done".`,
+      `Step "${step.agent}" reset (revision ${next.steps[stepIdx].revision}). Run the slash command again, then "Mark step done".`,
     );
   } catch (err) {
     surfaceRunError(err);
@@ -636,6 +650,29 @@ export async function deleteRunCommand(
 
 function currentStepStatus(s: RunState): string {
   return s.steps[s.currentStepIdx]?.status ?? 'unknown';
+}
+
+/**
+ * Pick the step index a gate command should operate on. DAG pipelines may
+ * have several active steps at once, so the webview / status-bar caller
+ * passes an explicit stepIdx; sequential callers (command palette) leave it
+ * undefined and we fall back to `state.currentStepIdx`, or to the first
+ * step matching the expected status when that primary cursor doesn't.
+ */
+function resolveStepIdx(
+  state: RunState,
+  explicit: number | undefined,
+  expectedStatus: string,
+): number {
+  if (typeof explicit === 'number' && Number.isInteger(explicit)
+    && explicit >= 0 && explicit < state.steps.length) {
+    return explicit;
+  }
+  if (state.steps[state.currentStepIdx]?.status === expectedStatus) {
+    return state.currentStepIdx;
+  }
+  const match = state.steps.findIndex((s) => s.status === expectedStatus);
+  return match >= 0 ? match : state.currentStepIdx;
 }
 
 function notifyStepTransition(next: RunState, prevIdx: number): void {

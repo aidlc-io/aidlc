@@ -41,6 +41,7 @@ import {
   startPipelineRunInlineCommand,
 } from './runCommands';
 import { WorkspaceWebview } from './workspaceWebview';
+import { missingBundleHtml } from './webviewBundleGuard';
 
 // VS Code reuses output channels by name, so this resolves to the same
 // channel created in extension.ts activate().
@@ -613,6 +614,8 @@ export class SidebarWebviewProvider implements vscode.WebviewViewProvider {
   private getHtml(webview: vscode.Webview): string {
     const nonce = makeNonce();
     const cspSource = webview.cspSource;
+    const fallback = missingBundleHtml(this.extensionUri.fsPath, 'sidebar.js', cspSource, nonce);
+    if (fallback) { return fallback; }
     const iconUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this.extensionUri, 'media', 'icon.svg'),
     ).toString();

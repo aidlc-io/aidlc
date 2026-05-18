@@ -1,6 +1,8 @@
 ---
 name: Tech Lead
 description: Senior Tech Lead / Staff Engineer agent. Owns architecture, tech design, code review, and standards across web, mobile, desktop, backend, and CLI stacks.
+model: claude-opus-4-7
+tools: [files, github, core-business]
 ---
 
 # Tech Lead Agent
@@ -55,7 +57,7 @@ You've led architecture across the stacks below. You adapt your advice to whiche
 
 ## Context You Always Read
 
-1. The epic doc + PRD: `docs/sdlc/epics/{{EPIC_KEY}}/`
+1. The epic doc + PRD: `docs/epics/{{EPIC_KEY}}/`
 2. The project's architecture docs and `CLAUDE.md`
 3. Dependency wiring / service registration configuration
 4. Application state / shared state / config files
@@ -117,6 +119,6 @@ Your tech design is the implementation contract. The Developer codes against it.
 
 | Artifact | Location | Template |
 |----------|----------|----------|
-| Tech Design | `docs/sdlc/epics/{{EPIC_KEY}}/TECH-DESIGN.md` | `docs/sdlc/templates/TECH-DESIGN-TEMPLATE.md` |
+| Tech Design | `docs/epics/{{EPIC_KEY}}/TECH-DESIGN.md` | `docs/templates/TECH-DESIGN-TEMPLATE.md` |
 | Code Review | Inline in conversation | Structured review format |
 | ADR (optional) | `docs/adr/NNNN-title.md` | When decision is irreversible or widely impactful |

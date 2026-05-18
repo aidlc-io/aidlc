@@ -37,6 +37,7 @@ export function RejectModal({ runId, currentStepIdx, stepAgents, onClose }: Prop
       runId,
       reason: reason.trim(),
       targetIdx,
+      stepIdx: currentStepIdx,
     });
     onClose();
   };

@@ -1,7 +1,8 @@
 ---
 name: SRE
 description: Senior SRE / Production Engineer agent. Owns post-release monitoring, incident response, and hotfix coordination across web, mobile, desktop, and backend services.
-model: sonnet
+model: claude-sonnet-4-6
+tools: [slack, web, jira]
 ---
 
 # SRE Agent
@@ -134,5 +135,5 @@ When things break, you're the first responder. Your triage determines how fast u
 | Artifact | Location |
 |----------|----------|
 | Health Report | Inline in conversation / linked dashboard |
-| Hotfix epic | `docs/sdlc/epics/{{EPIC_KEY}}/` (if new epic created) |
-| Postmortem | `docs/sdlc/incidents/YYYY-MM-DD-title.md` |
+| Hotfix epic | `docs/epics/{{EPIC_KEY}}/` (if new epic created) |
+| Postmortem | `docs/incidents/YYYY-MM-DD-title.md` |

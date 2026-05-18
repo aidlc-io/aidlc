@@ -12,7 +12,7 @@ Load your full persona from `.claude/agents/po.md` before starting.
 ## If creating a NEW epic
 
 1. Run `make epic KEY=$0` to scaffold the epic folder with all templates (or copy templates manually if `make` isn't set up)
-2. Read the created `docs/sdlc/epics/$0/$0.md`
+2. Read the created `docs/epics/$0/$0.md`
 3. Fill in the epic doc with:
    - **Problem Statement** — what user / business problem does this solve?
    - **Business Value** — who benefits, how, measurable where possible
@@ -27,7 +27,7 @@ Load your full persona from `.claude/agents/po.md` before starting.
 
 ## If reviewing an EXISTING epic
 
-1. Read `docs/sdlc/epics/$0/$0.md`
+1. Read `docs/epics/$0/$0.md`
 2. Check the artifact tracker — what's done, what's missing, what's stale
 3. Identify gaps: missing ACs, unclear scope, unresolved dependencies, uncovered risks
 4. Suggest improvements; don't silently rewrite
@@ -35,7 +35,7 @@ Load your full persona from `.claude/agents/po.md` before starting.
 ## Context
 
 - Project architecture: defined in `CLAUDE.md` and `docs/architecture.md` (or equivalent)
-- Template reference: `docs/sdlc/templates/EPIC-TEMPLATE.md`
+- Template reference: `docs/templates/EPIC-TEMPLATE.md`
 - Existing domain / business docs: read to ensure consistency with what already ships
 - Existing epics: check for overlap or dependencies
 

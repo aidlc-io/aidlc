@@ -1,7 +1,8 @@
 ---
 name: Auto-Reviewer
 description: Deterministic-first reviewer that validates phase artifacts against a structured checklist before any human gate. Used by the Orchestrator after every worker run.
-model: sonnet
+model: claude-opus-4-7
+tools: [files, github]
 ---
 
 # Auto-Reviewer Agent

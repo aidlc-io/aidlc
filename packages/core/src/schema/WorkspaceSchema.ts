@@ -109,8 +109,8 @@ const SlashCommandSchema = z.union([
  *
  * Artifact paths support `{<context-key>}` placeholders that get resolved
  * from the run's context map at execution time — e.g.
- * `docs/sdlc/epics/{epic}/PRD.md` becomes
- * `docs/sdlc/epics/DRM-2100/PRD.md` for a run with `context.epic == "DRM-2100"`.
+ * `docs/epics/{epic}/PRD.md` becomes
+ * `docs/epics/EPIC-2100/PRD.md` for a run with `context.epic == "EPIC-2100"`.
  */
 const PipelineStepObjectSchema = z
   .object({
@@ -121,8 +121,26 @@ const PipelineStepObjectSchema = z
     enabled: z.boolean().default(true),
     /** Artifact paths the step is expected to produce. Checked after work. */
     produces: z.array(z.string().min(1)).default([]),
+    /**
+     * Skills this step makes available to the agent. Multiple ids
+     * allowed — Claude picks which one(s) to invoke for this step,
+     * scoped to this list. Empty / omitted = inherit the agent's
+     * full `skills:` array.
+     *
+     * Back-compat: legacy YAML can use `skill: <id>` (singular
+     * string); the normalizer coerces it into a single-entry array.
+     */
+    skills: z.array(z.string().min(1)).optional(),
     /** Artifact paths required from upstream. Gate-checked before work AND on Mark step done. */
     requires: z.array(z.string().min(1)).default([]),
+    /**
+     * Agent ids of upstream steps this step depends on. When non-empty the
+     * step stays `pending` until every listed step transitions to `approved`,
+     * at which point it auto-opens as `awaiting_work`. Multiple steps with no
+     * dependencies start in parallel. Empty / omitted = legacy sequential
+     * behavior (auto-opens when the previous step approves).
+     */
+    depends_on: z.array(z.string().min(1)).default([]),
     /** When true, the runner runs `auto_review_runner` after produces validate, before any human gate. */
     auto_review: z.boolean().default(false),
     /**
@@ -156,9 +174,13 @@ export type PipelineStepConfig = z.infer<typeof PipelineStepSchema>;
 export interface NormalizedStep {
   agent: string;
   name?: string;
+  /** Skill ids this step makes available — overrides the agent's defaults. */
+  skills?: string[];
   enabled: boolean;
   produces: string[];
   requires: string[];
+  /** Agent ids this step waits for before opening — see schema for semantics. */
+  depends_on: string[];
   auto_review: boolean;
   auto_review_runner?: string;
   human_review: boolean;
@@ -180,6 +202,7 @@ export function normalizeStep(step: PipelineStepConfig | { agent?: string; [k: s
       enabled: true,
       produces: [],
       requires: [],
+      depends_on: [],
       auto_review: false,
       human_review: false,
     };
@@ -187,12 +210,22 @@ export function normalizeStep(step: PipelineStepConfig | { agent?: string; [k: s
   const obj = step as Record<string, unknown>;
   const requires = Array.isArray(obj.requires) ? (obj.requires as string[]) : [];
   const produces = Array.isArray(obj.produces) ? (obj.produces as string[]) : [];
+  const depends_on = Array.isArray(obj.depends_on) ? (obj.depends_on as string[]) : [];
+  // Coerce legacy singular `skill: <id>` into the new array form so old
+  // workspace.yaml files keep working without a hand migration.
+  const skills: string[] | undefined = Array.isArray(obj.skills)
+    ? (obj.skills as unknown[]).map(String).filter((s) => s.length > 0)
+    : typeof obj.skill === 'string' && obj.skill.length > 0
+      ? [obj.skill]
+      : undefined;
   return {
     agent: typeof obj.agent === 'string' ? obj.agent : '',
     name: typeof obj.name === 'string' ? obj.name : undefined,
+    skills,
     enabled: typeof obj.enabled === 'boolean' ? obj.enabled : true,
     produces,
     requires,
+    depends_on,
     auto_review: obj.auto_review === true,
     auto_review_runner: typeof obj.auto_review_runner === 'string' ? obj.auto_review_runner : undefined,
     human_review: obj.human_review === true,
@@ -247,7 +280,7 @@ const StateSchema = z.object({
 const FileTreeViewSchema = z.object({
   type: z.literal('file-tree'),
   label: z.string().default('Files'),
-  /** Glob relative to workspace root, e.g. `docs/sdlc/epics/*\/*.md`. */
+  /** Glob relative to workspace root, e.g. `docs/epics/*\/*.md`. */
   glob: z.string().min(1),
   /** Group matched files by their parent directory. Default keeps it flat. */
   group_by: z.enum(['parent_dir', 'flat']).default('flat'),

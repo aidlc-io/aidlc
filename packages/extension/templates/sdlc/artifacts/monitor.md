@@ -1,80 +1,33 @@
-# Health Report — [Epic Title]
+# Monitor — {{EPIC_ID}}
 
-**Epic ID:** `$EPIC_ID`
-**SRE:** SRE
-**Period:** `$DATE` → `$DATE+7d`
-**Status:** Draft
-**Created:** `$DATE`
+> Post-release health report. Sequential SDLC phase, not run in the
+> parallel workflow.
 
----
+## Window
 
-## 1. Executive Summary
+Release → +24h / +72h / +7d (pick the relevant cutoff).
 
-> *Go / Hotfix / Rollback recommendation in one paragraph.*
+## Production signals
 
-**Decision:** ⬜ Go &nbsp;&nbsp; ⬜ Hotfix required &nbsp;&nbsp; ⬜ Rollback
+| Signal | Baseline | Current | Δ | Notes |
+|--------|----------|---------|---|-------|
+| Crash rate |  |  |  |  |
+| Error logs |  |  |  |  |
+| Latency p95 |  |  |  |  |
+| Conversion / KPI |  |  |  |  |
 
-## 2. Key Health Indicators (KHI)
+## Incidents
 
-| KHI | Threshold | Actual | Status |
-|-----|-----------|--------|--------|
-| Crash-free rate | ≥ 99.5% | — | ⬜ |
-| API error rate | < 1% | — | ⬜ |
-| p95 API latency | < 500 ms | — | ⬜ |
-| ANR rate | < 0.5% | — | ⬜ |
-| DAU delta | ≥ −5% vs prior week | — | ⬜ |
+- None / list incidents tied to this release with severity + status.
 
-## 3. Crash & Error Analysis
+## Customer feedback
 
-### Top Crashes (App Store / Firebase)
+- Support tickets:
+- App-store reviews:
+- Slack reports:
 
-| Rank | Issue | Affected users | New? |
-|------|-------|---------------|------|
-| 1    |       |               | ⬜   |
+## Decision
 
-### API Errors (5xx)
-
-| Endpoint | Error count | Root cause |
-|----------|-------------|-----------|
-|          |             |            |
-
-## 4. Performance Metrics
-
-| Metric | Baseline | Release week | Delta |
-|--------|----------|-------------|-------|
-| Cold start | — ms | — ms | — |
-| Screen load | — ms | — ms | — |
-| Memory (p90) | — MB | — MB | — |
-
-## 5. User Feedback
-
-### App Store Reviews
-
-> *(Summarize new reviews mentioning affected flows)*
-
-### Support Tickets
-
-| Ticket | Description | Priority | Status |
-|--------|-------------|----------|--------|
-|        |             |          |        |
-
-## 6. Analytics Events
-
-| Event | Expected change | Actual change | Status |
-|-------|----------------|--------------|--------|
-|       |                |              | ⬜     |
-
-## 7. Incidents
-
-| Incident | Severity | Duration | Root cause | Status |
-|----------|----------|----------|-----------|--------|
-|          |          |          |            |        |
-
-## 8. Recommendations
-
-- …
-
-## 9. Next Check-in
-
-**Date:** *(date)*
-**Trigger for escalation:** *(condition)*
+- [ ] GO — release is healthy, close epic.
+- [ ] HOTFIX — file follow-up issue + roll into the next release.
+- [ ] ROLLBACK — coordinate with Release Manager immediately.

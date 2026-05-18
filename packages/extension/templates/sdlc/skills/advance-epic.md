@@ -25,7 +25,7 @@ Stopping conditions:
 
 ## Prerequisites
 
-- `docs/sdlc/epics/$0/epic.json` must exist with required fields (`epic_id`, `project`, `brief`, `affected_modules`).
+- `docs/epics/$0/epic.json` must exist with required fields (`epic_id`, `project`, `brief`, `affected_modules`).
   - If missing: run `/epic $0` first to scaffold, or call the `init_epic` MCP tool, or edit `epic.json` by hand following `.claude/schemas/epic.schema.md`.
 - The MCP server `sdlc` (or whatever name you bound it to) must be configured in `.claude/settings.json`.
 
@@ -33,7 +33,7 @@ Stopping conditions:
 
 1. **Verify epic.json exists.**
    ```
-   Read docs/sdlc/epics/$0/epic.json
+   Read docs/epics/$0/epic.json
    ```
    If not found → tell the user to run `/epic $0` first and STOP.
 

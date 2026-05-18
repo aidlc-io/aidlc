@@ -68,7 +68,7 @@ git tag --sort=-version:refname | head -5
 git log --oneline -10
 
 # Release checklist existence
-ls docs/sdlc/releases/ 2>/dev/null
+ls docs/releases/ 2>/dev/null
 ```
 
 ## Step 3: Generate Health Report
@@ -127,7 +127,7 @@ Mark **N/A** where data wasn't provided — don't fabricate.
 ```
 
 ## If P0 signal found
-- Reference `docs/sdlc/templates/ROLLBACK-PLAYBOOK.md`
+- Reference `docs/templates/ROLLBACK-PLAYBOOK.md`
 - Consider feature-flag kill-switch as first lever, rollback as second
 - Assign Incident Commander, open incident channel, capture timeline
 

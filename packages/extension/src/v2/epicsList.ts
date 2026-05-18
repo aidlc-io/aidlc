@@ -44,6 +44,11 @@ export interface EpicSummary {
   /** Per-step detail (timing, future fields). Same length as agents. */
   stepDetails: Array<{
     agent: string;
+    /** Optional phase id / slash command name — set on built-in pipelines that split phase ↔ persona. */
+    name?: string;
+    /** Basename of the first `produces:` path — surfaced as the step's
+     *  artifact label on the Epic detail panel. */
+    artifact?: string;
     status: EpicStatus;
     startedAt: string | null;
     finishedAt: string | null;
@@ -65,6 +70,8 @@ export interface EpicSummary {
     stepHasAutoReview: boolean;
     /** Step config: does this step opt into human_review in the pipeline yaml? */
     stepHasHumanReview: boolean;
+    /** Agent ids this step waits for — DAG edges from the pipeline config. */
+    dependsOn: string[];
     /** Append-only timeline of significant transitions for this step. */
     history?: StepHistoryEntry[];
     /** Cached count of `reject` entries in `history` — for compact display. */
@@ -168,10 +175,24 @@ export function listEpics(workspaceRoot: string, doc: YamlDocument | null): Epic
       ? (doc?.pipelines as PipelineConfig[] | undefined)?.find((p) => p.id === pipelineId)
       : undefined;
     const stepGateByIdx = new Map<number, { auto: boolean; human: boolean }>();
+    const stepDependsByIdx = new Map<number, string[]>();
+    const stepNameByIdx = new Map<number, string>();
+    const stepArtifactByIdx = new Map<number, string>();
     if (pipelineCfg && Array.isArray(pipelineCfg.steps)) {
       pipelineCfg.steps.forEach((raw, i) => {
         const norm = normalizeStep(raw as PipelineStepConfig);
         stepGateByIdx.set(i, { auto: norm.auto_review, human: norm.human_review });
+        stepDependsByIdx.set(i, norm.depends_on);
+        if (norm.name) { stepNameByIdx.set(i, norm.name); }
+        // Surface the produced artifact for the per-step detail panel —
+        // `step.produces[0]` is the canonical artifact path on built-in
+        // pipelines (e.g. `docs/epics/{epic}/PRD.md`). The UI displays
+        // the basename and resolves the absolute path via `epic.epicDir`.
+        const first = norm.produces[0];
+        if (typeof first === 'string' && first.length > 0) {
+          const basename = first.split('/').pop() ?? first;
+          if (basename) { stepArtifactByIdx.set(i, basename); }
+        }
       });
     }
 
@@ -202,6 +223,8 @@ export function listEpics(workspaceRoot: string, doc: YamlDocument | null): Epic
           : asStatus(s.status);
       return {
         agent,
+        name: stepNameByIdx.get(i),
+        artifact: stepArtifactByIdx.get(i),
         status: displayStatus,
         startedAt: typeof s.startedAt === 'string' ? s.startedAt : null,
         finishedAt: typeof s.finishedAt === 'string' ? s.finishedAt : null,
@@ -211,6 +234,7 @@ export function listEpics(workspaceRoot: string, doc: YamlDocument | null): Epic
         autoReviewVerdict: runVerdictByAgent.get(agent),
         stepHasAutoReview: gate.auto,
         stepHasHumanReview: gate.human,
+        dependsOn: stepDependsByIdx.get(i) ?? [],
         history,
         rejectCount,
         feedback: runFeedbackByAgent.get(agent),

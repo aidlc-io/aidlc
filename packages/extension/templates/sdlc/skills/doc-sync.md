@@ -15,10 +15,10 @@ Read and execute `.claude/skills/_gate-check.md`. This skill = phase `doc-sync`,
 
 ## Steps
 
-1. Read the epic: `docs/sdlc/epics/$0/$0.md` — note **Affected Areas**
-2. Read the PRD: `docs/sdlc/epics/$0/PRD.md` — what was planned
-3. Read the tech design: `docs/sdlc/epics/$0/TECH-DESIGN.md` — what was designed
-4. Read the doc-sync template: `docs/sdlc/epics/$0/DOC-REVERSE-SYNC.md` or `docs/sdlc/templates/DOC-REVERSE-SYNC-TEMPLATE.md`
+1. Read the epic: `docs/epics/$0/$0.md` — note **Affected Areas**
+2. Read the PRD: `docs/epics/$0/PRD.md` — what was planned
+3. Read the tech design: `docs/epics/$0/TECH-DESIGN.md` — what was designed
+4. Read the doc-sync template: `docs/epics/$0/DOC-REVERSE-SYNC.md` or `docs/templates/DOC-REVERSE-SYNC-TEMPLATE.md`
 5. Find what was actually implemented
    ```bash
    git log --oneline --all --grep="$0"
@@ -59,6 +59,6 @@ Read and execute `.claude/skills/_gate-check.md`. This skill = phase `doc-sync`,
 ## Output
 
 - Proposed edits to the affected doc files
-- Completed `docs/sdlc/epics/$0/DOC-REVERSE-SYNC.md`
+- Completed `docs/epics/$0/DOC-REVERSE-SYNC.md`
 - Changelog entry (if this is first pass post-release)
 - Migration guide (if breaking changes): `docs/migrations/vX.Y.Z.md`

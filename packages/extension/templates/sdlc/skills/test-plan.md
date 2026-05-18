@@ -14,11 +14,11 @@ Read and execute `.claude/skills/_gate-check.md`. This skill = phase `test-plan`
 
 ## Steps
 
-1. Read the epic: `docs/sdlc/epics/$0/$0.md`
-2. Read the PRD: `docs/sdlc/epics/$0/PRD.md` — acceptance criteria are your test inputs
-3. Read the tech design: `docs/sdlc/epics/$0/TECH-DESIGN.md` — file impact drives unit/integration scope
+1. Read the epic: `docs/epics/$0/$0.md`
+2. Read the PRD: `docs/epics/$0/PRD.md` — acceptance criteria are your test inputs
+3. Read the tech design: `docs/epics/$0/TECH-DESIGN.md` — file impact drives unit/integration scope
 4. Read existing tests / patterns / fixtures in the project so new tests match the style
-5. Read the test plan template: `docs/sdlc/epics/$0/TEST-PLAN.md` or `docs/sdlc/templates/TEST-PLAN-TEMPLATE.md`
+5. Read the test plan template: `docs/epics/$0/TEST-PLAN.md` or `docs/templates/TEST-PLAN-TEMPLATE.md`
 6. Fill the test plan with the sections below — pick the test categories that apply to the stack in play
 
 ## Test Plan Contents
@@ -32,11 +32,21 @@ Pick only what's relevant to the stack. Don't pad with categories that don't app
 
 | Surface | Matrix dimensions (examples) |
 |---------|------------------------------|
+{{#if web}}
 | Web | Chromium / Firefox / Safari × Desktop / Mobile viewport × OS (for native quirks) |
+{{/if}}
+{{#if mobile}}
 | Mobile | Min-supported OS / Current / Latest × Screen sizes × Locale / RTL |
+{{/if}}
+{{#if desktop}}
 | Desktop | macOS / Windows / Linux × Arch (x64 / arm64) × Installed vs. portable |
+{{/if}}
+{{#if backend}}
 | Backend | Runtime version × DB version × OS × Region (if multi-region) |
+{{/if}}
+{{#if cli}}
 | CLI | OS × Shell × TTY / non-TTY × Interactive / piped |
+{{/if}}
 
 Mark which combos are **must-test** vs. **spot-check**. Note which can run in CI vs. require real infrastructure.
 
@@ -55,10 +65,12 @@ Mark which combos are **must-test** vs. **spot-check**. Note which can run in CI
 - Auth refresh / token lifecycle
 - Cross-layer flows validated end-to-end within a process
 
+{{#any web,mobile,desktop}}
 ### UI / Component Tests — prefix `$0-UI` (if applicable)
 - Rendering, interaction, accessibility tree
 - Happy path, error state, empty state, loading state
 - Keyboard navigation, focus management (for web/desktop)
+{{/any}}
 
 ### End-to-End Tests — prefix `$0-E2E` (if applicable)
 - Full flows across real processes / browsers / devices
@@ -69,8 +81,12 @@ Mark which combos are **must-test** vs. **spot-check**. Note which can run in CI
 Choose the categories that fit the stack.
 
 - **Network / Connectivity** (`$0-NET`): offline, disconnect mid-call, slow / lossy, network switch (mobile)
+{{#any mobile,desktop}}
 - **Lifecycle / Process** (`$0-LC`): suspend / resume, restart, upgrade path, low-memory, kill & restart (mobile/desktop)
+{{/any}}
+{{#any web,mobile,desktop}}
 - **Access / Permission** (`$0-PM`): first grant, first deny, previously denied, partial scope
+{{/any}}
 - **Upstream failure** (`$0-UP`): 4xx / 5xx / timeout / rate-limit from dependencies — graceful handling
 - **Concurrency** (`$0-CC`): race conditions, double-submit, optimistic-concurrency conflicts
 
@@ -96,4 +112,4 @@ Choose the categories that fit the stack.
 
 ## Output
 
-Write the completed test plan to `docs/sdlc/epics/$0/TEST-PLAN.md`.
+Write the completed test plan to `docs/epics/$0/TEST-PLAN.md`.

@@ -52,17 +52,29 @@ export function startRun(args: {
     throw new PipelineRunError(`Pipeline "${pipeline.id}" has no steps`);
   }
   const now = new Date().toISOString();
+
+  // DAG roots: every step without a `depends_on` opens up at start time.
+  // Pipelines without any depends_on declarations fall back to the legacy
+  // sequential behavior (only step 0 starts) so existing workspace.yamls
+  // keep their old semantics.
+  const usesDag = pipeline.steps.some((s) => normalizeStep(s).depends_on.length > 0);
   const steps: StepRecord[] = pipeline.steps.map((s, idx) => {
     const norm = normalizeStep(s);
+    const isRoot = usesDag ? norm.depends_on.length === 0 : idx === 0;
     return {
       stepIdx: idx,
       agent: norm.agent,
       revision: 1,
-      status: idx === 0 ? 'awaiting_work' : 'pending',
-      startedAt: idx === 0 ? now : undefined,
+      status: isRoot ? 'awaiting_work' : 'pending',
+      startedAt: isRoot ? now : undefined,
       artifactsProduced: [],
     };
   });
+
+  // currentStepIdx tracks the UI's primary focus. For DAG runs we point it
+  // at the first open step; the UI lets the user switch focus across active
+  // steps but every gate operation passes an explicit stepIdx anyway.
+  const firstOpen = steps.findIndex((s) => s.status === 'awaiting_work');
   return {
     schemaVersion: 1,
     runId,
@@ -70,7 +82,7 @@ export function startRun(args: {
     context: { ...context },
     startedAt: now,
     updatedAt: now,
-    currentStepIdx: 0,
+    currentStepIdx: firstOpen >= 0 ? firstOpen : 0,
     status: 'running',
     steps,
   };
@@ -122,9 +134,11 @@ export function markStepDone(args: {
   state: RunState;
   pipeline: PipelineConfig;
   workspaceRoot: string;
+  /** Step to mark done. Defaults to `state.currentStepIdx` for back-compat. */
+  stepIdx?: number;
 }): RunState {
   const { state, pipeline, workspaceRoot } = args;
-  const idx = state.currentStepIdx;
+  const idx = args.stepIdx ?? state.currentStepIdx;
   const step = state.steps[idx];
   if (!step) {
     throw new PipelineRunError(`No step at index ${idx}`);
@@ -205,9 +219,11 @@ export function submitAutoReviewVerdict(args: {
   state: RunState;
   pipeline: PipelineConfig;
   verdict: AutoReviewVerdict;
+  /** Step the verdict applies to. Defaults to `state.currentStepIdx`. */
+  stepIdx?: number;
 }): RunState {
   const { state, pipeline, verdict } = args;
-  const idx = state.currentStepIdx;
+  const idx = args.stepIdx ?? state.currentStepIdx;
   const step = state.steps[idx];
   if (!step) {
     throw new PipelineRunError(`No step at index ${idx}`);
@@ -264,9 +280,11 @@ export function submitAutoReviewVerdict(args: {
 export function approveStep(args: {
   state: RunState;
   pipeline: PipelineConfig;
+  /** Step to approve. Defaults to `state.currentStepIdx`. */
+  stepIdx?: number;
 }): RunState {
   const { state, pipeline } = args;
-  const idx = state.currentStepIdx;
+  const idx = args.stepIdx ?? state.currentStepIdx;
   const step = state.steps[idx];
   if (!step) {
     throw new PipelineRunError(`No step at index ${idx}`);
@@ -298,9 +316,18 @@ export function rejectStep(args: {
   state: RunState;
   reason?: string;
   targetIdx?: number;
+  /** Step being rejected. Defaults to `state.currentStepIdx`. */
+  stepIdx?: number;
+  /**
+   * Pipeline definition. When supplied and the pipeline uses `depends_on`,
+   * cascade-reject resets only the *transitive descendants* of the target
+   * step (DAG semantics) instead of the contiguous index range — index
+   * positions in a DAG don't reflect dependency order.
+   */
+  pipeline?: PipelineConfig;
 }): RunState {
-  const { state, reason, targetIdx } = args;
-  const idx = state.currentStepIdx;
+  const { state, reason, targetIdx, pipeline } = args;
+  const idx = args.stepIdx ?? state.currentStepIdx;
   const step = state.steps[idx];
   if (!step) {
     throw new PipelineRunError(`No step at index ${idx}`);
@@ -316,9 +343,6 @@ export function rejectStep(args: {
   if (isCascade) {
     const next = clone(state);
     const blame = `Rejected at step ${idx + 1} (${step.agent})${reason ? `: ${reason}` : ''}`;
-    // History on the rejected step: a `reject` entry pointing at the cascade
-    // target so a future viewer can see "step N was rejected, work bounced
-    // back to step M".
     const rejectedHistory = pushHistory(next.steps[idx].history, {
       kind: 'reject',
       at: now,
@@ -326,9 +350,20 @@ export function rejectStep(args: {
       reason,
       sentBackToIdx: targetIdx as number,
     });
-    for (let i = targetIdx as number; i <= idx; i++) {
+
+    // Choose between sequential index-range and DAG transitive-descendants
+    // reset based on whether the pipeline declares any depends_on edges.
+    const usesDag = pipeline
+      ? pipeline.steps.map(normalizeStep).some((s) => s.depends_on.length > 0)
+      : false;
+    const targetIdxN = targetIdx as number;
+    const resetIndices = usesDag && pipeline
+      ? collectDagResetSet(pipeline, state, targetIdxN, idx)
+      : sequentialRange(targetIdxN, idx);
+
+    for (const i of resetIndices) {
       const s = next.steps[i];
-      if (i === (targetIdx as number)) {
+      if (i === targetIdxN) {
         // Target step: bump revision + reset to awaiting_work. Record the
         // cascade-rerun on its own history.
         const newRev = s.revision + 1;
@@ -408,9 +443,11 @@ export function rejectStep(args: {
 export function rerunStep(args: {
   state: RunState;
   feedback?: string;
+  /** Step to rerun. Defaults to `state.currentStepIdx`. */
+  stepIdx?: number;
 }): RunState {
   const { state, feedback } = args;
-  const idx = state.currentStepIdx;
+  const idx = args.stepIdx ?? state.currentStepIdx;
   const step = state.steps[idx];
   if (!step) {
     throw new PipelineRunError(`No step at index ${idx}`);
@@ -486,13 +523,20 @@ export function requestStepUpdate(args: {
 
   const now = new Date().toISOString();
   const next = clone(state);
-  // upper bound for the reset range — the current step (inclusive). If the
-  // run already completed we still go through the very last step.
+
+  const normalized = pipeline.steps.map(normalizeStep);
+  const usesDag = normalized.some((s) => s.depends_on.length > 0);
+  // For DAG pipelines, walk only transitive descendants. For sequential,
+  // fall back to the legacy "everything from stepIdx through upper" range so
+  // existing workspace.yamls keep their old semantics.
   const upper = state.status === 'completed'
     ? pipeline.steps.length - 1
     : state.currentStepIdx;
+  const indices = usesDag
+    ? collectDagResetSet(pipeline, state, stepIdx, upper)
+    : sequentialRange(stepIdx, upper);
 
-  for (let i = stepIdx; i <= upper; i++) {
+  for (const i of indices) {
     const s = next.steps[i];
     if (i === stepIdx) {
       const newRev = s.revision + 1;
@@ -532,7 +576,17 @@ export function requestStepUpdate(args: {
   return next;
 }
 
-/** Mark the current step approved + open the next step (or complete the run). */
+/**
+ * Mark the given step approved, then open every now-unblocked dependent
+ * step.
+ *
+ * For pipelines that don't use `depends_on`, this preserves the legacy
+ * sequential behavior: approving step N opens step N+1. For DAG pipelines,
+ * approving a step unblocks every pending step whose `depends_on` agents
+ * are all approved — multiple may open at once.
+ *
+ * The run transitions to `completed` only when every step is approved.
+ */
 function advance(next: RunState, idx: number, pipeline: PipelineConfig): RunState {
   const finishedAt = new Date().toISOString();
   const approved = next.steps[idx];
@@ -546,23 +600,129 @@ function advance(next: RunState, idx: number, pipeline: PipelineConfig): RunStat
       revision: approved.revision,
     }),
   };
-  const nextIdx = idx + 1;
-  if (nextIdx >= pipeline.steps.length) {
+
+  const normalized = pipeline.steps.map(normalizeStep);
+  const usesDag = normalized.some((s) => s.depends_on.length > 0);
+
+  if (!usesDag) {
+    // Legacy sequential pipeline: open the immediately-following step.
+    const nextIdx = idx + 1;
+    if (nextIdx >= pipeline.steps.length) {
+      next.status = 'completed';
+      return next;
+    }
+    next.currentStepIdx = nextIdx;
+    next.steps[nextIdx] = {
+      ...next.steps[nextIdx],
+      status: 'awaiting_work',
+      startedAt: finishedAt,
+    };
+    next.status = 'running';
+    return next;
+  }
+
+  // DAG: open every pending step whose deps are now all approved.
+  // Match deps against the step's `name` (phase id) when present and fall
+  // back to `agent` (persona id) — this lets multiple steps sharing a
+  // persona stay distinct in the dependency graph (e.g. `test-plan` ⤴
+  // from `plan`, `test-cases` ⤴ from `test-plan`, both backed by the
+  // `aidlc-qa` persona).
+  const dagId = (i: number): string => normalized[i].name ?? normalized[i].agent;
+  const approvedDagIds = new Set(
+    next.steps
+      .filter((s) => s.status === 'approved')
+      .map((s) => dagId(s.stepIdx)),
+  );
+  let openedAny = false;
+  for (let i = 0; i < normalized.length; i++) {
+    const sStep = next.steps[i];
+    if (sStep.status !== 'pending') { continue; }
+    const deps = normalized[i].depends_on;
+    if (deps.length === 0) { continue; }
+    const ready = deps.every((dep) => approvedDagIds.has(dep));
+    if (!ready) { continue; }
+    next.steps[i] = {
+      ...sStep,
+      status: 'awaiting_work',
+      startedAt: finishedAt,
+    };
+    openedAny = true;
+    if (next.currentStepIdx === idx) { next.currentStepIdx = i; }
+  }
+
+  const allApproved = next.steps.every((s) => s.status === 'approved');
+  if (allApproved) {
     next.status = 'completed';
     return next;
   }
-  next.currentStepIdx = nextIdx;
-  next.steps[nextIdx] = {
-    ...next.steps[nextIdx],
-    status: 'awaiting_work',
-    startedAt: finishedAt,
-  };
+
+  // If we didn't open any new step but other steps are still active
+  // elsewhere (e.g. a parallel sibling), the run keeps running. Focus the
+  // primary cursor on the first remaining active step so the UI surfaces
+  // something actionable.
+  if (!openedAny) {
+    const stillActive = next.steps.findIndex(
+      (s) => s.status === 'awaiting_work' || s.status === 'awaiting_auto_review' || s.status === 'awaiting_review',
+    );
+    if (stillActive >= 0) { next.currentStepIdx = stillActive; }
+  }
   next.status = 'running';
   return next;
 }
 
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
+}
+
+/** Inclusive numeric range `[from, to]`. Returns [] when `from > to`. */
+function sequentialRange(from: number, to: number): number[] {
+  if (from > to) { return []; }
+  const out: number[] = [];
+  for (let i = from; i <= to; i++) { out.push(i); }
+  return out;
+}
+
+/**
+ * Compute the set of step indices to reset on a DAG cascade rewind.
+ *
+ * Includes the target step itself and every step that transitively depends
+ * (via `depends_on`) on the target — those need to be redone once the
+ * target's output changes. The rejected step (`fromIdx`, if different from
+ * target) is always included so its state is cleared too. Indices are
+ * returned in ascending order so the caller can iterate left-to-right.
+ */
+function collectDagResetSet(
+  pipeline: PipelineConfig,
+  state: RunState,
+  targetIdx: number,
+  fromIdx: number,
+): number[] {
+  const normalized = pipeline.steps.map(normalizeStep);
+  // Match deps by step `name` (phase id) when available; persona-id
+  // (`agent`) is the fallback for legacy pipelines where steps didn't
+  // carry a separate name.
+  const idxByDagId = new Map<string, number>();
+  normalized.forEach((s, i) => { idxByDagId.set(s.name ?? s.agent, i); });
+
+  const toReset = new Set<number>([targetIdx, fromIdx]);
+  // Iteratively expand: a step is in the reset set if any of its deps is in
+  // the set. Loop until fixed point — at most O(steps²) which is fine for
+  // typical workflows (<20 steps).
+  let changed = true;
+  while (changed) {
+    changed = false;
+    normalized.forEach((s, i) => {
+      if (toReset.has(i)) { return; }
+      // Only consider steps that actually ran; pending ones don't need reset.
+      if (state.steps[i]?.status === 'pending') { return; }
+      const depsHit = s.depends_on.some((dep) => {
+        const di = idxByDagId.get(dep);
+        return di !== undefined && toReset.has(di);
+      });
+      if (depsHit) { toReset.add(i); changed = true; }
+    });
+  }
+  return Array.from(toReset).sort((a, b) => a - b);
 }
 
 function pushHistory(

@@ -1,6 +1,8 @@
 ---
 name: Product Owner
 description: Senior Product Owner agent. Defines scope, user stories, and testable acceptance criteria across web, mobile, desktop, and service products. Owns the "what" and "why" of every feature.
+model: claude-opus-4-7
+tools: [jira, figma, core-business, web]
 ---
 
 # Product Owner Agent
@@ -53,7 +55,7 @@ You know the texture of each platform and how it shapes product decisions.
 ## Context You Always Read
 
 Before any work, load:
-1. The epic doc: `docs/sdlc/epics/{{EPIC_KEY}}/{{EPIC_KEY}}.md`
+1. The epic doc: `docs/epics/{{EPIC_KEY}}/{{EPIC_KEY}}.md`
 2. Relevant domain / business docs
 3. Existing user flows and analytics catalog (if present)
 4. Related epics (for dependencies and to avoid duplicate scope)
@@ -109,5 +111,5 @@ Your PRD becomes the source of truth for:
 
 | Artifact | Location | Template |
 |----------|----------|----------|
-| Epic doc | `docs/sdlc/epics/{{EPIC_KEY}}/{{EPIC_KEY}}.md` | `docs/sdlc/templates/EPIC-TEMPLATE.md` |
-| PRD | `docs/sdlc/epics/{{EPIC_KEY}}/PRD.md` | `docs/sdlc/templates/PRD-TEMPLATE.md` |
+| Epic doc | `docs/epics/{{EPIC_KEY}}/{{EPIC_KEY}}.md` | `docs/templates/EPIC-TEMPLATE.md` |
+| PRD | `docs/epics/{{EPIC_KEY}}/PRD.md` | `docs/templates/PRD-TEMPLATE.md` |

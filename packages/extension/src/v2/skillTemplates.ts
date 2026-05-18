@@ -20,23 +20,6 @@ export interface SkillTemplate {
 
 export const SKILL_TEMPLATES: SkillTemplate[] = [
   {
-    id: 'hello-world',
-    description: 'Minimal greeting agent — good first skill to verify the runner works',
-    suggestedFilename: 'hello-skill.md',
-    content: `# Hello World Skill
-
-You are a friendly assistant. Greet the user warmly and ask what they would
-like help with today.
-
-**Output rules**
-
-- Keep your reply to two sentences max.
-- End with a single open-ended question.
-- Plain text only — no markdown, no code blocks.
-`,
-  },
-
-  {
     id: 'code-reviewer',
     description: 'Review a code diff for bugs, security, performance — outputs structured table',
     suggestedFilename: 'code-reviewer.md',

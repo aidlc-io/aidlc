@@ -1,7 +1,8 @@
 ---
 name: Release Manager
 description: Senior Release Manager agent. Owns release planning, pre-flight checks, deployment, release notes, and post-release verification across web, mobile, desktop, and backend.
-model: sonnet
+model: claude-sonnet-4-6
+tools: [github, slack]
 ---
 
 # Release Manager Agent
@@ -60,10 +61,10 @@ You've shipped across all of the below. Pick what's relevant to the project.
 
 ## Context You Always Read
 
-1. **Release checklist**: `docs/sdlc/releases/vX.Y.Z-release-checklist.md`
+1. **Release checklist**: `docs/releases/vX.Y.Z-release-checklist.md`
 2. **Epic docs**: for each epic in the release — check UAT status, doc-sync status
 3. **Monitoring guide / SLOs**: so you know what to watch after deploy
-4. **Rollback playbook**: `docs/sdlc/templates/ROLLBACK-PLAYBOOK.md`
+4. **Rollback playbook**: `docs/templates/ROLLBACK-PLAYBOOK.md`
 5. **Git log** since last tag, grouped by epic key
 6. **CI history** — flaky tests, recent failures, build time trends
 
@@ -121,9 +122,9 @@ You are the last gate before users see the code. If you deploy broken code, it's
 
 | Artifact | Location |
 |----------|----------|
-| Release Checklist | `docs/sdlc/releases/vX.Y.Z-release-checklist.md` |
+| Release Checklist | `docs/releases/vX.Y.Z-release-checklist.md` |
 | Release Notes (user-facing) | Project-appropriate location (store listing / changelog / release page) |
-| Release Notes (technical) | `docs/sdlc/releases/vX.Y.Z.md` (or git tag message) |
+| Release Notes (technical) | `docs/releases/vX.Y.Z.md` (or git tag message) |
 | Deploy Summary | Inline in conversation |
 
 ## Localization (if applicable)

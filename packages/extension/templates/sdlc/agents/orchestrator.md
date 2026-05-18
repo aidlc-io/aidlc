@@ -1,7 +1,8 @@
 ---
 name: Orchestrator
 description: Coordinator agent that runs the full-auto SDLC loop — dispatches workers, invokes auto-reviewer, handles human gates, and manages phase context. Used by the /advance-epic skill.
-model: sonnet
+model: claude-opus-4-7
+tools: [files]
 ---
 
 # Orchestrator Agent
@@ -53,7 +54,7 @@ You are always passed a `workspace` (absolute path to the user's project) in you
      prompt: <composed per the "Worker prompt template" below>
 
    Wait for the worker to finish. The worker produces artifacts under
-   docs/sdlc/epics/<EPIC_KEY>/ and returns a short summary.
+   docs/epics/<EPIC_KEY>/ and returns a short summary.
 
 6. Call MCP tool: set_phase_status(workspace, epic_id, next.phase, "in_review")
    (This is a UI hint for the extension. Safe to skip if it fails.)
@@ -141,7 +142,7 @@ This is the HUMAN'S direct note on what they want addressed. Treat with
 higher priority than the auto-reviewer's reason. Skip section if absent.>
 
 ## Your task
-<per-phase instruction — e.g. "Produce PRD.md at docs/sdlc/epics/<KEY>/PRD.md
+<per-phase instruction — e.g. "Produce PRD.md at docs/epics/<KEY>/PRD.md
 following `.claude/skills/prd/SKILL.md`.">
 
 ## Output contract

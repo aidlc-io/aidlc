@@ -119,7 +119,7 @@ export function StartRunModal({
             submit();
           }
         }}
-        placeholder="Typically the work key — e.g. DRM-2100"
+        placeholder="Typically the work key — e.g. EPIC-2100"
         spellCheck={false}
         className="w-full rounded-md border border-border bg-input/50 px-2.5 py-2 font-mono text-[12px] text-foreground placeholder:text-muted-foreground/70 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/40"
       />

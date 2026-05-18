@@ -14,9 +14,9 @@ Read and execute `.claude/skills/_gate-check.md`. This skill = phase `design`, e
 
 ## Steps
 
-1. Read the epic doc: `docs/sdlc/epics/$0/$0.md`
-2. Read the PRD: `docs/sdlc/epics/$0/PRD.md` (must be complete first)
-3. Read the tech design template: `docs/sdlc/epics/$0/TECH-DESIGN.md` or `docs/sdlc/templates/TECH-DESIGN-TEMPLATE.md`
+1. Read the epic doc: `docs/epics/$0/$0.md`
+2. Read the PRD: `docs/epics/$0/PRD.md` (must be complete first)
+3. Read the tech design template: `docs/epics/$0/TECH-DESIGN.md` or `docs/templates/TECH-DESIGN-TEMPLATE.md`
 4. Analyze the existing codebase for context:
    - Project architecture overview (`CLAUDE.md`, `README.md`, `docs/architecture.md`)
    - Dependency wiring / service registration configuration
@@ -101,4 +101,4 @@ Read and execute `.claude/skills/_gate-check.md`. This skill = phase `design`, e
 
 ## Output
 
-Write the completed tech design to `docs/sdlc/epics/$0/TECH-DESIGN.md`.
+Write the completed tech design to `docs/epics/$0/TECH-DESIGN.md`.

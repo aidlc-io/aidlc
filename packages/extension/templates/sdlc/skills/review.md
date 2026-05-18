@@ -62,7 +62,7 @@ Extract epic key from branch name or recent commit messages.
 Once you have the epic key, read ALL epic docs:
 
 ```
-docs/sdlc/epics/{{EPIC_PREFIX}}-XXXX/
+docs/epics/{{EPIC_PREFIX}}-XXXX/
 ├── {{EPIC_PREFIX}}-XXXX.md    ← Scope, user stories, affected areas
 ├── PRD.md                      ← Acceptance criteria (source of truth)
 ├── TECH-DESIGN.md              ← Architecture, API contract, file impact
@@ -204,7 +204,7 @@ Compare diff against domain / reference docs:
 
 **Source**: feature/{{EPIC_PREFIX}}-XXXX-name → <default-branch>
 **Files changed**: X files (+Y, -Z)
-**Epic**: [{{EPIC_PREFIX}}-XXXX](docs/sdlc/epics/{{EPIC_PREFIX}}-XXXX/{{EPIC_PREFIX}}-XXXX.md)
+**Epic**: [{{EPIC_PREFIX}}-XXXX](docs/epics/{{EPIC_PREFIX}}-XXXX/{{EPIC_PREFIX}}-XXXX.md)
 
 ### Epic Docs Loaded
 - [x] Epic doc — scope: [summary]

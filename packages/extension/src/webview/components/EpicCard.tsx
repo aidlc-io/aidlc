@@ -200,7 +200,16 @@ export function EpicCard({ epic, agentMeta, slashCommandsByAgent }: Props) {
               focusedIdx={focusedIdx}
               focused={focused}
               meta={agentMeta[focused.agent]}
-              slashCommand={slashCommandsByAgent[focused.agent]}
+              slashCommand={
+                // Built-in pipelines split phase ↔ persona: the slash
+                // command name matches the step's phase id (e.g.
+                // `/plan`), not the persona agent (`/aidlc-po`). Fall
+                // back to the workspace.yaml slash_commands table when
+                // the step doesn't carry a name (legacy / user-defined).
+                focused.stepName
+                  ? `/${focused.stepName}`
+                  : slashCommandsByAgent[focused.agent]
+              }
             />
           )}
 
@@ -244,78 +253,209 @@ function Stepper({
   focusedIdx: number;
   onFocus: (idx: number) => void;
 }) {
+  const isDag = steps.some((s) => (s.dependsOn?.length ?? 0) > 0);
   return (
     <div className="overflow-x-auto rounded-md border border-border bg-surface/50 p-3">
-      <div className="flex min-w-max items-start justify-center gap-0">
-        {steps.map((step, i) => {
-          const isCurrent = i === currentStep;
-          const isFocused = i === focusedIdx;
-          // Pending step that carries history was previously approved and
-          // got reset by a downstream Request-Update — surface that as
-          // a warning-tinted state separate from never-touched pending.
-          const isAwaitingUpdate =
-            step.status === 'pending' && (step.history ?? []).length > 0;
-          const inner =
-            step.status === 'done'
-              ? <Check className="h-3.5 w-3.5" />
-              : step.status === 'failed'
-              ? <X className="h-3.5 w-3.5" />
-              : i + 1;
-          return (
-            <div key={`${step.agent}-${i}`} className="flex items-center">
-              {i > 0 && (
-                <div
-                  className={cn(
-                    'h-0.5 w-10',
-                    step.status === 'done' || steps[i - 1].status === 'done'
-                      ? 'bg-primary'
-                      : 'bg-border',
-                  )}
-                />
-              )}
-              <button
-                type="button"
-                onClick={() => onFocus(i)}
-                className="group flex flex-col items-center gap-1 px-1"
-                title={`${step.agent} — ${
-                  isAwaitingUpdate ? 'awaiting update' : STEP_LABEL[step.status]
-                }`}
-              >
-                <div
-                  className={cn(
-                    'flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold transition-all',
-                    step.status === 'done' && 'bg-primary text-primary-foreground',
-                    step.status === 'in_progress' &&
-                      'bg-warning text-warning-foreground shadow-[0_0_14px_color-mix(in_oklab,var(--color-warning)_40%,transparent)]',
-                    step.status === 'failed' && 'bg-destructive text-destructive-foreground',
-                    step.status === 'pending' && !isAwaitingUpdate &&
-                      'border-2 border-border bg-card text-muted-foreground',
-                    isAwaitingUpdate &&
-                      'border-2 border-warning/60 bg-warning/10 text-warning',
-                    isCurrent && 'scale-110',
-                    isFocused && 'ring-4 ring-primary/30',
-                  )}
-                >
-                  {inner}
-                </div>
-                <span
-                  className={cn(
-                    'max-w-[80px] truncate text-center text-[9px] font-bold uppercase tracking-wider',
-                    isFocused
-                      ? 'text-primary'
-                      : step.status === 'done' || step.status === 'in_progress'
-                      ? 'text-foreground'
-                      : 'text-muted-foreground',
-                  )}
-                >
-                  {step.agent}
-                </span>
-              </button>
-            </div>
-          );
-        })}
-      </div>
+      {isDag ? (
+        <DagStepper steps={steps} currentStep={currentStep} focusedIdx={focusedIdx} onFocus={onFocus} />
+      ) : (
+        <LinearStepper steps={steps} currentStep={currentStep} focusedIdx={focusedIdx} onFocus={onFocus} />
+      )}
     </div>
+  );
+}
+
+function LinearStepper({
+  steps,
+  currentStep,
+  focusedIdx,
+  onFocus,
+}: {
+  steps: EpicStepDetailFull[];
+  currentStep: number;
+  focusedIdx: number;
+  onFocus: (idx: number) => void;
+}) {
+  return (
+    <div className="flex min-w-max items-start justify-center gap-0">
+      {steps.map((step, i) => (
+        <div key={`${step.agent}-${i}`} className="flex items-center">
+          {i > 0 && (
+            <div
+              className={cn(
+                'h-0.5 w-10',
+                step.status === 'done' || steps[i - 1].status === 'done'
+                  ? 'bg-primary'
+                  : 'bg-border',
+              )}
+            />
+          )}
+          <StepperNode
+            step={step}
+            idx={i}
+            isCurrent={i === currentStep}
+            isFocused={i === focusedIdx}
+            onFocus={() => onFocus(i)}
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * DAG stepper: same level-bucketed layout used in the Builder's PipelineCard
+ * so the user sees the parallel branches their pipeline actually has. Each
+ * column is one DAG level; column connectors are drawn between adjacent
+ * columns. Steps at the same level stack vertically.
+ */
+function DagStepper({
+  steps,
+  currentStep,
+  focusedIdx,
+  onFocus,
+}: {
+  steps: EpicStepDetailFull[];
+  currentStep: number;
+  focusedIdx: number;
+  onFocus: (idx: number) => void;
+}) {
+  const levels = computeEpicDagLevels(steps);
+  // Level-based numbering: single occupant → "3", parallels → "2.1", "2.2".
+  const labelByIdx = new Map<number, string>();
+  levels.forEach((column, colIdx) => {
+    const lvl = colIdx + 1;
+    if (column.length === 1) {
+      labelByIdx.set(column[0].idx, String(lvl));
+    } else {
+      column.forEach((entry, sub) => {
+        labelByIdx.set(entry.idx, `${lvl}.${sub + 1}`);
+      });
+    }
+  });
+  return (
+    <div className="flex min-w-max items-stretch justify-center gap-0">
+      {levels.map((column, colIdx) => (
+        <div key={colIdx} className="flex items-stretch">
+          <div className="flex flex-col items-center justify-center gap-2 self-center">
+            {column.map(({ step, idx }) => (
+              <StepperNode
+                key={`${step.agent}-${idx}`}
+                step={step}
+                idx={idx}
+                label={labelByIdx.get(idx) ?? String(idx + 1)}
+                isCurrent={idx === currentStep}
+                isFocused={idx === focusedIdx}
+                onFocus={() => onFocus(idx)}
+              />
+            ))}
+          </div>
+          {colIdx < levels.length - 1 && (
+            <div className="flex flex-col justify-center px-1">
+              <div className="h-0.5 w-8 bg-border" />
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function computeEpicDagLevels(
+  steps: EpicStepDetailFull[],
+): Array<Array<{ step: EpicStepDetailFull; idx: number }>> {
+  // Same fix as PipelineCard.computeDagLevels — DAG edges reference phase
+  // ids (step.name) when present, falling back to step.agent for legacy.
+  const dagId = (s: EpicStepDetailFull): string => s.stepName ?? s.agent;
+  const stepById = new Map<string, { step: EpicStepDetailFull; idx: number }>();
+  steps.forEach((step, idx) => { stepById.set(dagId(step), { step, idx }); });
+
+  const memo = new Map<string, number>();
+  const computing = new Set<string>();
+  const levelOf = (id: string): number => {
+    if (memo.has(id)) { return memo.get(id)!; }
+    if (computing.has(id)) { return 0; }
+    computing.add(id);
+    const entry = stepById.get(id);
+    const deps = (entry?.step.dependsOn ?? []).filter((d) => stepById.has(d));
+    const level = deps.length === 0 ? 0 : Math.max(...deps.map(levelOf)) + 1;
+    computing.delete(id);
+    memo.set(id, level);
+    return level;
+  };
+
+  const buckets: Array<Array<{ step: EpicStepDetailFull; idx: number }>> = [];
+  steps.forEach((step, idx) => {
+    const lvl = levelOf(dagId(step));
+    if (!buckets[lvl]) { buckets[lvl] = []; }
+    buckets[lvl].push({ step, idx });
+  });
+  return buckets;
+}
+
+function StepperNode({
+  step,
+  idx,
+  label,
+  isCurrent,
+  isFocused,
+  onFocus,
+}: {
+  step: EpicStepDetailFull;
+  idx: number;
+  /** Optional display label — DAG mode passes `<level>.<n>`, linear mode lets us fall back to `idx + 1`. */
+  label?: string;
+  isCurrent: boolean;
+  isFocused: boolean;
+  onFocus: () => void;
+}) {
+  // Pending step that carries history was previously approved and got reset
+  // by a downstream Request-Update — surface that as a warning-tinted state
+  // separate from never-touched pending.
+  const isAwaitingUpdate = step.status === 'pending' && (step.history ?? []).length > 0;
+  const inner =
+    step.status === 'done'
+      ? <Check className="h-3.5 w-3.5" />
+      : step.status === 'failed'
+        ? <X className="h-3.5 w-3.5" />
+        : (label ?? String(idx + 1));
+  return (
+    <button
+      type="button"
+      onClick={onFocus}
+      className="group flex flex-col items-center gap-1 px-1"
+      title={`${step.agent} — ${isAwaitingUpdate ? 'awaiting update' : STEP_LABEL[step.status]}`}
+    >
+      <div
+        className={cn(
+          'flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold transition-all',
+          step.status === 'done' && 'bg-primary text-primary-foreground',
+          step.status === 'in_progress' &&
+            'bg-warning text-warning-foreground shadow-[0_0_14px_color-mix(in_oklab,var(--color-warning)_40%,transparent)]',
+          step.status === 'failed' && 'bg-destructive text-destructive-foreground',
+          step.status === 'pending' && !isAwaitingUpdate &&
+            'border-2 border-border bg-card text-muted-foreground',
+          isAwaitingUpdate &&
+            'border-2 border-warning/60 bg-warning/10 text-warning',
+          isCurrent && 'scale-110',
+          isFocused && 'ring-4 ring-primary/30',
+        )}
+      >
+        {inner}
+      </div>
+      <span
+        className={cn(
+          'max-w-[80px] truncate text-center text-[9px] font-bold uppercase tracking-wider',
+          isFocused
+            ? 'text-primary'
+            : step.status === 'done' || step.status === 'in_progress'
+              ? 'text-foreground'
+              : 'text-muted-foreground',
+        )}
+      >
+        {step.agent}
+      </span>
+    </button>
   );
 }
 
@@ -344,7 +484,11 @@ function StepDetail({
     return 'pending' as const;
   })();
   const m = meta ?? { name: focused.agent, description: '', inputs: '', outputs: '', artifact: '' };
-  const artifactExists = m.artifact ? epic.existingArtifacts.includes(m.artifact) : false;
+  // Step-level artifact (from `produces[0]` on the pipeline step) wins over
+  // the persona's default — one persona handles multiple phases that each
+  // emit different files, so the step is the authoritative source.
+  const artifactName = focused.artifact || m.artifact || '';
+  const artifactExists = artifactName ? epic.existingArtifacts.includes(artifactName) : false;
 
   const accent = (() => {
     switch (focused.status) {
@@ -408,7 +552,7 @@ function StepDetail({
         <DetailValue empty={!m.outputs}>{m.outputs || '—'}</DetailValue>
 
         <DetailLabel icon={<FileText className="h-3 w-3" />} text="Artifact" />
-        {m.artifact ? (
+        {artifactName ? (
           artifactExists ? (
             <button
               type="button"
@@ -417,13 +561,13 @@ function StepDetail({
                 postMessage({
                   type: 'openArtifactFile',
                   epicDir: epic.epicDir,
-                  filename: m.artifact,
+                  filename: artifactName,
                 });
               }}
               className="inline-flex w-fit items-center gap-1 rounded border border-primary/30 bg-primary/10 px-2 py-0.5 font-mono text-[11px] text-primary transition-colors hover:border-primary/50 hover:bg-primary/20"
-              title={`Open ${m.artifact} in a new tab`}
+              title={`Open ${artifactName} in a new tab`}
             >
-              <span>{m.artifact}</span>
+              <span>{artifactName}</span>
               <ExternalLink className="h-2.5 w-2.5 opacity-70" />
             </button>
           ) : (
@@ -431,7 +575,7 @@ function StepDetail({
               className="inline-flex w-fit items-center rounded border border-border bg-muted/50 px-2 py-0.5 font-mono text-[11px] italic text-muted-foreground opacity-70"
               title="File not produced yet — will land in artifacts/ when this step runs"
             >
-              {m.artifact} · not produced yet
+              {artifactName} · not produced yet
             </div>
           )
         ) : (
@@ -460,6 +604,7 @@ function StepDetail({
       <RunGate
         epic={epic}
         focused={focused}
+        focusedIdx={focusedIdx}
         slashCommand={slashCommand}
         artifactExists={artifactExists}
       />
@@ -697,18 +842,23 @@ function DetailValue({ children, empty }: { children: React.ReactNode; empty?: b
 function RunGate({
   epic,
   focused,
+  focusedIdx,
   slashCommand,
   artifactExists,
 }: {
   epic: EpicSummary;
   focused: EpicStepDetailFull;
+  focusedIdx: number;
   slashCommand: string | undefined;
   artifactExists: boolean;
 }) {
   const [rejectOpen, setRejectOpen] = useState(false);
   const [rerunOpen, setRerunOpen] = useState(false);
   const [runOpen, setRunOpen] = useState(false);
-  if (!epic.runId || !focused.isCurrentRunStep) { return null; }
+  if (!epic.runId) { return null; }
+  // DAG pipelines may have several active steps; instead of gating on a
+  // single "current" cursor, accept any focused step that's in an actionable
+  // status. runStatusUi already filters out pending / approved.
   const ui = runStatusUi(focused.runStatus);
   if (!ui) { return null; }
 
@@ -810,20 +960,14 @@ function RunGate({
         {status === 'awaiting_work' && (
           <>
             {slashCommand && (() => {
-              const isUpdate = artifactExists || !!focused.feedback;
+              const hasFeedback = !!focused.feedback;
               return (
                 <GateButton
                   variant="approve"
                   onClick={() => {
-                    if (isUpdate) {
-                      // Already-touched step → open modal so the user can
-                      // attach feedback before re-running the agent.
+                    if (hasFeedback) {
                       setRunOpen(true);
                     } else {
-                      // First run on this step (no artifact + no carried
-                      // feedback) — just launch claude with the bare slash
-                      // command. No modal needed; runStepWithFeedback
-                      // produces `${slash} ${id}` when feedback is empty.
                       postMessage({
                         type: 'runStepWithFeedback',
                         runId: epic.runId!,
@@ -834,13 +978,13 @@ function RunGate({
                   }}
                 >
                   <Play className="h-3 w-3" />
-                  {isUpdate ? 'Update with feedback' : 'Run with Claude'}
+                  {hasFeedback ? 'Update with feedback' : 'Run with Claude'}
                 </GateButton>
               );
             })()}
             <GateButton
               variant="primary"
-              onClick={() => postMessage({ type: 'markStepDone', runId: epic.runId! })}
+              onClick={() => postMessage({ type: 'markStepDone', runId: epic.runId!, stepIdx: focusedIdx })}
             >
               Mark step done
             </GateButton>
@@ -849,7 +993,7 @@ function RunGate({
         {status === 'awaiting_auto_review' && (
           <GateButton
             variant="primary"
-            onClick={() => postMessage({ type: 'runAutoReview', runId: epic.runId! })}
+            onClick={() => postMessage({ type: 'runAutoReview', runId: epic.runId!, stepIdx: focusedIdx })}
           >
             Run auto-review
           </GateButton>
@@ -858,7 +1002,7 @@ function RunGate({
           <>
             <GateButton
               variant="approve"
-              onClick={() => postMessage({ type: 'approveStep', runId: epic.runId! })}
+              onClick={() => postMessage({ type: 'approveStep', runId: epic.runId!, stepIdx: focusedIdx })}
             >
               <Check className="h-3 w-3" /> Approve
             </GateButton>
@@ -880,7 +1024,7 @@ function RunGate({
       {rejectOpen && epic.runId && (
         <RejectModal
           runId={epic.runId}
-          currentStepIdx={epic.currentStep}
+          currentStepIdx={focusedIdx}
           stepAgents={epic.stepDetails.map((d) => d.agent)}
           onClose={() => setRejectOpen(false)}
         />
@@ -891,7 +1035,7 @@ function RunGate({
           agent={focused.agent}
           rejectReason={focused.rejectReason}
           onSubmit={(feedback) =>
-            postMessage({ type: 'rerunStepInline', runId: epic.runId!, feedback })
+            postMessage({ type: 'rerunStepInline', runId: epic.runId!, feedback, stepIdx: focusedIdx })
           }
           onClose={() => setRerunOpen(false)}
         />

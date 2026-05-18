@@ -9,18 +9,19 @@ import {
   Trash2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { AgentSummary } from '@/lib/types';
+import type { AgentSummary, SkillSummary } from '@/lib/types';
 import { postMessage } from '@/lib/bridge';
 import { RenameModal } from './RenameModal';
 import { ConfirmModal } from './ConfirmModal';
+import { EditAgentModal, type EditAgentDraft } from './EditAgentModal';
 
-const scopeLabel: Record<AgentSummary['scope'], string> = {
+const scopeLabel: Partial<Record<AgentSummary['scope'], string>> = {
   project: 'PROJECT',
-  aidlc: 'AIDLC',
+  aidlc: 'WORKFLOW',
   global: 'GLOBAL',
 };
 
-const typeBadgeClass: Record<AgentSummary['scope'], string> = {
+const typeBadgeClass: Partial<Record<AgentSummary['scope'], string>> = {
   project: 'bg-warning/15 text-warning border-warning/30',
   aidlc: 'bg-primary/15 text-primary border-primary/30',
   global: 'bg-success/15 text-success border-success/30',
@@ -35,13 +36,17 @@ const integrationIcons: Record<string, React.ReactNode> = {
 export function AgentCard({
   agent,
   allAgentIds,
+  skills,
 }: {
   agent: AgentSummary;
   allAgentIds: string[];
+  /** Pickable skills surfaced in the EditAgentModal (project + global). */
+  skills: SkillSummary[];
 }) {
   const isAidlc = agent.scope === 'aidlc';
   const [renameOpen, setRenameOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   const onCardClick = () => {
     if (isAidlc) {
       postMessage({ type: 'openYaml' });
@@ -67,42 +72,70 @@ export function AgentCard({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <h4 className="truncate text-sm font-semibold text-primary">{agent.id}</h4>
-            <span
-              className={cn(
-                'inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-[9px] font-bold tracking-wider border',
-                typeBadgeClass[agent.scope],
-              )}
-            >
-              {scopeLabel[agent.scope]}
-            </span>
+            {scopeLabel[agent.scope] && (
+              <span
+                className={cn(
+                  'inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-[9px] font-bold tracking-wider border',
+                  typeBadgeClass[agent.scope],
+                )}
+              >
+                {scopeLabel[agent.scope]}
+              </span>
+            )}
+            {agent.builtinFrom && (
+              <span
+                title={`Installed by the built-in preset: ${agent.builtinFrom}`}
+                className="inline-flex shrink-0 items-center rounded border border-info/30 bg-info/15 px-1.5 py-0.5 text-[9px] font-bold tracking-wider text-info"
+              >
+                BUILT-IN
+              </span>
+            )}
           </div>
           {agent.description && (
             <p className="mt-0.5 text-xs text-muted-foreground truncate">{agent.description}</p>
           )}
+          {agent.builtinFrom && (
+            <p className="mt-0.5 text-[10px] italic text-muted-foreground truncate">
+              from {agent.builtinFrom}
+            </p>
+          )}
         </div>
-        {isAidlc && (
-          <KebabMenu
-            items={[
-              {
-                label: 'Rename',
-                icon: <Pencil className="h-3 w-3" />,
-                onSelect: () => setRenameOpen(true),
-              },
-              {
-                label: 'Duplicate',
-                icon: <Copy className="h-3 w-3" />,
-                action: 'duplicateAgent',
-              },
-              {
-                label: 'Delete',
-                icon: <Trash2 className="h-3 w-3" />,
-                onSelect: () => setDeleteOpen(true),
-                danger: true,
-              },
-            ]}
-            payload={{ id: agent.id }}
-          />
-        )}
+        <div className="ml-2 flex shrink-0 items-center gap-0.5">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setEditOpen(true);
+            }}
+            title="Edit agent (model, description, capabilities)"
+            className="rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover:opacity-100"
+          >
+            <Pencil className="h-3 w-3" />
+          </button>
+          {isAidlc && (
+            <KebabMenu
+              items={[
+                {
+                  label: 'Rename',
+                  icon: <Pencil className="h-3 w-3" />,
+                  onSelect: () => setRenameOpen(true),
+                },
+                {
+                  label: 'Duplicate',
+                  icon: <Copy className="h-3 w-3" />,
+                  action: 'duplicateAgent',
+                },
+                {
+                  label: 'Delete',
+                  icon: <Trash2 className="h-3 w-3" />,
+                  onSelect: () => setDeleteOpen(true),
+                  danger: true,
+                },
+              ]}
+              payload={{ id: agent.id }}
+            />
+          )}
+        </div>
       </div>
 
       {(agent.skill || agent.model) && (
@@ -143,6 +176,16 @@ export function AgentCard({
             postMessage({ type: 'renameAgent', id: agent.id, newId })
           }
           onClose={() => setRenameOpen(false)}
+        />
+      )}
+      {editOpen && (
+        <EditAgentModal
+          agent={agent}
+          skills={skills}
+          onSubmit={(draft: EditAgentDraft) =>
+            postMessage({ type: 'editAgentInline', draft })
+          }
+          onClose={() => setEditOpen(false)}
         />
       )}
       {deleteOpen && (

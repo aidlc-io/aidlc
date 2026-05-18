@@ -34,7 +34,9 @@ import {
   applyPresetCommand,
   deletePresetCommand,
 } from './presetWizards';
-import { loadSdlcPreset } from './builtinPresets';
+import { loadAllBuiltinPresets, BUILTIN_WORKFLOWS } from './builtinPresets';
+import { installWorkflowGlobalsCommand } from './installWorkflowGlobalsCommand';
+import { uninstallWorkflowGlobalsCommand } from './uninstallWorkflowGlobalsCommand';
 import { startEpicCommand } from './epicWizard';
 import { insertDemoEpicCommand } from './demoEpic';
 import { loadDemoProjectCommand } from './demoProject';
@@ -51,9 +53,19 @@ import {
 } from './runCommands';
 
 /**
- * Build the starter workspace.yaml. `name:` is set to the user's folder
- * name so the Builder / sidebar header reads naturally instead of showing
- * a hardcoded "My AIDLC Workspace" label.
+ * Sentinel `workflowId` value that `aidlc.initWorkspace` accepts to mean
+ * "scaffold an empty workspace, no preset". Used by the webview's
+ * InitWorkflowModal — it sends this when the user picks the Empty option,
+ * so the host knows to skip the native QuickPick (since the React modal
+ * already collected the choice).
+ */
+const EMPTY_WORKSPACE_SENTINEL = '__empty__';
+
+/**
+ * Build the starter workspace.yaml. Minimal scaffold — no placeholder agents
+ * or skills. The 8 built-in workflows are auto-injected into the panel from
+ * the extension's bundled presets; the user applies whichever fits their
+ * stack, or adds their own via the wizards.
  */
 function sampleWorkspaceYaml(workspaceName: string): string {
   // Quote the name to handle spaces, dashes, and unicode safely. js-yaml
@@ -62,21 +74,13 @@ function sampleWorkspaceYaml(workspaceName: string): string {
   return `version: "1.0"
 name: "${escapedName}"
 
-agents:
-  - id: hello
-    name: "Hello World Agent"
-    skill: hello-skill
-    model: claude-sonnet-4-5
+agents: []
 
-skills:
-  - id: hello-skill
-    path: ./.aidlc/skills/hello-skill.md
+skills: []
 
 environment: {}
 
-slash_commands:
-  - name: "/hello"
-    agent: hello
+slash_commands: []
 
 sidebar:
   views:
@@ -84,12 +88,6 @@ sidebar:
     - type: skills-list
 `;
 }
-
-const SAMPLE_HELLO_SKILL = `# Hello World Skill
-
-You are a friendly assistant. Greet the user warmly and ask what they would
-like help with today. Keep your reply to two sentences.
-`;
 
 export function registerV2WorkspaceCommands(
   context: vscode.ExtensionContext,
@@ -102,7 +100,13 @@ export function registerV2WorkspaceCommands(
 
   const initCmd = vscode.commands.registerCommand(
     'aidlc.initWorkspace',
-    () => initWorkspace(output),
+    (workflowId?: unknown) =>
+      initWorkspace(output, context, typeof workflowId === 'string' ? workflowId : undefined),
+  );
+
+  const openGettingStartedCmd = vscode.commands.registerCommand(
+    'aidlc.openGettingStarted',
+    () => openGettingStartedGuide(context),
   );
 
   const addSkillCmd = vscode.commands.registerCommand(
@@ -129,7 +133,7 @@ export function registerV2WorkspaceCommands(
   // and the Builder panel. User templates live in `<project>/.aidlc/templates/`
   // (project-scoped, committable). Built-ins are loaded from the extension.
   const presetStore = new PresetStore();
-  presetStore.setBuiltinLoader(() => [loadSdlcPreset(context.extensionPath)]);
+  presetStore.setBuiltinLoader(() => loadAllBuiltinPresets(context.extensionPath));
 
   const savePresetCmd = vscode.commands.registerCommand(
     'aidlc.savePreset',
@@ -154,6 +158,7 @@ export function registerV2WorkspaceCommands(
     (presetId?: unknown, skipConfirm?: unknown) =>
       applyPresetCommand(
         presetStore,
+        context.extensionPath,
         typeof presetId === 'string' ? presetId : undefined,
         skipConfirm === true,
       ),
@@ -162,6 +167,16 @@ export function registerV2WorkspaceCommands(
   const deletePresetCmd = vscode.commands.registerCommand(
     'aidlc.deletePreset',
     () => deletePresetCommand(presetStore),
+  );
+
+  const installWorkflowGlobalsCmd = vscode.commands.registerCommand(
+    'aidlc.installWorkflowGlobals',
+    () => installWorkflowGlobalsCommand(context.extensionPath, output),
+  );
+
+  const uninstallWorkflowGlobalsCmd = vscode.commands.registerCommand(
+    'aidlc.uninstallWorkflowGlobals',
+    () => uninstallWorkflowGlobalsCommand(context.extensionPath, output),
   );
 
   const migrateEpicsCmd = vscode.commands.registerCommand(
@@ -191,11 +206,6 @@ export function registerV2WorkspaceCommands(
         return;
       }
       const summary = `AIDLC migration — ${parts.join(', ')}.`;
-
-      // Group skipped epics by their reason so users see the
-      // actionable cause instead of a bare count. e.g. "5 skipped:
-      // pipeline 'dreem-sdlc-full' not found in workspace.yaml
-      // (DRM-2090, DRM-2147, …)".
       const blockers: string[] = [];
       const skippedByReason = new Map<string, string[]>();
       for (const s of report.skipped) {
@@ -400,25 +410,32 @@ export function registerV2WorkspaceCommands(
     (pipelineId?: unknown) =>
       startPipelineRunCommand(typeof pipelineId === 'string' ? pipelineId : undefined),
   );
+  const toStepIdx = (v: unknown): number | undefined =>
+    typeof v === 'number' && Number.isInteger(v) ? v : undefined;
   const markStepDoneCmd = vscode.commands.registerCommand(
     'aidlc.markStepDone',
-    (runId?: unknown) => markStepDoneCommand(typeof runId === 'string' ? runId : undefined),
+    (runId?: unknown, stepIdx?: unknown) =>
+      markStepDoneCommand(typeof runId === 'string' ? runId : undefined, toStepIdx(stepIdx)),
   );
   const approveStepCmd = vscode.commands.registerCommand(
     'aidlc.approveStep',
-    (runId?: unknown) => approveStepCommand(typeof runId === 'string' ? runId : undefined),
+    (runId?: unknown, stepIdx?: unknown) =>
+      approveStepCommand(typeof runId === 'string' ? runId : undefined, toStepIdx(stepIdx)),
   );
   const rejectStepCmd = vscode.commands.registerCommand(
     'aidlc.rejectStep',
-    (runId?: unknown) => rejectStepCommand(typeof runId === 'string' ? runId : undefined),
+    (runId?: unknown, stepIdx?: unknown) =>
+      rejectStepCommand(typeof runId === 'string' ? runId : undefined, toStepIdx(stepIdx)),
   );
   const rerunStepCmd = vscode.commands.registerCommand(
     'aidlc.rerunStep',
-    (runId?: unknown) => rerunStepCommand(typeof runId === 'string' ? runId : undefined),
+    (runId?: unknown, stepIdx?: unknown) =>
+      rerunStepCommand(typeof runId === 'string' ? runId : undefined, toStepIdx(stepIdx)),
   );
   const runAutoReviewCmd = vscode.commands.registerCommand(
     'aidlc.runAutoReview',
-    (runId?: unknown) => runAutoReviewCommand(typeof runId === 'string' ? runId : undefined),
+    (runId?: unknown, stepIdx?: unknown) =>
+      runAutoReviewCommand(typeof runId === 'string' ? runId : undefined, toStepIdx(stepIdx)),
   );
   const openRunStateCmd = vscode.commands.registerCommand(
     'aidlc.openRunState',
@@ -437,6 +454,7 @@ export function registerV2WorkspaceCommands(
     disposables: [
       showCmd,
       initCmd,
+      openGettingStartedCmd,
       addSkillCmd,
       addAgentCmd,
       addPipelineCmd,
@@ -447,6 +465,8 @@ export function registerV2WorkspaceCommands(
       savePresetInlineCmd,
       applyPresetCmd,
       deletePresetCmd,
+      installWorkflowGlobalsCmd,
+      uninstallWorkflowGlobalsCmd,
       migrateEpicsCmd,
       startEpicCmd,
       openEpicsListCmd,
@@ -597,14 +617,23 @@ function handleLoadError(err: unknown, output: vscode.OutputChannel): void {
   void vscode.window.showErrorMessage(`AIDLC: failed to load workspace — ${msg}`);
 }
 
-async function initWorkspace(output: vscode.OutputChannel): Promise<void> {
+async function initWorkspace(
+  output: vscode.OutputChannel,
+  context: vscode.ExtensionContext,
+  /**
+   * Pre-selected workflow id. When supplied (webview's `InitWorkflowModal`
+   * already prompted the user), skip the VS Code QuickPick and apply
+   * directly. Sentinel value `'__empty__'` means the user explicitly chose
+   * "Empty workspace" in the modal — scaffold an empty `workspace.yaml`
+   * without showing the picker.
+   */
+  workflowIdArg?: string,
+): Promise<void> {
   const root = requireWorkspaceRoot();
   if (!root) { return; }
 
   const aidlcDir = path.join(root, WORKSPACE_DIR);
   const workspaceFile = path.join(aidlcDir, WORKSPACE_FILENAME);
-  const skillsDir = path.join(aidlcDir, 'skills');
-  const skillFile = path.join(skillsDir, 'hello-skill.md');
 
   if (fs.existsSync(workspaceFile)) {
     const choice = await vscode.window.showWarningMessage(
@@ -618,16 +647,65 @@ async function initWorkspace(output: vscode.OutputChannel): Promise<void> {
     }
   }
 
+  // When invoked from the webview's InitWorkflowModal, `workflowIdArg`
+  // carries the user's choice already. Skip the VS Code QuickPick — it
+  // would feel redundant after the React modal. An undefined arg means
+  // command-palette invocation (fall back to the native picker).
+  interface PipelinePick extends vscode.QuickPickItem {
+    workflowId?: string;
+  }
+  let chosenWorkflowId: string | undefined;
+  let chosenEmpty = false;
+  if (workflowIdArg && workflowIdArg !== EMPTY_WORKSPACE_SENTINEL) {
+    chosenWorkflowId = workflowIdArg;
+  } else if (workflowIdArg === EMPTY_WORKSPACE_SENTINEL) {
+    chosenEmpty = true;
+  } else {
+    const picks: PipelinePick[] = [
+      ...BUILTIN_WORKFLOWS.map((w) => {
+        const recommended = w.id === 'sdlc-parallel-pipeline';
+        return {
+          label: recommended ? `$(star-full) ${w.name}` : w.name,
+          description: recommended ? 'Recommended' : '',
+          detail: w.description,
+          workflowId: w.id,
+        } satisfies PipelinePick;
+      }),
+      {
+        label: '$(file) Empty workspace',
+        description: 'Start from scratch',
+        detail: 'Scaffold an empty workspace.yaml — add agents / skills / pipelines yourself.',
+      },
+    ];
+    const picked = await vscode.window.showQuickPick(picks, {
+      title: 'Initialize AIDLC workspace',
+      placeHolder: 'Pick a starting workflow (or start empty)',
+      ignoreFocusOut: true,
+      matchOnDetail: true,
+    });
+    if (!picked) { return; }
+    chosenWorkflowId = picked.workflowId;
+    chosenEmpty = !picked.workflowId;
+  }
+
+  if (chosenWorkflowId) {
+    // Apply the chosen built-in preset — handles install-globals prompt
+    // and writes workspace.yaml + .claude/commands/*. `skipConfirm: true`
+    // because the user already confirmed at the overwrite prompt above
+    // (or there was no existing file).
+    await vscode.commands.executeCommand('aidlc.applyPreset', chosenWorkflowId, true);
+    void vscode.commands.executeCommand('aidlc.openBuilder');
+    openGettingStartedGuide(context);
+    return;
+  }
+  void chosenEmpty;
+
   try {
-    fs.mkdirSync(skillsDir, { recursive: true });
+    fs.mkdirSync(aidlcDir, { recursive: true });
     const workspaceName = vscode.workspace.workspaceFolders?.[0]?.name
       ?? path.basename(root);
     fs.writeFileSync(workspaceFile, sampleWorkspaceYaml(workspaceName), 'utf8');
-    if (!fs.existsSync(skillFile)) {
-      fs.writeFileSync(skillFile, SAMPLE_HELLO_SKILL, 'utf8');
-    }
     output.appendLine(`[init] wrote ${workspaceFile}`);
-    output.appendLine(`[init] wrote ${skillFile}`);
 
     void vscode.window
       .showInformationMessage(
@@ -642,8 +720,32 @@ async function initWorkspace(output: vscode.OutputChannel): Promise<void> {
     // Open the new workspace.yaml so the user can edit it
     const doc = await vscode.workspace.openTextDocument(workspaceFile);
     await vscode.window.showTextDocument(doc, { preview: false });
+    openGettingStartedGuide(context);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     void vscode.window.showErrorMessage(`AIDLC init failed: ${msg}`);
   }
+}
+
+/**
+ * Open the bundled Getting Started markdown in VS Code's markdown preview.
+ * Falls back to opening the file as a regular text doc when the preview
+ * command isn't available. Idempotent — VS Code re-focuses the existing
+ * preview tab if it's already open.
+ */
+function openGettingStartedGuide(context: vscode.ExtensionContext): void {
+  const guidePath = path.join(context.extensionPath, 'media', 'getting-started.md');
+  if (!fs.existsSync(guidePath)) {
+    void vscode.window.showWarningMessage(
+      `AIDLC: getting-started guide not found at ${guidePath}.`,
+    );
+    return;
+  }
+  const uri = vscode.Uri.file(guidePath);
+  void vscode.commands.executeCommand('markdown.showPreview', uri).then(
+    undefined,
+    () => {
+      void vscode.window.showTextDocument(uri, { preview: false });
+    },
+  );
 }

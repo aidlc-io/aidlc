@@ -122,7 +122,7 @@ export function registerDashboard(program: Command): void {
           path.join(root, RUNS_GLOB),
           path.join(root, WORKSPACE_YML),
           path.join(root, 'docs/epics/*/state.json'),  // common default
-          path.join(root, 'docs/sdlc/epics/*/state.json'),
+          path.join(root, 'docs/epics/*/state.json'),
         ],
         { persistent: true, ignoreInitial: true,
           awaitWriteFinish: { stabilityThreshold: 80, pollInterval: 30 } },

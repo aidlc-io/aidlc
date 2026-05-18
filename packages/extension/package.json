@@ -66,6 +66,12 @@
         "category": "AIDLC"
       },
       {
+        "command": "aidlc.openGettingStarted",
+        "title": "Open Getting Started Guide",
+        "icon": "$(book)",
+        "category": "AIDLC"
+      },
+      {
         "command": "aidlc.addSkill",
         "title": "Add Skill (template / paste / upload / blank)",
         "icon": "$(file-code)",
@@ -104,6 +110,18 @@
       {
         "command": "aidlc.deletePreset",
         "title": "Delete Saved Template",
+        "icon": "$(trash)",
+        "category": "AIDLC"
+      },
+      {
+        "command": "aidlc.installWorkflowGlobals",
+        "title": "Install Workflow Globals (~/.claude/agents + skills)",
+        "icon": "$(cloud-download)",
+        "category": "AIDLC"
+      },
+      {
+        "command": "aidlc.uninstallWorkflowGlobals",
+        "title": "Uninstall Workflow Globals (run before removing extension)",
         "icon": "$(trash)",
         "category": "AIDLC"
       },
@@ -301,8 +319,10 @@
     ]
   },
   "scripts": {
-    "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./",
+    "compile": "tsc -p ./ && vite build",
+    "watch": "trap 'kill 0' SIGINT EXIT; pnpm watch:tsc & pnpm watch:webviews & wait",
+    "watch:tsc": "tsc -watch -p ./",
+    "watch:webviews": "vite build --watch",
     "typecheck": "tsc -p ./ --noEmit && tsc -p ./tsconfig.webview.json --noEmit",
     "bundle:webviews": "vite build",
     "bundle": "esbuild src/extension.ts --bundle --platform=node --target=node18 --external:vscode --format=cjs --outfile=out/extension.js",

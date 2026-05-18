@@ -4,11 +4,13 @@ import type { WorkspaceState, WorkspaceView } from '@/lib/types';
 import { BuilderView } from './BuilderView';
 import { EpicsView } from './EpicsView';
 import { ThemeToggle } from './ThemeToggle';
+import { InitWorkflowModal } from './InitWorkflowModal';
 import { onHostMessage, postMessage } from '@/lib/bridge';
 
 export function WorkspaceShell({ state }: { state: WorkspaceState | null }) {
   const initial = state?.initialView ?? 'builder';
   const [view, setView] = useState<WorkspaceView>(initial);
+  const [initOpen, setInitOpen] = useState(false);
 
   // Host can switch the view at runtime via openBuilder/openEpicsList.
   useEffect(() => {
@@ -63,7 +65,7 @@ export function WorkspaceShell({ state }: { state: WorkspaceState | null }) {
                 <>
                   <button
                     type="button"
-                    onClick={() => postMessage({ type: 'init' })}
+                    onClick={() => setInitOpen(true)}
                     className="rounded-md bg-primary px-3.5 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90"
                   >
                     Init Workspace
@@ -80,6 +82,17 @@ export function WorkspaceShell({ state }: { state: WorkspaceState | null }) {
             </div>
           </div>
         </div>
+        {initOpen && (
+          <InitWorkflowModal
+            onPick={(workflowId) =>
+              // `__empty__` sentinel tells the host to skip its own picker
+              // and scaffold an empty workspace. Any other string is a
+              // built-in workflow id to apply.
+              postMessage({ type: 'init', workflowId: workflowId ?? '__empty__' })
+            }
+            onClose={() => setInitOpen(false)}
+          />
+        )}
       </div>
     );
   }

@@ -47,7 +47,7 @@ pipelines:
 
 state:
   entity: epic
-  root: docs/sdlc/epics
+  root: docs/epics
   schema:
     status: pending
     phase: string
@@ -56,7 +56,7 @@ sidebar:
   views:
     - type: file-tree
       label: SDLC Epics
-      glob: "docs/sdlc/epics/*/*.md"
+      glob: "docs/epics/*/*.md"
       group_by: parent_dir
     - type: agents-list
     - type: run-history

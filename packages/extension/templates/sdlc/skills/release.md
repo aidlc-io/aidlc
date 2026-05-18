@@ -18,9 +18,9 @@ Read and execute `.claude/skills/_gate-check.md`. This skill = phase `release`, 
    ```bash
    make release-checklist VER=$0
    ```
-   (or copy `docs/sdlc/templates/RELEASE-CHECKLIST-TEMPLATE.md` to `docs/sdlc/releases/v$0-release-checklist.md`)
+   (or copy `docs/templates/RELEASE-CHECKLIST-TEMPLATE.md` to `docs/releases/v$0-release-checklist.md`)
 
-2. Read the created checklist at `docs/sdlc/releases/v$0-release-checklist.md`
+2. Read the created checklist at `docs/releases/v$0-release-checklist.md`
 
 3. Gather release content
    ```bash
@@ -30,7 +30,7 @@ Read and execute `.claude/skills/_gate-check.md`. This skill = phase `release`, 
    # Epic keys referenced in commits
    git log $(git describe --tags --abbrev=0)..HEAD --pretty="%s" --no-merges | grep -oE '{{EPIC_PREFIX}}-[0-9]+' | sort -u
    ```
-   - For each epic, check its UAT / doc-sync status in `docs/sdlc/epics/{{EPIC_PREFIX}}-XXXX/`
+   - For each epic, check its UAT / doc-sync status in `docs/epics/{{EPIC_PREFIX}}-XXXX/`
    - Capture breaking changes, new config / env vars, new dependencies
 
 4. Fill the release checklist
@@ -93,6 +93,6 @@ Keep it short, value-focused, no jargon, no epic keys. Translate to every suppor
 
 ## Reference
 
-- Rollback: `docs/sdlc/templates/ROLLBACK-PLAYBOOK.md`
-- Monitoring: `docs/sdlc/MONITORING-GUIDE.md` (or project equivalent)
-- Release checklist template: `docs/sdlc/templates/RELEASE-CHECKLIST-TEMPLATE.md`
+- Rollback: `docs/templates/ROLLBACK-PLAYBOOK.md`
+- Monitoring: `docs/MONITORING-GUIDE.md` (or project equivalent)
+- Release checklist template: `docs/templates/RELEASE-CHECKLIST-TEMPLATE.md`

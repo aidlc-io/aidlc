@@ -14,8 +14,8 @@ Read and execute `.claude/skills/_gate-check.md`. This skill = phase `plan`, epi
 
 ## Steps
 
-1. Read the epic doc at `docs/sdlc/epics/$0/$0.md` to understand scope, target user, and user stories
-2. Read the PRD template at `docs/sdlc/epics/$0/PRD.md` (already scaffolded) or `docs/sdlc/templates/PRD-TEMPLATE.md`
+1. Read the epic doc at `docs/epics/$0/$0.md` to understand scope, target user, and user stories
+2. Read the PRD template at `docs/epics/$0/PRD.md` (already scaffolded) or `docs/templates/PRD-TEMPLATE.md`
 3. Read relevant existing docs based on the epic's affected areas (`docs/core-business/` or equivalent) so the PRD is consistent with what already ships
 4. Check related / predecessor epics for dependencies or scope overlap
 5. Fill the PRD with the sections below — each answers a specific question downstream work will ask
@@ -79,4 +79,4 @@ Read and execute `.claude/skills/_gate-check.md`. This skill = phase `plan`, epi
 
 ## Output
 
-Write the completed PRD to `docs/sdlc/epics/$0/PRD.md`.
+Write the completed PRD to `docs/epics/$0/PRD.md`.

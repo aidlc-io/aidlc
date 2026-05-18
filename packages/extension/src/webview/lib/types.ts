@@ -198,9 +198,14 @@ export interface AgentSummary {
   scope: AssetScope;
   filePath: string;
   description?: string;
+  /** Primary skill id (first entry) — kept for back-compat. */
   skill?: string;
+  /** All skills the agent can use. */
+  skills?: string[];
   model?: string;
   integrations?: string[];
+  /** Human label of the built-in preset that contributed this entry (e.g. "SDLC Pipeline"). Absent for user-created entries. */
+  builtinFrom?: string;
 }
 
 export interface SkillSummary {
@@ -208,14 +213,19 @@ export interface SkillSummary {
   scope: AssetScope;
   filePath: string;
   description?: string;
+  builtinFrom?: string;
 }
 
 export interface PipelineStepSummary {
   agent: string;
   name?: string;
+  /** Skills this step makes available to the agent. */
+  skills?: string[];
   enabled: boolean;
   produces: string[];
   requires: string[];
+  /** Agent ids this step waits for. Non-empty turns the workflow into a DAG. */
+  depends_on?: string[];
   human_review: boolean;
   auto_review: boolean;
   auto_review_runner?: string;
@@ -226,6 +236,8 @@ export interface PipelineSummary {
   steps: PipelineStepSummary[];
   on_failure: 'stop' | 'continue';
   builtin?: boolean;
+  /** Human label for built-in pipelines (e.g. "iOS Native Pipeline"). User-defined pipelines leave this undefined. */
+  name?: string;
 }
 
 export interface AutoReviewVerdict {
@@ -295,6 +307,13 @@ export interface EpicUsage {
 
 export interface EpicStepDetailFull {
   agent: string;
+  /** Phase id / slash command name (e.g. `plan`, `test-plan`) when the
+   *  pipeline step carries a separate `name:` distinct from `agent:`. */
+  stepName?: string;
+  /** Basename of the step's first `produces:` path — the file the user
+   *  expects to see written by this step (e.g. `PRD.md`). Falls back to
+   *  the agent meta artifact when the step doesn't declare one. */
+  artifact?: string;
   status: 'pending' | 'in_progress' | 'done' | 'failed';
   runStatus: StepStatus | null;
   isCurrentRunStep: boolean;
@@ -302,6 +321,8 @@ export interface EpicStepDetailFull {
   autoReviewVerdict?: AutoReviewVerdict;
   stepHasAutoReview: boolean;
   stepHasHumanReview: boolean;
+  /** Agent ids this step waits for (DAG edges) — empty for sequential. */
+  dependsOn?: string[];
   startedAt?: string;
   finishedAt?: string;
   /** Append-only timeline of significant transitions (reject / rerun /

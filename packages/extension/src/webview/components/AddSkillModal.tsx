@@ -26,12 +26,11 @@ interface Props {
 
 const SCOPE_OPTIONS: Array<{ value: AssetScope; label: string; hint: string }> = [
   { value: 'project', label: 'project', hint: '.claude/skills/{id}.md (file only)' },
-  { value: 'aidlc', label: 'aidlc', hint: '.aidlc/skills/{id}.md + workspace.yaml' },
   { value: 'global', label: 'global', hint: '~/.claude/skills/{id}.md (file only)' },
 ];
 
 export function AddSkillModal({ takenIds, templates, onSubmit, onClose }: Props) {
-  const [scope, setScope] = useState<AssetScope>('aidlc');
+  const [scope, setScope] = useState<AssetScope>('project');
   const [id, setId] = useState('');
   const [sourceKind, setSourceKind] = useState<SkillSourceKind>('template');
   const [templateId, setTemplateId] = useState<string>(templates[0]?.id ?? '');

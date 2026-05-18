@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { onHostMessage } from '@/lib/bridge';
+import { onHostMessage, getPersistedUi, setPersistedUi } from '@/lib/bridge';
 import { Plus, FileCode2, Layers, Pencil, Copy, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { WorkspaceState, AgentSummary, SkillSummary, AssetScope } from '@/lib/types';
@@ -14,14 +14,6 @@ import { StartEpicModal } from './StartEpicModal';
 import { postMessage } from '@/lib/bridge';
 
 type BuilderTab = 'workflows' | 'agents' | 'skills' | 'epics';
-
-const SCOPE_ORDER: AssetScope[] = ['project', 'aidlc', 'global'];
-
-const SCOPE_LABEL: Record<AssetScope, string> = {
-  project: 'Project',
-  aidlc: 'AIDLC',
-  global: 'Global',
-};
 
 export function BuilderView({ state }: { state: WorkspaceState }) {
   const [tab, setTab] = useState<BuilderTab>('agents');
@@ -45,8 +37,12 @@ export function BuilderView({ state }: { state: WorkspaceState }) {
     ? 'Add Skill'
     : 'Start Epic';
 
-  const aidlcAgents = useMemo(
-    () => state.agents.filter((a) => a.scope === 'aidlc'),
+  // Agent picker shown in AddPipelineModal — project + global only.
+  // Mirrors the Agents tab so the user picks from the same set they see
+  // in the Builder, not the workspace.yaml-only AIDLC layer (which is
+  // hidden from the UI for this exact reason).
+  const pipelineAgents = useMemo(
+    () => state.agents.filter((a) => a.scope === 'project' || a.scope === 'global'),
     [state.agents],
   );
 
@@ -122,7 +118,7 @@ export function BuilderView({ state }: { state: WorkspaceState }) {
         ))}
       </div>
 
-      {tab === 'agents' && <AgentsByScope agents={state.agents} />}
+      {tab === 'agents' && <AgentsByScope agents={state.agents} skills={state.skills} />}
       {tab === 'skills' && <SkillsByScope skills={state.skills} />}
       {tab === 'workflows' && <PipelinesGrid state={state} />}
       {tab === 'epics' && <EpicsMiniGrid state={state} />}
@@ -130,7 +126,7 @@ export function BuilderView({ state }: { state: WorkspaceState }) {
       {addPipelineOpen && (
         <PipelineModal
           mode="add"
-          agents={aidlcAgents}
+          agents={pipelineAgents}
           existingPipelineIds={state.pipelines.map((p) => p.id)}
           onSubmit={(draft) =>
             postMessage({ type: 'addPipelineInline', draft })
@@ -150,6 +146,8 @@ export function BuilderView({ state }: { state: WorkspaceState }) {
         <AddAgentModal
           takenIds={allAgentIds}
           skills={state.skills}
+          skillTemplates={state.skillTemplates}
+          takenSkillIds={allSkillIds}
           onSubmit={(draft) => postMessage({ type: 'addAgentInline', draft })}
           onClose={() => setAddAgentOpen(false)}
         />
@@ -169,58 +167,126 @@ export function BuilderView({ state }: { state: WorkspaceState }) {
   );
 }
 
-function AgentsByScope({ agents }: { agents: AgentSummary[] }) {
+function pickInitialScope<T extends { scope: AssetScope }>(
+  items: T[],
+  persisted: AssetScope | undefined,
+): AssetScope {
+  // AIDLC scope is intentionally hidden from the picker dropdown — never
+  // return it here, otherwise the dropdown shows the wrong label (its
+  // option doesn't exist) and the list filter quietly displays the
+  // hidden bucket. Picker has only project + global now.
+  if (persisted === 'project' || persisted === 'global') {
+    if (items.some((i) => i.scope === persisted)) { return persisted; }
+  }
+  if (items.some((i) => i.scope === 'project')) { return 'project'; }
+  return 'global';
+}
+
+function ScopeFilter({
+  scope, counts, onChange,
+}: {
+  scope: AssetScope;
+  counts: Record<AssetScope, number>;
+  onChange: (next: AssetScope) => void;
+}) {
+  return (
+    <div className="mb-3 flex items-center gap-2">
+      <label htmlFor="scope-filter" className="text-xs font-medium text-muted-foreground">
+        Source
+      </label>
+      <select
+        id="scope-filter"
+        value={scope}
+        onChange={(e) => onChange(e.target.value as AssetScope)}
+        className="rounded-md border border-border bg-card px-2 py-1 text-xs text-foreground focus:border-primary focus:outline-none"
+      >
+        <option value="project">Project — .claude/ ({counts.project})</option>
+        <option value="global">Global — ~/.claude/ ({counts.global})</option>
+      </select>
+    </div>
+  );
+}
+
+function AgentsByScope({ agents, skills }: { agents: AgentSummary[]; skills: SkillSummary[] }) {
   const grouped = useMemo(() => groupByScope(agents), [agents]);
-  // Rename uniqueness is checked against the workspace.yaml `agents:` list,
-  // which is exactly the AIDLC-scope subset.
+  const counts = { project: grouped.project.length, aidlc: grouped.aidlc.length, global: grouped.global.length };
+  const [scope, setScope] = useState<AssetScope>(() =>
+    pickInitialScope(agents, getPersistedUi<PersistedBuilderUi>()?.agentScope),
+  );
+  useEffect(() => {
+    if (agents.length === 0) { return; }
+    if (grouped[scope].length === 0) {
+      setScope(pickInitialScope(agents, getPersistedUi<PersistedBuilderUi>()?.agentScope));
+    }
+  }, [agents, grouped, scope]);
+
   const aidlcIds = useMemo(
     () => agents.filter((a) => a.scope === 'aidlc').map((a) => a.id),
     [agents],
   );
+  if (agents.length === 0) { return <EmptyHint kind="agents" />; }
+
+  const onChange = (next: AssetScope) => {
+    setScope(next);
+    const prev = getPersistedUi<PersistedBuilderUi>() ?? {};
+    setPersistedUi<PersistedBuilderUi>({ ...prev, agentScope: next });
+  };
+
+  const list = grouped[scope];
   return (
     <>
-      {SCOPE_ORDER.map((scope) => {
-        const list = grouped[scope] || [];
-        if (list.length === 0) { return null; }
-        return (
-          <section key={scope}>
-            <ScopeHeader scope={scope} count={list.length} />
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {list.map((a) => (
-                <AgentCard key={`${a.scope}/${a.id}`} agent={a} allAgentIds={aidlcIds} />
-              ))}
-            </div>
-          </section>
-        );
-      })}
-      {agents.length === 0 && <EmptyHint kind="agents" />}
+      <ScopeFilter scope={scope} counts={counts} onChange={onChange} />
+      {list.length === 0 ? (
+        <EmptyHint kind="agents" />
+      ) : (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {list.map((a) => (
+            <AgentCard key={`${a.scope}/${a.id}`} agent={a} allAgentIds={aidlcIds} skills={skills} />
+          ))}
+        </div>
+      )}
     </>
   );
 }
 
 function SkillsByScope({ skills }: { skills: SkillSummary[] }) {
   const grouped = useMemo(() => groupByScope(skills), [skills]);
+  const counts = { project: grouped.project.length, aidlc: grouped.aidlc.length, global: grouped.global.length };
+  const [scope, setScope] = useState<AssetScope>(() =>
+    pickInitialScope(skills, getPersistedUi<PersistedBuilderUi>()?.skillScope),
+  );
+  useEffect(() => {
+    if (skills.length === 0) { return; }
+    if (grouped[scope].length === 0) {
+      setScope(pickInitialScope(skills, getPersistedUi<PersistedBuilderUi>()?.skillScope));
+    }
+  }, [skills, grouped, scope]);
+
   const aidlcIds = useMemo(
     () => skills.filter((s) => s.scope === 'aidlc').map((s) => s.id),
     [skills],
   );
+  if (skills.length === 0) { return <EmptyHint kind="skills" />; }
+
+  const onChange = (next: AssetScope) => {
+    setScope(next);
+    const prev = getPersistedUi<PersistedBuilderUi>() ?? {};
+    setPersistedUi<PersistedBuilderUi>({ ...prev, skillScope: next });
+  };
+
+  const list = grouped[scope];
   return (
     <>
-      {SCOPE_ORDER.map((scope) => {
-        const list = grouped[scope] || [];
-        if (list.length === 0) { return null; }
-        return (
-          <section key={scope}>
-            <ScopeHeader scope={scope} count={list.length} />
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {list.map((s) => (
-                <SkillCard key={`${s.scope}/${s.id}`} skill={s} allSkillIds={aidlcIds} />
-              ))}
-            </div>
-          </section>
-        );
-      })}
-      {skills.length === 0 && <EmptyHint kind="skills" />}
+      <ScopeFilter scope={scope} counts={counts} onChange={onChange} />
+      {list.length === 0 ? (
+        <EmptyHint kind="skills" />
+      ) : (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {list.map((s) => (
+            <SkillCard key={`${s.scope}/${s.id}`} skill={s} allSkillIds={aidlcIds} />
+          ))}
+        </div>
+      )}
     </>
   );
 }
@@ -248,9 +314,24 @@ function SkillCard({ skill, allSkillIds }: { skill: SkillSummary; allSkillIds: s
     >
       <FileCode2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
       <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-semibold text-primary">{skill.id}</div>
+        <div className="flex items-center gap-2">
+          <div className="truncate text-sm font-semibold text-primary">{skill.id}</div>
+          {skill.builtinFrom && (
+            <span
+              title={`Installed by the built-in preset: ${skill.builtinFrom}`}
+              className="inline-flex shrink-0 items-center rounded border border-info/30 bg-info/15 px-1.5 py-0.5 text-[9px] font-bold tracking-wider text-info"
+            >
+              BUILT-IN
+            </span>
+          )}
+        </div>
         {skill.description && (
           <p className="mt-0.5 truncate text-xs text-muted-foreground">{skill.description}</p>
+        )}
+        {skill.builtinFrom && (
+          <p className="mt-0.5 truncate text-[10px] italic text-muted-foreground">
+            from {skill.builtinFrom}
+          </p>
         )}
       </div>
       {isAidlc && (
@@ -309,14 +390,91 @@ function SkillCard({ skill, allSkillIds }: { skill: SkillSummary; allSkillIds: s
   );
 }
 
+const DEFAULT_PIPELINE_ID = 'sdlc-full';
+
+interface PersistedBuilderUi {
+  workflowDomain?: string;
+  agentScope?: AssetScope;
+  skillScope?: AssetScope;
+}
+
+function pickInitialPipelineId(pipelines: WorkspaceState['pipelines']): string {
+  if (pipelines.length === 0) { return ''; }
+  const persisted = getPersistedUi<PersistedBuilderUi>()?.workflowDomain;
+  if (persisted && pipelines.some((p) => p.id === persisted)) { return persisted; }
+  if (pipelines.some((p) => p.id === DEFAULT_PIPELINE_ID)) { return DEFAULT_PIPELINE_ID; }
+  return pipelines[0].id;
+}
+
 function PipelinesGrid({ state }: { state: WorkspaceState }) {
+  const [selectedId, setSelectedId] = useState(() => pickInitialPipelineId(state.pipelines));
+
+  // Re-resolve the selection when the pipeline list changes (e.g. a workflow
+  // was just applied / removed). Falls back through persisted → sdlc default →
+  // first available so the dropdown never points at a stale id.
+  useEffect(() => {
+    if (state.pipelines.length === 0) { return; }
+    if (!state.pipelines.some((p) => p.id === selectedId)) {
+      setSelectedId(pickInitialPipelineId(state.pipelines));
+    }
+  }, [state.pipelines, selectedId]);
+
+  const { builtinOptions, customOptions } = useMemo(() => {
+    const builtin = state.pipelines.filter((p) => p.builtin === true);
+    const custom = state.pipelines.filter((p) => p.builtin !== true);
+    return { builtinOptions: builtin, customOptions: custom };
+  }, [state.pipelines]);
+
   if (state.pipelines.length === 0) { return <EmptyHint kind="pipelines" />; }
-  const aidlcAgents = state.agents.filter((a) => a.scope === 'aidlc');
+  // PipelineCard renders existing steps + lets the user swap the agent on
+  // each row. Existing built-in pipelines reference workspace.yaml-only
+  // AIDLC agents (`plan`, `design`, …); new ones reference file-based
+  // project/global agents. Pass the union so both render correctly.
+  const allAgents = state.agents;
+  const selected = state.pipelines.find((p) => p.id === selectedId) ?? state.pipelines[0];
+
+  const onChange = (id: string) => {
+    setSelectedId(id);
+    const prev = getPersistedUi<PersistedBuilderUi>() ?? {};
+    setPersistedUi<PersistedBuilderUi>({ ...prev, workflowDomain: id });
+  };
+
   return (
     <div className="space-y-3">
-      {state.pipelines.map((p) => (
-        <PipelineCard key={p.id} pipeline={p} agents={aidlcAgents} runIds={state.runIds} />
-      ))}
+      <div className="flex items-center gap-2">
+        <label htmlFor="pipeline-domain" className="text-xs font-medium text-muted-foreground">
+          Domain
+        </label>
+        <select
+          id="pipeline-domain"
+          value={selected.id}
+          onChange={(e) => onChange(e.target.value)}
+          className="rounded-md border border-border bg-card px-2 py-1 text-xs text-foreground focus:border-primary focus:outline-none"
+        >
+          {builtinOptions.length > 0 && (
+            <optgroup label="Built-in workflows">
+              {builtinOptions.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name ?? p.id}
+                </option>
+              ))}
+            </optgroup>
+          )}
+          {customOptions.length > 0 && (
+            <optgroup label="Your workflows">
+              {customOptions.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name ?? p.id}
+                </option>
+              ))}
+            </optgroup>
+          )}
+        </select>
+        <span className="text-[11px] text-muted-foreground">
+          {state.pipelines.length} available
+        </span>
+      </div>
+      <PipelineCard pipeline={selected} agents={allAgents} runIds={state.runIds} />
     </div>
   );
 }
@@ -359,19 +517,6 @@ function EpicsMiniGrid({ state }: { state: WorkspaceState }) {
   );
 }
 
-function ScopeHeader({ scope, count }: { scope: AssetScope; count: number }) {
-  return (
-    <div className="mb-3 flex items-center gap-2">
-      <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-        {SCOPE_LABEL[scope]}
-      </span>
-      <span className="rounded bg-secondary px-1.5 py-0.5 text-[10px] font-bold text-muted-foreground">
-        {count}
-      </span>
-    </div>
-  );
-}
-
 function groupByScope<T extends { scope: AssetScope }>(items: T[]): Record<AssetScope, T[]> {
   const out: Record<AssetScope, T[]> = { project: [], aidlc: [], global: [] };
   for (const it of items) { out[it.scope].push(it); }
@@ -379,6 +524,20 @@ function groupByScope<T extends { scope: AssetScope }>(items: T[]): Record<Asset
 }
 
 function EmptyHint({ kind }: { kind: 'agents' | 'skills' | 'pipelines' | 'epics' }) {
+  if (kind === 'pipelines') {
+    return (
+      <div className="rounded-md border border-dashed border-border bg-surface/50 p-8 text-center text-xs text-muted-foreground">
+        <div className="mb-2 text-sm font-medium text-foreground">No pipelines yet.</div>
+        <div className="leading-relaxed">
+          Load a common workflow from the{' '}
+          <span className="font-medium text-foreground">Workflows</span> section in the
+          left sidebar, or click{' '}
+          <span className="font-medium text-foreground">Add Pipeline</span> at the
+          top-right to build your own.
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="rounded-md border border-dashed border-border bg-surface/50 p-6 text-center text-xs text-muted-foreground">
       No {kind} yet.

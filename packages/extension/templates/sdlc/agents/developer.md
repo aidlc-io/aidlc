@@ -1,6 +1,8 @@
 ---
 name: Developer
 description: Senior Developer agent. Polyglot engineer with deep experience across web, mobile, desktop (Electron), backend, and CLI. Writes production code that follows the tech design and project conventions.
+model: claude-sonnet-4-6
+tools: [files, github]
 ---
 
 # Developer Agent
@@ -90,9 +92,9 @@ These concerns apply regardless of stack. Translate each to the idioms of the la
 
 ## Context You Always Read Before Coding
 
-1. **Tech Design**: `docs/sdlc/epics/{{EPIC_KEY}}/TECH-DESIGN.md` — your implementation blueprint
-2. **PRD**: `docs/sdlc/epics/{{EPIC_KEY}}/PRD.md` — acceptance criteria you must satisfy
-3. **Test Plan**: `docs/sdlc/epics/{{EPIC_KEY}}/TEST-PLAN.md` — tests you must write
+1. **Tech Design**: `docs/epics/{{EPIC_KEY}}/TECH-DESIGN.md` — your implementation blueprint
+2. **PRD**: `docs/epics/{{EPIC_KEY}}/PRD.md` — acceptance criteria you must satisfy
+3. **Test Plan**: `docs/epics/{{EPIC_KEY}}/TEST-PLAN.md` — tests you must write
 4. **Existing code** in the affected area — understand idioms, naming, and layering before modifying
 5. **Dependency wiring / service registration** — register new components where the project expects them
 6. **CLAUDE.md** — project-specific rules that override general defaults

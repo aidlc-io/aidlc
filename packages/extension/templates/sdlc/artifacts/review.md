@@ -1,62 +1,32 @@
-# Code Review Approval — [Epic Title]
+# Review — {{EPIC_ID}}
 
-**Epic ID:** `$EPIC_ID`
-**Reviewer:** Auto-Reviewer
-**Status:** Pending
-**Created:** `$DATE`
+> Auto-reviewer output validating the implementation diff against the PRD
+> and Tech Design. Sequential SDLC phase, not run in the parallel workflow.
 
----
+## Acceptance criteria check
 
-## 1. Review Summary
+| AC | Covered by | Result | Notes |
+|----|------------|--------|-------|
+|  |  | ✅ / ⚠️ / ❌ |  |
 
-> *One-paragraph verdict.*
+## Architecture check
 
-**Verdict:** ⬜ Pass &nbsp;&nbsp; ⬜ Reject
+- Followed Tech Design's file impact list? Yes / Partial / No
+- New dependencies introduced? Justified?
+- Public API changes documented?
 
-## 2. Acceptance Criteria Validation
+## Test coverage
 
-| AC | Description | Status | Evidence |
-|----|-------------|--------|----------|
-| AC-01 | … | ⬜ Pass / ⬜ Fail | … |
-| AC-02 | … | ⬜ Pass / ⬜ Fail | … |
+- Unit tests added/updated for new logic?
+- Integration tests for cross-module changes?
+- UI tests for user-visible changes?
 
-## 3. Architecture Compliance
+## Risks
 
-| Check | Status | Notes |
-|-------|--------|-------|
-| Follows tech design patterns | ⬜ | |
-| No unapproved new dependencies | ⬜ | |
-| No silent behavior changes outside scope | ⬜ | |
-| DI plan respected | ⬜ | |
+- Migrations, feature flags, rollout sequencing.
+- Observable behavior changes for existing users.
 
-## 4. Code Quality
+## Verdict
 
-| Check | Status | Notes |
-|-------|--------|-------|
-| No obvious security issues | ⬜ | |
-| Error handling adequate | ⬜ | |
-| Unit tests present and meaningful | ⬜ | |
-| No dead code introduced | ⬜ | |
-
-## 5. Issues Found
-
-### Critical (must fix before approval)
-
-| # | File | Issue | Required action |
-|---|------|-------|----------------|
-|   |      |       |                |
-
-### Non-critical (can follow-up)
-
-| # | File | Issue | Suggested action |
-|---|------|-------|-----------------|
-|   |      |       |                 |
-
-## 6. Final Decision
-
-- [ ] **APPROVED** — All ACs pass, no critical issues.
-- [ ] **REJECTED** — See issues above. Resubmit after fixes.
-
-**Reviewer notes:**
-
-> *(free text)*
+- [ ] PASS — ready for QA execution
+- [ ] REJECT — see comments above; bounce back to Implement

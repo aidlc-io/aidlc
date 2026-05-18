@@ -14,9 +14,9 @@ Read and execute `.claude/skills/_gate-check.md`. This skill = phase `execute-te
 
 ## Steps
 
-1. Read the epic: `docs/sdlc/epics/$0/$0.md`
-2. Read the PRD: `docs/sdlc/epics/$0/PRD.md` — acceptance criteria drive test scenarios
-3. Read the template: `docs/sdlc/epics/$0/TEST-SCRIPT.md` or `docs/sdlc/templates/TEST-SCRIPT-TEMPLATE.md`
+1. Read the epic: `docs/epics/$0/$0.md`
+2. Read the PRD: `docs/epics/$0/PRD.md` — acceptance criteria drive test scenarios
+3. Read the template: `docs/epics/$0/TEST-SCRIPT.md` or `docs/templates/TEST-SCRIPT-TEMPLATE.md`
 4. Fill the test script with the sections below, adapted to the product surface
 
 ## Test Script Contents
@@ -71,4 +71,4 @@ Pick the ones that apply to this product:
 
 ## Output
 
-Write the completed test script to `docs/sdlc/epics/$0/TEST-SCRIPT.md`.
+Write the completed test script to `docs/epics/$0/TEST-SCRIPT.md`.
