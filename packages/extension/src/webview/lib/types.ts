@@ -76,6 +76,10 @@ export interface PipelineRef {
 export interface SkillTemplateRef {
   id: string;
   description: string;
+  /** Coarse grouping used by the AddSkill picker to split a long flat
+   *  list into filterable category tabs (general / frontend / backend
+   *  / mobile / devops / data / refactor / docs). */
+  category: string;
 }
 
 export type McpStatus = 'connected' | 'needs_auth' | 'failed' | 'unknown';
