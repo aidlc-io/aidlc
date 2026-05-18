@@ -21,6 +21,11 @@ export interface PipelineStepDraft {
   human_review: boolean;
   auto_review: boolean;
   auto_review_runner?: string;
+  /** Phase ids (step.name) this step waits for in DAG mode. Carried verbatim
+   *  through the modal so a save round-trip doesn't wipe the DAG shape. The
+   *  modal doesn't let the user edit deps yet — the DAG view on the card
+   *  is where parallel structure changes happen. */
+  depends_on?: string[];
 }
 
 interface Props {
@@ -71,6 +76,12 @@ export function PipelineModal({
 
   const stepsError =
     steps.length < 2 ? 'Pick at least 2 agents (a single-step pipeline is just an agent)' : null;
+
+  // DAG mode = at least one step declares `depends_on`. Up/down arrows are
+  // hidden in this mode because array order doesn't drive the visual
+  // layout — `depends_on` does, and the DAG view on the card is where
+  // parallel structure gets edited.
+  const isDag = steps.some((s) => (s.depends_on?.length ?? 0) > 0);
   const runnerError = steps.find((s) => s.auto_review && !(s.auto_review_runner ?? '').trim())
     ? 'Auto-review steps need a runner path'
     : null;
@@ -91,6 +102,7 @@ export function PipelineModal({
           human_review: s.human_review,
           auto_review: s.auto_review,
           auto_review_runner: s.auto_review ? (s.auto_review_runner ?? '').trim() : undefined,
+          depends_on: s.depends_on && s.depends_on.length > 0 ? s.depends_on : undefined,
         };
       }),
     });
@@ -195,6 +207,7 @@ export function PipelineModal({
                   idx={i}
                   total={steps.length}
                   agents={agents}
+                  isDag={isDag}
                   onRemove={() => removeAt(i)}
                   onMoveUp={() => moveUp(i)}
                   onMoveDown={() => moveDown(i)}
@@ -292,6 +305,7 @@ function StepRow({
   idx,
   total,
   agents,
+  isDag,
   onRemove,
   onMoveUp,
   onMoveDown,
@@ -301,6 +315,10 @@ function StepRow({
   idx: number;
   total: number;
   agents: AgentSummary[];
+  /** When true, the pipeline is a DAG — array order doesn't drive layout,
+   *  so up/down arrows are hidden and parallel relationships are surfaced
+   *  via a `∥` badge instead. */
+  isDag: boolean;
   onRemove: () => void;
   onMoveUp: () => void;
   onMoveDown: () => void;
@@ -366,24 +384,28 @@ function StepRow({
           }
           label="Auto"
         />
-        <button
-          type="button"
-          onClick={onMoveUp}
-          disabled={idx === 0}
-          title="Move up"
-          className="grid h-5 w-5 place-items-center rounded text-muted-foreground hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-30"
-        >
-          <ArrowUp className="h-3 w-3" />
-        </button>
-        <button
-          type="button"
-          onClick={onMoveDown}
-          disabled={idx === total - 1}
-          title="Move down"
-          className="grid h-5 w-5 place-items-center rounded text-muted-foreground hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-30"
-        >
-          <ArrowDown className="h-3 w-3" />
-        </button>
+        {!isDag && (
+          <>
+            <button
+              type="button"
+              onClick={onMoveUp}
+              disabled={idx === 0}
+              title="Move up"
+              className="grid h-5 w-5 place-items-center rounded text-muted-foreground hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-30"
+            >
+              <ArrowUp className="h-3 w-3" />
+            </button>
+            <button
+              type="button"
+              onClick={onMoveDown}
+              disabled={idx === total - 1}
+              title="Move down"
+              className="grid h-5 w-5 place-items-center rounded text-muted-foreground hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-30"
+            >
+              <ArrowDown className="h-3 w-3" />
+            </button>
+          </>
+        )}
         <button
           type="button"
           onClick={onRemove}
@@ -393,6 +415,25 @@ function StepRow({
           <X className="h-3 w-3" />
         </button>
       </div>
+      {/* DAG indicator — parallel structure isn't editable from this modal,
+          but we surface what the step waits on so the user understands why
+          up/down arrows disappeared and which other steps it runs alongside. */}
+      {step.depends_on && step.depends_on.length > 0 && (
+        <div
+          className="ml-7 mt-1.5 flex flex-wrap items-center gap-1 text-[10.5px] text-muted-foreground"
+          title="DAG edges — edit parallel structure from the workflow view on the card, not this modal"
+        >
+          <span className="font-mono opacity-70">∥ after</span>
+          {step.depends_on.map((dep) => (
+            <span
+              key={dep}
+              className="rounded border border-border bg-card px-1.5 py-0.5 font-mono text-[10px] text-foreground"
+            >
+              {dep}
+            </span>
+          ))}
+        </div>
+      )}
       {/* Skill picker — multi-select scoped to whatever the agent can use.
           Empty list means "agent has no declared skills"; the user can
           still leave the row blank to inherit the agent's full set at

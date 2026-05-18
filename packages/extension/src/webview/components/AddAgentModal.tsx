@@ -89,13 +89,26 @@ export function AddAgentModal({
     }
   }, [id, nameTouched]);
 
-  // Match the Skills tab — project + global only. AIDLC-scope skills
-  // (workspace.yaml-declared pipeline phases) are an internal binding,
-  // not user-pickable reusable assets.
-  const pickableSkills = useMemo(
-    () => skills.filter((s) => s.scope === 'project' || s.scope === 'global'),
+  // Match the Skills tab — project + global only, split into tabs so the
+  // user picks from one origin at a time instead of scrolling a flat list.
+  // AIDLC-scope skills (workspace.yaml-declared pipeline phases) are an
+  // internal binding, not user-pickable reusable assets.
+  const projectSkills = useMemo(
+    () => skills.filter((s) => s.scope === 'project'),
     [skills],
   );
+  const globalSkills = useMemo(
+    () => skills.filter((s) => s.scope === 'global'),
+    [skills],
+  );
+  const pickableSkills = useMemo(
+    () => [...projectSkills, ...globalSkills],
+    [projectSkills, globalSkills],
+  );
+  const [skillScope, setSkillScope] = useState<'project' | 'global'>(
+    projectSkills.length > 0 ? 'project' : 'global',
+  );
+  const scopedSkills = skillScope === 'project' ? projectSkills : globalSkills;
 
   const trimmedId = id.trim();
   const idError = useMemo(() => {
@@ -224,17 +237,47 @@ export function AddAgentModal({
         </div>
 
         <div>
-          <div className="mb-1 flex items-baseline justify-between gap-2">
+          <div className="mb-1 flex items-center justify-between gap-2">
             <label className="text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">
               Skills <span className="font-normal normal-case tracking-normal text-muted-foreground/80">(optional — inlined into the agent's prompt)</span>
             </label>
-            <button
-              type="button"
-              onClick={() => setSkillModalOpen(true)}
-              className="inline-flex items-center gap-1 text-[10.5px] text-primary hover:text-primary/80"
-            >
-              <Plus className="h-3 w-3" /> add skill
-            </button>
+            <div className="flex items-center gap-2">
+              {/* Scope tabs — same project/global split as the Skills tab so
+                  the user picks from one origin at a time. */}
+              <div className="inline-flex shrink-0 rounded-md border border-border bg-card p-0.5 text-[10.5px]">
+                <button
+                  type="button"
+                  onClick={() => setSkillScope('project')}
+                  className={cn(
+                    'rounded px-2 py-0.5 transition-colors',
+                    skillScope === 'project'
+                      ? 'bg-primary/15 text-primary'
+                      : 'text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  Project <span className="opacity-60">({projectSkills.length})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSkillScope('global')}
+                  className={cn(
+                    'rounded px-2 py-0.5 transition-colors',
+                    skillScope === 'global'
+                      ? 'bg-primary/15 text-primary'
+                      : 'text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  Global <span className="opacity-60">({globalSkills.length})</span>
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSkillModalOpen(true)}
+                className="inline-flex items-center gap-1 text-[10.5px] text-primary hover:text-primary/80"
+              >
+                <Plus className="h-3 w-3" /> add skill
+              </button>
+            </div>
           </div>
           {pickableSkills.length === 0 ? (
             <div className="rounded-md border border-border bg-secondary/30 px-3 py-2 text-[11px] text-muted-foreground">
@@ -242,9 +285,13 @@ export function AddAgentModal({
               lives in the .md file. Click <strong>add skill</strong> above to
               create a reusable skill you can inline here later.
             </div>
+          ) : scopedSkills.length === 0 ? (
+            <div className="rounded-md border border-dashed border-border px-3 py-1.5 text-[11px] italic text-muted-foreground">
+              No skills in this scope yet.
+            </div>
           ) : (
             <div className="flex flex-wrap gap-1.5">
-              {pickableSkills.map((s) => {
+              {scopedSkills.map((s) => {
                 const checked = pickedSkills.includes(s.id);
                 return (
                   <button

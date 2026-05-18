@@ -56,10 +56,24 @@ export function EditAgentModal({ agent, skills, onSubmit, onClose }: Props) {
 
   // Picker mirrors the Skills tab — project + global only. The aidlc-scope
   // entries are internal workspace.yaml bindings, not pickable assets.
-  const pickableSkills = useMemo(
-    () => skills.filter((s) => s.scope === 'project' || s.scope === 'global'),
+  const projectSkills = useMemo(
+    () => skills.filter((s) => s.scope === 'project'),
     [skills],
   );
+  const globalSkills = useMemo(
+    () => skills.filter((s) => s.scope === 'global'),
+    [skills],
+  );
+  const pickableSkills = useMemo(
+    () => [...projectSkills, ...globalSkills],
+    [projectSkills, globalSkills],
+  );
+  // Default the picker to whichever scope has skills (project wins ties).
+  // Persisting per-agent isn't worth the cost — the picker is one click away.
+  const [skillScope, setSkillScope] = useState<'project' | 'global'>(
+    projectSkills.length > 0 ? 'project' : 'global',
+  );
+  const scopedSkills = skillScope === 'project' ? projectSkills : globalSkills;
   const toggleSkill = (skillId: string) => {
     setPickedSkills((cur) =>
       cur.includes(skillId) ? cur.filter((s) => s !== skillId) : [...cur, skillId],
@@ -152,45 +166,84 @@ export function EditAgentModal({ agent, skills, onSubmit, onClose }: Props) {
         </div>
 
         <div>
-          <label className="mb-1 block text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">
-            Skills <span className="font-normal normal-case tracking-normal text-muted-foreground/80">(which reusable skills this agent makes available)</span>
-          </label>
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <label className="text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">
+              Skills <span className="font-normal normal-case tracking-normal text-muted-foreground/80">(which reusable skills this agent makes available)</span>
+            </label>
+            {/* Scope tabs — same project/global split as the Skills tab so
+                the user picks from one origin at a time instead of scrolling
+                a flat list of dozens. AIDLC-scope skills are intentionally
+                hidden (they're internal workspace.yaml bindings). */}
+            <div className="inline-flex shrink-0 rounded-md border border-border bg-card p-0.5 text-[10.5px]">
+              <button
+                type="button"
+                onClick={() => setSkillScope('project')}
+                className={cn(
+                  'rounded px-2 py-0.5 transition-colors',
+                  skillScope === 'project'
+                    ? 'bg-primary/15 text-primary'
+                    : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                Project <span className="opacity-60">({projectSkills.length})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSkillScope('global')}
+                className={cn(
+                  'rounded px-2 py-0.5 transition-colors',
+                  skillScope === 'global'
+                    ? 'bg-primary/15 text-primary'
+                    : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                Global <span className="opacity-60">({globalSkills.length})</span>
+              </button>
+            </div>
+          </div>
           {pickableSkills.length === 0 ? (
             <div className="rounded-md border border-border bg-secondary/30 px-3 py-2 text-[11px] text-muted-foreground">
               No reusable skills yet — create one from the Skills tab and it'll show up here.
             </div>
           ) : (
             <div className="flex flex-wrap gap-1.5">
-              {pickableSkills.map((s) => {
-                const checked = pickedSkills.includes(s.id);
-                return (
-                  <button
-                    key={s.id}
-                    type="button"
-                    onClick={() => toggleSkill(s.id)}
-                    title={s.description ?? ''}
-                    className={cn(
-                      'inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] transition-colors',
-                      checked
-                        ? 'border-primary/60 bg-primary/15 text-primary'
-                        : 'border-border bg-transparent text-foreground hover:border-border/80 hover:bg-accent/40',
-                    )}
-                  >
-                    <span
+              {scopedSkills.length === 0 ? (
+                <div className="rounded-md border border-dashed border-border px-3 py-1.5 text-[11px] italic text-muted-foreground">
+                  No skills in this scope yet.
+                </div>
+              ) : (
+                scopedSkills.map((s) => {
+                  const checked = pickedSkills.includes(s.id);
+                  return (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => toggleSkill(s.id)}
+                      title={s.description ?? ''}
                       className={cn(
-                        'inline-grid h-3 w-3 place-items-center rounded-sm border',
-                        checked ? 'border-primary bg-primary' : 'border-muted-foreground/40',
+                        'inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] transition-colors',
+                        checked
+                          ? 'border-primary/60 bg-primary/15 text-primary'
+                          : 'border-border bg-transparent text-foreground hover:border-border/80 hover:bg-accent/40',
                       )}
                     >
-                      {checked && <span className="h-1.5 w-1.5 rounded-[1px] bg-primary-foreground" />}
-                    </span>
-                    <span className="font-mono">{s.id}</span>
-                  </button>
-                );
-              })}
+                      <span
+                        className={cn(
+                          'inline-grid h-3 w-3 place-items-center rounded-sm border',
+                          checked ? 'border-primary bg-primary' : 'border-muted-foreground/40',
+                        )}
+                      >
+                        {checked && <span className="h-1.5 w-1.5 rounded-[1px] bg-primary-foreground" />}
+                      </span>
+                      <span className="font-mono">{s.id}</span>
+                    </button>
+                  );
+                })
+              )}
               {/* Surface skills currently bound that aren't in the pickable
                   list (e.g. AIDLC built-in phase skills). Lets the user
-                  see + un-toggle them without losing track of the binding. */}
+                  see + un-toggle them without losing track of the binding.
+                  Always visible regardless of the active scope tab. */}
               {pickedSkills
                 .filter((s) => !pickableSkills.some((p) => p.id === s))
                 .map((s) => (
@@ -198,7 +251,7 @@ export function EditAgentModal({ agent, skills, onSubmit, onClose }: Props) {
                     key={s}
                     type="button"
                     onClick={() => toggleSkill(s)}
-                    title={`Existing binding — click to drop`}
+                    title="Existing binding (not in project/global lists) — click to drop"
                     className="inline-flex items-center gap-1.5 rounded-md border border-primary/60 bg-primary/15 px-2 py-1 font-mono text-[11px] text-primary"
                   >
                     <X className="h-2.5 w-2.5" /> {s}

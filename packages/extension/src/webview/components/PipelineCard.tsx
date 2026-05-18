@@ -50,6 +50,10 @@ export function PipelineCard({
       human_review: s.human_review,
       auto_review: s.auto_review,
       auto_review_runner: s.auto_review_runner,
+      // Carry DAG edges through the modal so a save round-trip preserves
+      // the parallel layout — the modal doesn't let the user edit deps,
+      // but it must not silently flatten them either.
+      depends_on: s.depends_on,
     })),
   };
   return (
