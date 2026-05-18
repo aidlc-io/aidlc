@@ -14,15 +14,18 @@ import { postMessage } from '@/lib/bridge';
 import { RenameModal } from './RenameModal';
 import { ConfirmModal } from './ConfirmModal';
 
-const scopeLabel: Record<AgentSummary['scope'], string> = {
+// AIDLC scope is workspace.yaml-only and intentionally not surfaced as a
+// scope tag here — agents declared in workspace.yaml that the user can see
+// in the Builder come through project/global scopes via discovered .md files,
+// so a separate "AIDLC" badge would be noise. Keep the keyed maps in case
+// the design changes back.
+const scopeLabel: Partial<Record<AgentSummary['scope'], string>> = {
   project: 'PROJECT',
-  aidlc: 'AIDLC',
   global: 'GLOBAL',
 };
 
-const typeBadgeClass: Record<AgentSummary['scope'], string> = {
+const typeBadgeClass: Partial<Record<AgentSummary['scope'], string>> = {
   project: 'bg-warning/15 text-warning border-warning/30',
-  aidlc: 'bg-primary/15 text-primary border-primary/30',
   global: 'bg-success/15 text-success border-success/30',
 };
 
@@ -67,17 +70,32 @@ export function AgentCard({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <h4 className="truncate text-sm font-semibold text-primary">{agent.id}</h4>
-            <span
-              className={cn(
-                'inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-[9px] font-bold tracking-wider border',
-                typeBadgeClass[agent.scope],
-              )}
-            >
-              {scopeLabel[agent.scope]}
-            </span>
+            {scopeLabel[agent.scope] && (
+              <span
+                className={cn(
+                  'inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-[9px] font-bold tracking-wider border',
+                  typeBadgeClass[agent.scope],
+                )}
+              >
+                {scopeLabel[agent.scope]}
+              </span>
+            )}
+            {agent.builtinFrom && (
+              <span
+                title={`Installed by the built-in preset: ${agent.builtinFrom}`}
+                className="inline-flex shrink-0 items-center rounded border border-info/30 bg-info/15 px-1.5 py-0.5 text-[9px] font-bold tracking-wider text-info"
+              >
+                BUILT-IN
+              </span>
+            )}
           </div>
           {agent.description && (
             <p className="mt-0.5 text-xs text-muted-foreground truncate">{agent.description}</p>
+          )}
+          {agent.builtinFrom && (
+            <p className="mt-0.5 text-[10px] italic text-muted-foreground truncate">
+              from {agent.builtinFrom}
+            </p>
           )}
         </div>
         {isAidlc && (

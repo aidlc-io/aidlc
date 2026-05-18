@@ -190,12 +190,21 @@ export class PresetStore {
       written.push(workspaceFile);
     }
 
-    // 2. Write each skill .md (rewriting paths to a canonical location).
+    // 2. Write each skill .md, but only if the declaration points inside
+    //    `.aidlc/skills/`. Built-in presets now reference `~/.claude/skills/...`
+    //    files managed by `globalDefaultsInstaller`; writing a second copy
+    //    under `.aidlc/skills/` would diverge over time and re-introduces the
+    //    multi-preset collision (same `plan.md` overwriting between iOS / Web).
     const skills = (preset.workspace.skills as Array<Record<string, unknown>>) ?? [];
     for (const skill of skills) {
       const id = String(skill.id);
       const content = preset.skillContents[id];
       if (!content) { continue; }
+      const declaredPath = typeof skill.path === 'string' ? skill.path : '';
+      // External (e.g. `~/.claude/...`) or absolute paths → managed elsewhere.
+      if (!declaredPath.startsWith('./.aidlc/skills/') && !declaredPath.startsWith('.aidlc/skills/')) {
+        continue;
+      }
       const skillFile = path.join(skillsDir, `${id}.md`);
       if (fs.existsSync(skillFile) && !options.overwrite) {
         skipped.push(skillFile);

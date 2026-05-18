@@ -14,11 +14,22 @@
  */
 
 import * as vscode from 'vscode';
+import * as fs from 'fs';
 import * as path from 'path';
 
 import { readYaml, writeYaml } from './yamlIO';
 import { PresetStore, type WorkspacePreset } from './presetStore';
-import { isBuiltinPreset } from './builtinPresets';
+import {
+  isBuiltinPreset,
+  getBuiltinWorkflow,
+  PHASES,
+  builtinClaudeCommand,
+  workflowSlug,
+} from './builtinPresets';
+import {
+  isWorkflowGloballyInstalled,
+  installWorkflowGlobalsByIds,
+} from './globalDefaultsInstaller';
 
 function getRoot(): string | undefined {
   return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
@@ -130,6 +141,7 @@ export async function savePresetCommand(store: PresetStore): Promise<void> {
  */
 export async function applyPresetCommand(
   store: PresetStore,
+  extensionPath: string,
   presetId?: string,
   skipConfirm = false,
 ): Promise<void> {
@@ -171,6 +183,28 @@ export async function applyPresetCommand(
     preset = picked.preset;
   }
 
+  // Built-in presets reference agent + skill files in `~/.claude/` written
+  // by `globalDefaultsInstaller`. Nothing is pre-installed at activation —
+  // ask before dropping ~18 files into the user's global Claude folder so
+  // they understand what's happening.
+  const builtinWorkflow = getBuiltinWorkflow(preset.id);
+  if (builtinWorkflow && !isWorkflowGloballyInstalled(extensionPath, builtinWorkflow.id)) {
+    const choice = await vscode.window.showInformationMessage(
+      `Template "${builtinWorkflow.name}" needs to install its agents + skills into ` +
+        '~/.claude/agents and ~/.claude/skills so workspace.yaml can resolve them. ' +
+        'Install now?',
+      { modal: false },
+      'Install', 'Cancel',
+    );
+    if (choice !== 'Install') {
+      void vscode.window.showInformationMessage(
+        'AIDLC: apply cancelled. Run "AIDLC: Install Workflow Globals" later to install on demand.',
+      );
+      return;
+    }
+    installWorkflowGlobalsByIds(extensionPath, [builtinWorkflow.id]);
+  }
+
   const existing = readYaml(root);
   let overwrite = false;
   if (existing) {
@@ -187,6 +221,14 @@ export async function applyPresetCommand(
 
   const workspaceName = vscode.workspace.workspaceFolders?.[0]?.name ?? path.basename(root);
   const result = PresetStore.applyTo(root, preset, workspaceName, { overwrite });
+
+  // For built-in workflows, also drop `.claude/commands/<slug>-<phase>.md`
+  // so the Claude Code slash commands work without an extra manual step.
+  const builtin = getBuiltinWorkflow(preset.id);
+  if (builtin) {
+    const epicRoot = readEpicRootFrom(root);
+    writeBuiltinClaudeCommands(root, builtin, preset, epicRoot, overwrite);
+  }
 
   if (result.written.length === 0 && result.skipped.length > 0) {
     void vscode.window.showWarningMessage(
@@ -288,6 +330,46 @@ export async function savePresetInlineCommand(
   void vscode.window.showInformationMessage(
     `Saved template "${id}" (${doc.agents.length} agents, ${skillCount} skills, ${doc.pipelines.length} pipelines).`,
   );
+}
+
+/**
+ * Read the epic root from `workspace.yaml` if present; defaults to
+ * `docs/epics` when no doc / no override is set.
+ */
+function readEpicRootFrom(root: string): string {
+  const doc = readYaml(root);
+  if (!doc) { return 'docs/epics'; }
+  const state = doc.state as Record<string, unknown> | undefined;
+  if (state && typeof state.root === 'string' && state.root.trim()) {
+    return state.root;
+  }
+  return 'docs/epics';
+}
+
+/**
+ * Write `.claude/commands/<slug>-<phase>.md` for each phase in a built-in
+ * preset. Namespacing by workflow slug means multiple presets can coexist
+ * in one project without overwriting each other's slash commands.
+ * Idempotent — never overwrites an existing command file unless `overwrite`
+ * is set, which is wired to the same Overwrite confirmation as workspace.yaml.
+ */
+function writeBuiltinClaudeCommands(
+  root: string,
+  workflow: { id: string; pipelineId: string },
+  preset: WorkspacePreset,
+  epicRoot: string,
+  overwrite: boolean,
+): void {
+  const commandsDir = path.join(root, '.claude', 'commands');
+  fs.mkdirSync(commandsDir, { recursive: true });
+  const slug = workflowSlug(workflow as Parameters<typeof workflowSlug>[0]);
+  for (const phase of PHASES) {
+    const nsId = `${slug}-${phase.id}`;
+    const commandFile = path.join(commandsDir, `${nsId}.md`);
+    if (fs.existsSync(commandFile) && !overwrite) { continue; }
+    const skillBody = preset.skillContents[nsId] ?? `# ${phase.name}\n\n${phase.description}\n`;
+    fs.writeFileSync(commandFile, builtinClaudeCommand(phase, skillBody, epicRoot), 'utf8');
+  }
 }
 
 function presetDetailLine(p: WorkspacePreset): string {

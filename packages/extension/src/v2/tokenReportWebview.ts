@@ -10,6 +10,7 @@ import * as vscode from 'vscode';
 import { themeManager } from './themeManager';
 import { loadAllRecords } from './tokenRecords';
 import { buildReport, type TokenReport } from './tokenReport';
+import { missingBundleHtml } from './webviewBundleGuard';
 
 interface ReportPanelState {
   report: TokenReport | null;
@@ -122,6 +123,8 @@ export class TokenReportWebview {
     const nonce = makeNonce();
     const webview = this.panel.webview;
     const cspSource = webview.cspSource;
+    const fallback = missingBundleHtml(this.extensionUri.fsPath, 'tokenReport.js', cspSource, nonce);
+    if (fallback) { return fallback; }
     const initialTheme = themeManager.current;
     const assetsRoot = vscode.Uri.joinPath(this.extensionUri, 'out', 'webviews');
     const cssUri = webview.asWebviewUri(vscode.Uri.joinPath(assetsRoot, 'styles.css')).toString();

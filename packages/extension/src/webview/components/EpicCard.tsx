@@ -810,20 +810,19 @@ function RunGate({
         {status === 'awaiting_work' && (
           <>
             {slashCommand && (() => {
-              const isUpdate = artifactExists || !!focused.feedback;
+              const hasFeedback = !!focused.feedback;
+              // Button label and behavior follow the same condition: only
+              // "Update with feedback" pops the modal (so the user can review /
+              // amend the carried feedback). "Run with Claude" launches the
+              // slash command directly — opening a modal there would feel like
+              // a bait-and-switch.
               return (
                 <GateButton
                   variant="approve"
                   onClick={() => {
-                    if (isUpdate) {
-                      // Already-touched step → open modal so the user can
-                      // attach feedback before re-running the agent.
+                    if (hasFeedback) {
                       setRunOpen(true);
                     } else {
-                      // First run on this step (no artifact + no carried
-                      // feedback) — just launch claude with the bare slash
-                      // command. No modal needed; runStepWithFeedback
-                      // produces `${slash} ${id}` when feedback is empty.
                       postMessage({
                         type: 'runStepWithFeedback',
                         runId: epic.runId!,
@@ -834,7 +833,7 @@ function RunGate({
                   }}
                 >
                   <Play className="h-3 w-3" />
-                  {isUpdate ? 'Update with feedback' : 'Run with Claude'}
+                  {hasFeedback ? 'Update with feedback' : 'Run with Claude'}
                 </GateButton>
               );
             })()}

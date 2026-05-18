@@ -34,7 +34,9 @@ import {
   applyPresetCommand,
   deletePresetCommand,
 } from './presetWizards';
-import { loadSdlcPreset } from './builtinPresets';
+import { loadAllBuiltinPresets } from './builtinPresets';
+import { installWorkflowGlobalsCommand } from './installWorkflowGlobalsCommand';
+import { uninstallWorkflowGlobalsCommand } from './uninstallWorkflowGlobalsCommand';
 import { startEpicCommand } from './epicWizard';
 import { insertDemoEpicCommand } from './demoEpic';
 import { loadDemoProjectCommand } from './demoProject';
@@ -51,9 +53,10 @@ import {
 } from './runCommands';
 
 /**
- * Build the starter workspace.yaml. `name:` is set to the user's folder
- * name so the Builder / sidebar header reads naturally instead of showing
- * a hardcoded "My AIDLC Workspace" label.
+ * Build the starter workspace.yaml. Minimal scaffold — no placeholder agents
+ * or skills. The 8 built-in workflows are auto-injected into the panel from
+ * the extension's bundled presets; the user applies whichever fits their
+ * stack, or adds their own via the wizards.
  */
 function sampleWorkspaceYaml(workspaceName: string): string {
   // Quote the name to handle spaces, dashes, and unicode safely. js-yaml
@@ -62,21 +65,13 @@ function sampleWorkspaceYaml(workspaceName: string): string {
   return `version: "1.0"
 name: "${escapedName}"
 
-agents:
-  - id: hello
-    name: "Hello World Agent"
-    skill: hello-skill
-    model: claude-sonnet-4-5
+agents: []
 
-skills:
-  - id: hello-skill
-    path: ./.aidlc/skills/hello-skill.md
+skills: []
 
 environment: {}
 
-slash_commands:
-  - name: "/hello"
-    agent: hello
+slash_commands: []
 
 sidebar:
   views:
@@ -84,12 +79,6 @@ sidebar:
     - type: skills-list
 `;
 }
-
-const SAMPLE_HELLO_SKILL = `# Hello World Skill
-
-You are a friendly assistant. Greet the user warmly and ask what they would
-like help with today. Keep your reply to two sentences.
-`;
 
 export function registerV2WorkspaceCommands(
   context: vscode.ExtensionContext,
@@ -129,7 +118,7 @@ export function registerV2WorkspaceCommands(
   // and the Builder panel. User templates live in `<project>/.aidlc/templates/`
   // (project-scoped, committable). Built-ins are loaded from the extension.
   const presetStore = new PresetStore();
-  presetStore.setBuiltinLoader(() => [loadSdlcPreset(context.extensionPath)]);
+  presetStore.setBuiltinLoader(() => loadAllBuiltinPresets(context.extensionPath));
 
   const savePresetCmd = vscode.commands.registerCommand(
     'aidlc.savePreset',
@@ -154,6 +143,7 @@ export function registerV2WorkspaceCommands(
     (presetId?: unknown, skipConfirm?: unknown) =>
       applyPresetCommand(
         presetStore,
+        context.extensionPath,
         typeof presetId === 'string' ? presetId : undefined,
         skipConfirm === true,
       ),
@@ -162,6 +152,16 @@ export function registerV2WorkspaceCommands(
   const deletePresetCmd = vscode.commands.registerCommand(
     'aidlc.deletePreset',
     () => deletePresetCommand(presetStore),
+  );
+
+  const installWorkflowGlobalsCmd = vscode.commands.registerCommand(
+    'aidlc.installWorkflowGlobals',
+    () => installWorkflowGlobalsCommand(context.extensionPath, output),
+  );
+
+  const uninstallWorkflowGlobalsCmd = vscode.commands.registerCommand(
+    'aidlc.uninstallWorkflowGlobals',
+    () => uninstallWorkflowGlobalsCommand(context.extensionPath, output),
   );
 
   const migrateEpicsCmd = vscode.commands.registerCommand(
@@ -447,6 +447,8 @@ export function registerV2WorkspaceCommands(
       savePresetInlineCmd,
       applyPresetCmd,
       deletePresetCmd,
+      installWorkflowGlobalsCmd,
+      uninstallWorkflowGlobalsCmd,
       migrateEpicsCmd,
       startEpicCmd,
       openEpicsListCmd,
@@ -603,8 +605,6 @@ async function initWorkspace(output: vscode.OutputChannel): Promise<void> {
 
   const aidlcDir = path.join(root, WORKSPACE_DIR);
   const workspaceFile = path.join(aidlcDir, WORKSPACE_FILENAME);
-  const skillsDir = path.join(aidlcDir, 'skills');
-  const skillFile = path.join(skillsDir, 'hello-skill.md');
 
   if (fs.existsSync(workspaceFile)) {
     const choice = await vscode.window.showWarningMessage(
@@ -619,15 +619,11 @@ async function initWorkspace(output: vscode.OutputChannel): Promise<void> {
   }
 
   try {
-    fs.mkdirSync(skillsDir, { recursive: true });
+    fs.mkdirSync(aidlcDir, { recursive: true });
     const workspaceName = vscode.workspace.workspaceFolders?.[0]?.name
       ?? path.basename(root);
     fs.writeFileSync(workspaceFile, sampleWorkspaceYaml(workspaceName), 'utf8');
-    if (!fs.existsSync(skillFile)) {
-      fs.writeFileSync(skillFile, SAMPLE_HELLO_SKILL, 'utf8');
-    }
     output.appendLine(`[init] wrote ${workspaceFile}`);
-    output.appendLine(`[init] wrote ${skillFile}`);
 
     void vscode.window
       .showInformationMessage(

@@ -14,6 +14,7 @@
 
 import * as vscode from 'vscode';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
@@ -32,7 +33,23 @@ import {
   targetPath,
 } from '@aidlc/core';
 import { SKILL_TEMPLATES } from './skillTemplates';
-import { loadSdlcPreset, getSdlcBuiltinPipelineSummary, getSdlcArtifactTemplates, SDLC_PIPELINE_ID, PHASES, sdlcClaudeCommand } from './builtinPresets';
+import {
+  loadBuiltinPreset,
+  getAllBuiltinPipelineSummaries,
+  getBuiltinPipelineSummary,
+  getSdlcArtifactTemplates,
+  getBuiltinArtifactTemplates,
+  getBuiltinWorkflowByPipelineId,
+  SDLC_PIPELINE_ID,
+  PHASES,
+  sdlcClaudeCommand,
+  BUILTIN_WORKFLOWS,
+  workflowSlug,
+} from './builtinPresets';
+import {
+  isWorkflowGloballyInstalled,
+  uninstallWorkflowGlobalsByIds,
+} from './globalDefaultsInstaller';
 import { PresetStore } from './presetStore';
 import type {
   PipelineStepConfig,
@@ -58,6 +75,7 @@ import {
   startPipelineRunInlineCommand,
 } from './runCommands';
 import { pickAndReadTextFile } from './pickAndReadTextFile';
+import { missingBundleHtml } from './webviewBundleGuard';
 
 // ── Webview-side type shapes (must mirror src/webview/lib/types.ts) ───────
 
@@ -71,6 +89,8 @@ interface AgentSummary {
   skill?: string;
   model?: string;
   integrations?: string[];
+  /** Human label of the built-in preset that contributed this entry (e.g. "SDLC Pipeline"). Absent for user-created entries. */
+  builtinFrom?: string;
 }
 
 interface SkillSummary {
@@ -78,6 +98,7 @@ interface SkillSummary {
   scope: AssetScope;
   filePath: string;
   description?: string;
+  builtinFrom?: string;
 }
 
 interface PipelineStepSummary {
@@ -96,6 +117,7 @@ interface PipelineSummary {
   steps: PipelineStepSummary[];
   on_failure: 'stop' | 'continue';
   builtin?: boolean;
+  name?: string;
 }
 
 interface AgentMeta {
@@ -199,7 +221,7 @@ const SKILL_TEMPLATE_REFS: SkillTemplateRef[] = SKILL_TEMPLATES.map((t) => ({
 
 // ── State builders ────────────────────────────────────────────────────────
 
-function buildState(initialView: WorkspaceView): WorkspaceState {
+function buildState(initialView: WorkspaceView, extensionPath: string): WorkspaceState {
   const folder = vscode.workspace.workspaceFolders?.[0];
   if (!folder) {
     return {
@@ -249,10 +271,17 @@ function buildState(initialView: WorkspaceView): WorkspaceState {
 
   const epics = listEpics(root, doc).map((e) => toEpicSummaryUi(e));
 
-  const sdlcBuiltin = getSdlcBuiltinPipelineSummary();
+  // Only surface built-in workflows whose agents + skills are actually
+  // installed under `~/.claude/`. Auto-install was removed — the Domain
+  // dropdown would otherwise list pipelines whose persona/skill files don't
+  // exist, breaking the run.
+  const builtinSummaries = getAllBuiltinPipelineSummaries().filter((p) => {
+    const workflow = BUILTIN_WORKFLOWS.find((w) => w.pipelineId === p.id);
+    return workflow ? isWorkflowGloballyInstalled(extensionPath, workflow.id) : false;
+  });
 
   if (!doc) {
-    const agents = mergeAgents(null, discovered.agents);
+    const agents = mergeAgents(null, root, discovered.agents);
     const skills = mergeSkills(null, root, discovered.skills);
     const epicIds0 = listEpicIdsFromDir(root, 'docs/epics');
     return {
@@ -260,12 +289,12 @@ function buildState(initialView: WorkspaceView): WorkspaceState {
       workspaceName: folder.name,
       configExists: false,
       agents, skills,
-      pipelines: [sdlcBuiltin],
+      pipelines: builtinSummaries,
       epics,
       agentMeta, slashCommandsByAgent,
       agentsCount: agents.length,
       skillsCount: skills.length,
-      pipelinesCount: 1,
+      pipelinesCount: builtinSummaries.length,
       epicsCount: epics.length,
       runIds: listRunIds(root),
       skillTemplates: SKILL_TEMPLATE_REFS,
@@ -275,7 +304,7 @@ function buildState(initialView: WorkspaceView): WorkspaceState {
     };
   }
 
-  const agents = mergeAgents(doc, discovered.agents);
+  const agents = mergeAgents(doc, root, discovered.agents);
   const skills = mergeSkills(doc, root, discovered.skills);
   const pipelines: PipelineSummary[] = doc.pipelines.map((p) => ({
     id: String(p.id),
@@ -296,10 +325,13 @@ function buildState(initialView: WorkspaceView): WorkspaceState {
         })
       : [],
   }));
-  // Inject built-in SDLC at the top if not already defined in workspace.yaml
-  if (!pipelines.some((p) => p.id === SDLC_PIPELINE_ID)) {
-    pipelines.unshift(sdlcBuiltin);
-  }
+  // Inject any built-in pipeline that hasn't been explicitly defined in
+  // workspace.yaml. SDLC lands at the very top; other built-ins follow in
+  // BUILTIN_WORKFLOWS order. User-defined pipelines from workspace.yaml keep
+  // their original order after the built-ins.
+  const existingIds = new Set(pipelines.map((p) => p.id));
+  const missingBuiltins = builtinSummaries.filter((b) => !existingIds.has(b.id));
+  pipelines.unshift(...missingBuiltins);
 
   const epicRoot = readEpicRoot(doc);
   const epicIds = listEpicIdsFromDir(root, epicRoot);
@@ -473,15 +505,58 @@ function extractSkillIds(a: Record<string, unknown>): string[] {
   return [];
 }
 
-function mergeAgents(doc: YamlDocument | null, discovered: DiscoveredAsset[]): AgentSummary[] {
+/**
+ * Cheap built-in-preset detector. Recognizes two markers we write at the
+ * very top of generated content:
+ *
+ * 1. `<!-- Composed by AIDLC Flow built-in preset "<id>" — phase: <phase> -->`
+ *    — written by `composeSkill()` into each `.aidlc/skills/<phase>.md`.
+ * 2. `<!-- AIDLC extension built-in — workflow: <id>, kind: agent|skill, id: <id> -->`
+ *    — written by `globalDefaultsInstaller` into `~/.claude/agents/`
+ *    and `~/.claude/skills/`.
+ *
+ * Returns the workflow's human name ("SDLC Pipeline", "iOS Native Pipeline", …)
+ * so the UI can render "from <name>" subtitles and BUILT-IN badges.
+ */
+function detectBuiltinSource(filePath: string): string | undefined {
+  if (!filePath || !fs.existsSync(filePath)) { return undefined; }
+  try {
+    const head = fs.readFileSync(filePath, 'utf8').slice(0, 200);
+    const composed = head.match(/<!-- Composed by AIDLC Flow built-in preset "([^"]+)"/);
+    const installed = head.match(/<!-- AIDLC extension built-in — workflow:\s*([^,\s]+)/);
+    const id = composed?.[1] ?? installed?.[1];
+    if (!id) { return undefined; }
+    const workflow = BUILTIN_WORKFLOWS.find((w) => w.id === id);
+    return workflow?.name ?? id;
+  } catch { return undefined; }
+}
+
+function mergeAgents(doc: YamlDocument | null, root: string, discovered: DiscoveredAsset[]): AgentSummary[] {
   const out: AgentSummary[] = [];
   for (const a of discovered.filter((x) => x.scope === 'project')) {
-    out.push({ id: a.id, scope: 'project', filePath: a.filePath });
+    out.push({ id: a.id, scope: 'project', filePath: a.filePath, builtinFrom: detectBuiltinSource(a.filePath) });
   }
   if (doc) {
+    // Pre-index workspace.yaml skill declarations by id so we can resolve
+    // each agent's primary-skill path (built-in presets now reference
+    // `~/.claude/skills/aidlc-<workflow>-<phase>.md`, not `.aidlc/skills/`).
+    const skillPathById = new Map<string, string>();
+    for (const s of doc.skills) {
+      const sid = String(s.id);
+      const p = typeof s.path === 'string' ? s.path : '';
+      if (!p) { continue; }
+      const expanded = expandHomePath(p);
+      skillPathById.set(sid, path.isAbsolute(expanded) ? expanded : path.resolve(root, expanded));
+    }
+
     for (const a of doc.agents) {
       const id = String(a.id);
       const skills = extractSkillIds(a);
+      // Agents inherit `builtinFrom` from their primary skill — read the marker
+      // off whichever .md the skill declaration points at (legacy `.aidlc/skills/`
+      // or new `~/.claude/skills/aidlc-*`).
+      const primarySkillPath = skillPathById.get(skills[0] ?? id)
+        ?? path.join(root, WORKSPACE_DIR, 'skills', `${skills[0] ?? id}.md`);
       out.push({
         id,
         scope: 'aidlc',
@@ -492,13 +567,19 @@ function mergeAgents(doc: YamlDocument | null, discovered: DiscoveredAsset[]): A
         integrations: Array.isArray(a.capabilities)
           ? (a.capabilities as unknown[]).map(String)
           : undefined,
+        builtinFrom: detectBuiltinSource(primarySkillPath),
       });
     }
   }
   for (const a of discovered.filter((x) => x.scope === 'global')) {
-    out.push({ id: a.id, scope: 'global', filePath: a.filePath });
+    out.push({ id: a.id, scope: 'global', filePath: a.filePath, builtinFrom: detectBuiltinSource(a.filePath) });
   }
   return out;
+}
+
+function expandHomePath(p: string): string {
+  if (p.startsWith('~/')) { return path.join(os.homedir(), p.slice(2)); }
+  return p;
 }
 
 function mergeSkills(
@@ -508,7 +589,7 @@ function mergeSkills(
 ): SkillSummary[] {
   const out: SkillSummary[] = [];
   for (const s of discovered.filter((x) => x.scope === 'project')) {
-    out.push({ id: s.id, scope: 'project', filePath: s.filePath });
+    out.push({ id: s.id, scope: 'project', filePath: s.filePath, builtinFrom: detectBuiltinSource(s.filePath) });
   }
   if (doc) {
     for (const s of doc.skills) {
@@ -518,14 +599,15 @@ function mergeSkills(
         continue;
       }
       const skillPath = typeof s.path === 'string' ? s.path : undefined;
-      const abs = skillPath
-        ? (path.isAbsolute(skillPath) ? skillPath : path.resolve(root, skillPath))
+      const expanded = skillPath ? expandHomePath(skillPath) : '';
+      const abs = expanded
+        ? (path.isAbsolute(expanded) ? expanded : path.resolve(root, expanded))
         : '';
-      out.push({ id, scope: 'aidlc', filePath: abs });
+      out.push({ id, scope: 'aidlc', filePath: abs, builtinFrom: detectBuiltinSource(abs) });
     }
   }
   for (const s of discovered.filter((x) => x.scope === 'global')) {
-    out.push({ id: s.id, scope: 'global', filePath: s.filePath });
+    out.push({ id: s.id, scope: 'global', filePath: s.filePath, builtinFrom: detectBuiltinSource(s.filePath) });
   }
   return out;
 }
@@ -567,6 +649,16 @@ export class WorkspaceWebview {
   static triggerStartEpic(extensionUri: vscode.Uri): void {
     WorkspaceWebview.show(extensionUri, 'epics');
     void WorkspaceWebview.current?.panel.webview.postMessage({ type: 'triggerStartEpic' });
+  }
+
+  /**
+   * Re-build + push state to the open Builder panel, if any. Used by
+   * install/uninstall workflow-globals commands so the Domain dropdown
+   * reflects the new set of installed workflows without a manual reload.
+   * No-op when the panel isn't open.
+   */
+  static refreshCurrent(): void {
+    WorkspaceWebview.current?.refresh();
   }
 
   private constructor(
@@ -636,7 +728,7 @@ export class WorkspaceWebview {
   private async refreshAsync(): Promise<void> {
     const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     if (root) { this.ensureWorkflowTemplates(root); }
-    const state = buildState(this.currentView);
+    const state = buildState(this.currentView, this.extensionUri.fsPath);
     await mergeEpicTokenUsageInto(state);
     void this.panel.webview.postMessage({ type: 'state', state });
   }
@@ -936,7 +1028,7 @@ export class WorkspaceWebview {
         await this.deleteItem('skills', String(msg.id ?? ''), msg.confirmed === true);
         return;
       case 'deletePipeline':
-        await this.deleteItem('pipelines', String(msg.id ?? ''), msg.confirmed === true);
+        await this.deletePipeline(String(msg.id ?? ''), msg.confirmed === true);
         return;
       case 'renameAgent':
         await this.renameItem(
@@ -1282,27 +1374,32 @@ ${sections.join('\n').trimEnd()}
   }
 
   /**
-   * Ensure the SDLC preset is installed in this workspace. If workspace.yaml
-   * doesn't exist, applies the full preset. If it exists but lacks the SDLC
-   * pipeline, merges agents/skills/pipeline/slash_commands non-destructively.
+   * Ensure a built-in workflow preset is installed in this workspace. If
+   * workspace.yaml doesn't exist, applies the full preset. If it exists but
+   * lacks the workflow's pipeline, merges agents/skills/pipeline/slash_commands
+   * non-destructively.
+   *
+   * Used at Start-Epic time when the selected pipeline is one of the
+   * auto-injected built-ins from `BUILTIN_WORKFLOWS` — without this, the run
+   * would fail because the pipeline id appears in the UI but the agent/skill
+   * files weren't materialized on disk.
    */
-  private ensureSdlcInWorkspace(root: string): void {
+  private ensureBuiltinInWorkspace(root: string, workflow: { id: string; pipelineId: string }): void {
     const doc = readYaml(root);
-    if (doc?.pipelines.some((p) => String(p.id) === SDLC_PIPELINE_ID)) { return; }
+    if (doc?.pipelines.some((p) => String(p.id) === workflow.pipelineId)) { return; }
 
-    const preset = loadSdlcPreset(this.extensionUri.fsPath);
+    const builtin = BUILTIN_WORKFLOWS.find((w) => w.id === workflow.id);
+    if (!builtin) { return; }
+    const preset = loadBuiltinPreset(this.extensionUri.fsPath, builtin);
     const workspaceName = vscode.workspace.workspaceFolders?.[0]?.name ?? path.basename(root);
 
     if (!doc) {
       PresetStore.applyTo(root, preset, workspaceName);
     } else {
-      // workspace.yaml exists — merge SDLC content in without overwriting existing config
-      const skillsDir = path.join(root, WORKSPACE_DIR, 'skills');
-      fs.mkdirSync(skillsDir, { recursive: true });
-      for (const [id, content] of Object.entries(preset.skillContents)) {
-        const skillFile = path.join(skillsDir, `${id}.md`);
-        if (!fs.existsSync(skillFile)) { fs.writeFileSync(skillFile, content, 'utf8'); }
-      }
+      // workspace.yaml exists — merge preset content in without overwriting existing config.
+      // Skill content itself lives in `~/.claude/skills/aidlc-<workflow>-<phase>.md`
+      // (installed by globalDefaultsInstaller), so we no longer drop a second
+      // copy under `.aidlc/skills/`.
 
       const existingAgentIds = new Set(doc.agents.map((a) => String(a.id)));
       const existingSkillIds = new Set(doc.skills.map((s) => String(s.id)));
@@ -1317,13 +1414,30 @@ ${sections.join('\n').trimEnd()}
       for (const c of (preset.workspace.slash_commands as Array<Record<string, unknown>>) ?? []) {
         if (!existingCmds.has(String(c.name))) { doc.slash_commands.push(c); }
       }
-      doc.pipelines.push({ id: SDLC_PIPELINE_ID, steps: getSdlcBuiltinPipelineSummary().steps.map((s) => s.agent), on_failure: 'stop' });
+      const builtinSteps = getBuiltinPipelineSummary(builtin).steps.map((s) => {
+        const step: Record<string, unknown> = {
+          agent: s.agent,
+          enabled: true,
+          requires: [],
+          produces: [],
+          human_review: s.human_review,
+          auto_review: s.auto_review,
+        };
+        if (s.auto_review && s.auto_review_runner) { step.auto_review_runner = s.auto_review_runner; }
+        return step;
+      });
+      doc.pipelines.push({
+        id: workflow.pipelineId,
+        steps: builtinSteps,
+        on_failure: 'stop',
+      });
 
       writeYaml(root, doc);
     }
 
-    // Create .claude/commands/<phase>.md so each slash command is wired as a
-    // real Claude Code command (not just a slash_commands entry in workspace.yaml).
+    // Create .claude/commands/<slug>-<phase>.md so each slash command is wired
+    // as a real Claude Code command. Namespacing keeps two presets' slash
+    // commands distinct in the same project.
     const freshDoc = readYaml(root);
     const epicRoot = freshDoc
       ? (() => {
@@ -1334,16 +1448,35 @@ ${sections.join('\n').trimEnd()}
 
     const commandsDir = path.join(root, '.claude', 'commands');
     fs.mkdirSync(commandsDir, { recursive: true });
+    const slug = workflowSlug(builtin);
     for (const phase of PHASES) {
-      const commandFile = path.join(commandsDir, `${phase.id}.md`);
+      const nsId = `${slug}-${phase.id}`;
+      const commandFile = path.join(commandsDir, `${nsId}.md`);
       if (!fs.existsSync(commandFile)) {
-        const skillBody = preset.skillContents[phase.id] ?? `# ${phase.name}\n\n${phase.description}\n`;
+        const skillBody = preset.skillContents[nsId] ?? `# ${phase.name}\n\n${phase.description}\n`;
         fs.writeFileSync(commandFile, sdlcClaudeCommand(phase, skillBody, epicRoot), 'utf8');
       }
     }
 
-    // Bundled SDLC artifact templates are written by ensureWorkflowTemplates(),
-    // which is called eagerly on every refresh — nothing to do here.
+    // Write the CI runner script for the implement step's auto-review if
+    // missing. Each workflow can ship its own `templates/<dir>/scripts/ci.sh`
+    // (e.g. iOS uses xcodebuild, .NET uses dotnet test); falls back to the
+    // generic SDLC script when the workflow hasn't customized it.
+    const ciScriptDest = path.join(root, WORKSPACE_DIR, 'scripts', 'ci.sh');
+    if (!fs.existsSync(ciScriptDest)) {
+      const workflowCi = path.join(this.extensionUri.fsPath, 'templates', builtin.templatesDir, 'scripts', 'ci.sh');
+      const fallbackCi = path.join(this.extensionUri.fsPath, 'templates', 'sdlc', 'scripts', 'ci.sh');
+      const ciScriptSrc = fs.existsSync(workflowCi) ? workflowCi : fallbackCi;
+      if (fs.existsSync(ciScriptSrc)) {
+        fs.mkdirSync(path.dirname(ciScriptDest), { recursive: true });
+        fs.copyFileSync(ciScriptSrc, ciScriptDest);
+        try { fs.chmodSync(ciScriptDest, 0o755); } catch { /* non-fatal on Windows */ }
+      }
+    }
+
+    // Drop bundled artifact templates for this workflow so the epic's
+    // artifacts/ folder gets a structured starting point on the very first run.
+    this.ensureWorkflowTemplates(root);
   }
 
   /**
@@ -1359,7 +1492,9 @@ ${sections.join('\n').trimEnd()}
    * the user starts an epic.
    */
   private ensureWorkflowTemplates(root: string): void {
-    // SDLC built-in templates (bundled — no network / CLI needed).
+    // SDLC built-in templates (bundled — no network / CLI needed). Always
+    // extracted even if the user hasn't applied the preset, because the SDLC
+    // pipeline is auto-injected into every project's picker.
     const sdlcTemplatesDir = path.join(root, WORKSPACE_DIR, 'aidlc-templates', SDLC_PIPELINE_ID);
     fs.mkdirSync(sdlcTemplatesDir, { recursive: true });
     const sdlcTemplates = getSdlcArtifactTemplates(this.extensionUri.fsPath);
@@ -1368,15 +1503,24 @@ ${sections.join('\n').trimEnd()}
       if (!fs.existsSync(dest)) { fs.writeFileSync(dest, content, 'utf8'); }
     }
 
-    // Custom pipelines: ensure their template dir exists. Templates themselves
-    // are generated by generatePipelineTemplates() when the pipeline is created.
     const doc = readYaml(root);
-    if (doc) {
-      for (const p of doc.pipelines) {
-        const pId = String(p.id);
-        if (pId === SDLC_PIPELINE_ID) { continue; }
-        const dir = path.join(root, WORKSPACE_DIR, 'aidlc-templates', pId);
-        fs.mkdirSync(dir, { recursive: true });
+    if (!doc) { return; }
+
+    // For any non-SDLC built-in workflow that the user has applied (i.e. its
+    // pipeline shows up in workspace.yaml), drop the bundled artifact
+    // templates into the matching `.aidlc/aidlc-templates/<pipelineId>/`.
+    for (const p of doc.pipelines) {
+      const pId = String(p.id);
+      if (pId === SDLC_PIPELINE_ID) { continue; }
+      const dir = path.join(root, WORKSPACE_DIR, 'aidlc-templates', pId);
+      fs.mkdirSync(dir, { recursive: true });
+
+      const workflow = getBuiltinWorkflowByPipelineId(pId);
+      if (!workflow) { continue; }
+      const templates = getBuiltinArtifactTemplates(this.extensionUri.fsPath, workflow);
+      for (const [fileName, content] of Object.entries(templates)) {
+        const dest = path.join(dir, fileName);
+        if (!fs.existsSync(dest)) { fs.writeFileSync(dest, content, 'utf8'); }
       }
     }
   }
@@ -1402,9 +1546,11 @@ ${sections.join('\n').trimEnd()}
     if (!targetId) { return; }
     if (targetKind !== 'pipeline' && targetKind !== 'agent') { return; }
 
-    // Auto-scaffold agents/skills/workspace.yaml when the built-in SDLC pipeline is selected
-    if (targetKind === 'pipeline' && targetId === SDLC_PIPELINE_ID) {
-      this.ensureSdlcInWorkspace(root);
+    // Auto-scaffold agents/skills/workspace.yaml when a built-in pipeline is
+    // selected — covers SDLC plus the 7 stack-specialized workflows.
+    if (targetKind === 'pipeline') {
+      const builtinWorkflow = getBuiltinWorkflowByPipelineId(targetId);
+      if (builtinWorkflow) { this.ensureBuiltinInWorkspace(root, builtinWorkflow); }
     }
 
     const doc = readYaml(root);
@@ -1853,6 +1999,59 @@ ${sections.join('\n').trimEnd()}
     });
   }
 
+  /**
+   * Delete a pipeline. For built-in workflows this is a full uninstall:
+   * remove the pipeline itself, the workspace.yaml agents / skills /
+   * slash_commands that the preset created, the `.claude/commands/<slug>-*.md`
+   * files, and the global `~/.claude/agents` + `~/.claude/skills` files.
+   * User pipelines fall through to the plain `deleteItem` path which only
+   * touches workspace.yaml.
+   */
+  private async deletePipeline(id: string, skipConfirm = false): Promise<void> {
+    if (!id) { return; }
+    const builtin = getBuiltinWorkflowByPipelineId(id);
+    if (!builtin) {
+      await this.deleteItem('pipelines', id, skipConfirm);
+      return;
+    }
+
+    if (!skipConfirm) {
+      const confirm = await vscode.window.showWarningMessage(
+        `Delete workflow \`${id}\` and uninstall its agents/skills from ~/.claude/?`,
+        { modal: true }, 'Delete', 'Cancel',
+      );
+      if (confirm !== 'Delete') { return; }
+    }
+
+    const slug = workflowSlug(builtin);
+    const prefix = `${slug}-`;
+    const slashPrefix = `/${slug}-`;
+
+    this.mutateYaml((doc) => {
+      doc.agents = doc.agents.filter((a) => !String(a.id).startsWith(prefix));
+      doc.skills = doc.skills.filter((s) => !String(s.id).startsWith(prefix));
+      doc.slash_commands = doc.slash_commands.filter(
+        (c) => !String(c.name).startsWith(slashPrefix),
+      );
+      doc.pipelines = doc.pipelines.filter((p) => String(p.id) !== id);
+    });
+
+    const root = this.getRootOrWarn();
+    if (root) {
+      const commandsDir = path.join(root, '.claude', 'commands');
+      if (fs.existsSync(commandsDir)) {
+        for (const file of fs.readdirSync(commandsDir)) {
+          if (file.startsWith(prefix) && file.endsWith('.md')) {
+            try { fs.unlinkSync(path.join(commandsDir, file)); } catch { /* non-fatal */ }
+          }
+        }
+      }
+    }
+
+    uninstallWorkflowGlobalsByIds([builtin.id]);
+    this.refresh();
+  }
+
   private async deleteItem(
     field: 'agents' | 'skills' | 'pipelines',
     id: string,
@@ -1986,9 +2185,11 @@ ${sections.join('\n').trimEnd()}
     const nonce = makeNonce();
     const webview = this.panel.webview;
     const cspSource = webview.cspSource;
+    const fallback = missingBundleHtml(this.extensionUri.fsPath, 'workspace.js', cspSource, nonce);
+    if (fallback) { return fallback; }
     const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     if (root) { this.ensureWorkflowTemplates(root); }
-    const initialState = buildState(this.currentView);
+    const initialState = buildState(this.currentView, this.extensionUri.fsPath);
     const initialTheme = themeManager.current;
 
     const assetsRoot = vscode.Uri.joinPath(this.extensionUri, 'out', 'webviews');

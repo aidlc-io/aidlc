@@ -24,3 +24,4 @@ packages/*/bin/
 # package-specific build artifacts already covered by out/ + dist/
 packages/extension/scripts/demo/out/
 packages/extension/scripts/demo/out-agents/
+.ast-graph/

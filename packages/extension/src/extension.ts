@@ -30,6 +30,12 @@ export function activate(context: vscode.ExtensionContext): void {
 
   output.appendLine('Activating AIDLC Flow extension');
 
+  // No auto-install of workflow agents/skills into ~/.claude/ anymore —
+  // users opt in via `aidlc.installWorkflowGlobals` or via the apply-preset
+  // prompt. Keeps the global Claude folder clean by default. To remove
+  // previously-installed files, run `aidlc.uninstallWorkflowGlobals` before
+  // uninstalling the extension (VS Code has no reliable on-uninstall hook).
+
   // Theme override manager — owns the persisted `auto|light|dark` choice
   // and broadcasts user toggles to every open webview.
   themeManager.init(context);

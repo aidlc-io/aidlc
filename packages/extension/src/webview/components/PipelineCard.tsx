@@ -140,10 +140,21 @@ export function PipelineCard({
           danger
           confirmLabel="Delete"
           message={
-            <>
-              Delete workflow <span className="font-mono">{pipeline.id}</span> from{' '}
-              <span className="font-mono">workspace.yaml</span>? Existing runs are kept.
-            </>
+            pipeline.builtin ? (
+              <>
+                Delete workflow <span className="font-mono">{pipeline.id}</span>?{' '}
+                This removes its agents, skills, and slash commands from{' '}
+                <span className="font-mono">workspace.yaml</span>, deletes the{' '}
+                <span className="font-mono">.claude/commands/</span> files, and uninstalls
+                the agent + skill files from <span className="font-mono">~/.claude/</span>.
+                Existing runs are kept.
+              </>
+            ) : (
+              <>
+                Delete workflow <span className="font-mono">{pipeline.id}</span> from{' '}
+                <span className="font-mono">workspace.yaml</span>? Existing runs are kept.
+              </>
+            )
           }
           onConfirm={() =>
             postMessage({ type: 'deletePipeline', id: pipeline.id, confirmed: true })

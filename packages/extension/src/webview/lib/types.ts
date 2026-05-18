@@ -201,6 +201,8 @@ export interface AgentSummary {
   skill?: string;
   model?: string;
   integrations?: string[];
+  /** Human label of the built-in preset that contributed this entry (e.g. "SDLC Pipeline"). Absent for user-created entries. */
+  builtinFrom?: string;
 }
 
 export interface SkillSummary {
@@ -208,6 +210,7 @@ export interface SkillSummary {
   scope: AssetScope;
   filePath: string;
   description?: string;
+  builtinFrom?: string;
 }
 
 export interface PipelineStepSummary {
@@ -226,6 +229,8 @@ export interface PipelineSummary {
   steps: PipelineStepSummary[];
   on_failure: 'stop' | 'continue';
   builtin?: boolean;
+  /** Human label for built-in pipelines (e.g. "iOS Native Pipeline"). User-defined pipelines leave this undefined. */
+  name?: string;
 }
 
 export interface AutoReviewVerdict {
