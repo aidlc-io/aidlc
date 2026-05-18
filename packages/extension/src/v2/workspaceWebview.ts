@@ -206,6 +206,8 @@ interface EpicSummaryUi {
 interface SkillTemplateRef {
   id: string;
   description: string;
+  /** Category used by the AddSkill modal to split the picker into tabs. */
+  category: string;
 }
 
 interface WorkspaceState {
@@ -236,6 +238,7 @@ interface WorkspaceState {
 const SKILL_TEMPLATE_REFS: SkillTemplateRef[] = SKILL_TEMPLATES.map((t) => ({
   id: t.id,
   description: t.description,
+  category: t.category,
 }));
 
 // ── State builders ────────────────────────────────────────────────────────
