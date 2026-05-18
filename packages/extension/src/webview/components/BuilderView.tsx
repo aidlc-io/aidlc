@@ -155,7 +155,6 @@ export function BuilderView({ state }: { state: WorkspaceState }) {
       {startEpicOpen && (
         <StartEpicModal
           pipelines={state.pipelines}
-          agents={state.agents}
           agentMeta={state.agentMeta}
           nextEpicId={state.nextEpicId}
           existingEpicIds={state.existingEpicIds}

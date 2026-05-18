@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.0
+
+- feat(workflow): non-destructive preset apply, DAG-aware modal, scoped skill picker
+- feat(workflow): step skills, tech-stack templating, artifact wiring
+- feat(workflow-presets): multi-domain templates + opt-in global install
+- feat(workflow): SDLC built-in pipeline + artifact templates per workflow
+
 ## 0.9.0
 
 - feat(ast-graph): auto-scan workspace + wire as Claude MCP server
