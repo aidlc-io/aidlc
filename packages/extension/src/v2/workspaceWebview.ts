@@ -1231,16 +1231,18 @@ export class WorkspaceWebview {
       case 'addStepToPipeline': {
         const pipelineId = String(msg.pipelineId ?? '');
         const agentId = typeof msg.agentId === 'string' ? msg.agentId : undefined;
-        await this.addStepToPipeline(pipelineId, agentId);
+        const stepName = typeof msg.stepName === 'string' ? msg.stepName : undefined;
+        await this.addStepToPipeline(pipelineId, agentId, stepName);
         return;
       }
       case 'addParallelStep': {
         const pipelineId = String(msg.pipelineId ?? '');
         const agentId = typeof msg.agentId === 'string' ? msg.agentId : undefined;
+        const stepName = typeof msg.stepName === 'string' ? msg.stepName : undefined;
         const parallelToAgent =
           typeof msg.parallelToAgent === 'string' ? msg.parallelToAgent : '';
         if (!pipelineId || !agentId || !parallelToAgent) { return; }
-        await this.addParallelStep(pipelineId, parallelToAgent, agentId);
+        await this.addParallelStep(pipelineId, parallelToAgent, agentId, stepName);
         return;
       }
       case 'deleteStep':
@@ -2518,6 +2520,7 @@ export class WorkspaceWebview {
     pipelineId: string,
     parallelToAgent: string,
     agentId: string,
+    stepName?: string,
   ): Promise<void> {
     if (!pipelineId || !parallelToAgent || !agentId) { return; }
     const root = this.getRootOrWarn();
@@ -2627,12 +2630,14 @@ export class WorkspaceWebview {
         human_review: true,
         auto_review: false,
       };
+      const name = (stepName ?? '').trim();
+      if (name && name !== agentId) { newStep.name = name; }
       if (sourceDeps.length > 0) { newStep.depends_on = sourceDeps; }
       steps.push(newStep as unknown as PipelineStepConfig);
     });
   }
 
-  private async addStepToPipeline(pipelineId: string, agentIdArg?: string): Promise<void> {
+  private async addStepToPipeline(pipelineId: string, agentIdArg?: string, stepNameArg?: string): Promise<void> {
     if (!pipelineId) { return; }
     const root = this.getRootOrWarn();
     if (!root) { return; }
@@ -2691,24 +2696,40 @@ export class WorkspaceWebview {
       //     (steps nobody else depends on) so it lands *after* them in the
       //     visual flow. Otherwise it gets no deps and lands at level 0
       //     parallel with the roots.
+      // Node id keys the DAG: a step's `name` when present, else its agent id
+      // (matches PipelineCard.computeDagLevels). `depends_on` references these
+      // ids, so leaf detection must compare against node ids, not agent ids.
       const normalized = steps.map((s) => {
-        if (typeof s === 'string') { return { agent: s, deps: [] as string[] }; }
-        const obj = s as { agent?: unknown; depends_on?: unknown };
+        if (typeof s === 'string') { return { nodeId: s, deps: [] as string[] }; }
+        const obj = s as { agent?: unknown; name?: unknown; depends_on?: unknown };
         const deps = Array.isArray(obj.depends_on) ? obj.depends_on.map(String) : [];
-        return { agent: typeof obj.agent === 'string' ? obj.agent : '', deps };
+        const agent = typeof obj.agent === 'string' ? obj.agent : '';
+        const nodeId = typeof obj.name === 'string' && obj.name ? obj.name : agent;
+        return { nodeId, deps };
       });
       const usesDag = normalized.some((n) => n.deps.length > 0);
 
+      // The step name (chosen first in the picker) becomes the node label and
+      // the id `depends_on` references. Fall back to the agent id when blank.
+      const name = (stepNameArg ?? '').trim();
+
       if (!usesDag) {
-        steps.push(chosenId!);
+        // A named step can't be a bare string — emit an object so the name
+        // survives. Unnamed (or name === agent) keeps the compact string form.
+        if (name && name !== chosenId) {
+          steps.push({ agent: chosenId!, name } as unknown as PipelineStepConfig);
+        } else {
+          steps.push(chosenId!);
+        }
       } else {
         const referenced = new Set<string>();
         for (const n of normalized) {
           for (const d of n.deps) { referenced.add(d); }
         }
-        const leafAgents = normalized
-          .map((n) => n.agent)
-          .filter((a) => a && !referenced.has(a));
+        // Leaves = node ids nobody depends on → the new step lands after them.
+        const leaves = normalized
+          .map((n) => n.nodeId)
+          .filter((id) => id && !referenced.has(id));
         const newStep: Record<string, unknown> = {
           agent: chosenId!,
           enabled: true,
@@ -2717,7 +2738,8 @@ export class WorkspaceWebview {
           human_review: true,
           auto_review: false,
         };
-        if (leafAgents.length > 0) { newStep.depends_on = leafAgents; }
+        if (name && name !== chosenId) { newStep.name = name; }
+        if (leaves.length > 0) { newStep.depends_on = leaves; }
         steps.push(newStep as unknown as PipelineStepConfig);
       }
       p.steps = steps;

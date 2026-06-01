@@ -214,16 +214,18 @@ export function PipelineCard({
           pipelineId={pipeline.id}
           agents={agents}
           existingAgentIds={pipeline.steps.map((s) => s.agent)}
-          onPick={(agentId) => {
+          existingStepNames={pipeline.steps.map((s) => s.name ?? s.agent)}
+          onPick={(agentId, stepName) => {
             if (parallelToAgent) {
               postMessage({
                 type: 'addParallelStep',
                 pipelineId: pipeline.id,
                 parallelToAgent,
                 agentId,
+                stepName,
               });
             } else {
-              postMessage({ type: 'addStepToPipeline', pipelineId: pipeline.id, agentId });
+              postMessage({ type: 'addStepToPipeline', pipelineId: pipeline.id, agentId, stepName });
             }
           }}
           onClose={() => { setPickerOpen(false); setParallelToAgent(null); }}
