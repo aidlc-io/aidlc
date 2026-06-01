@@ -266,6 +266,17 @@ function artifactPathFor(phase: PhaseDef): string | null {
 }
 
 /**
+ * Namespaced id for a pipeline phase's slash command + `.claude/commands`
+ * file: `<pipelineId>-<phaseId>` (e.g. `sdlc-parallel-full-plan`). Keying by
+ * pipeline keeps commands distinct when multiple pipelines reuse the same
+ * phase names — `/sdlc-parallel-full-plan` vs `/my-migration-plan` — instead
+ * of both fighting over a single `/plan` / `plan.md`.
+ */
+export function pipelineCommandId(pipelineId: string, phaseId: string): string {
+  return `${pipelineId}-${phaseId}`;
+}
+
+/**
  * Load + compose a built-in preset. Bundled .md files are read at
  * runtime from the extension's installed location, so the build pipeline
  * doesn't need a separate "compose preset JSON" step.
@@ -370,7 +381,7 @@ export function loadBuiltinPreset(extensionPath: string, workflow: BuiltinWorkfl
   const skills: Array<Record<string, unknown>> = Array.from(skillEntries.values());
 
   const slashCommands: Array<Record<string, unknown>> = workflow.phases.map((p) => ({
-    name: `/${p.id}`,
+    name: `/${pipelineCommandId(workflow.pipelineId, p.id)}`,
     agent: `aidlc-${p.persona}`,
   }));
 

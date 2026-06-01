@@ -39,6 +39,7 @@ import {
   getBuiltinArtifactTemplates,
   getBuiltinWorkflowByPipelineId,
   builtinClaudeCommand,
+  pipelineCommandId,
   writeBuiltinAutoReviewValidators,
   BUILTIN_WORKFLOWS,
 } from './builtinPresets';
@@ -1937,10 +1938,11 @@ export class WorkspaceWebview {
     const commandsDir = path.join(root, '.claude', 'commands');
     fs.mkdirSync(commandsDir, { recursive: true });
     for (const phase of builtin.phases) {
-      const nsId = phase.id;
-      const commandFile = path.join(commandsDir, `${nsId}.md`);
+      // File is namespaced by pipeline so multiple pipelines can reuse phase
+      // names without colliding; the composed body is still keyed by phase id.
+      const commandFile = path.join(commandsDir, `${pipelineCommandId(builtin.pipelineId, phase.id)}.md`);
       if (!fs.existsSync(commandFile)) {
-        const skillBody = preset.skillContents[nsId] ?? `# ${phase.name}\n\n${phase.description}\n`;
+        const skillBody = preset.skillContents[phase.id] ?? `# ${phase.name}\n\n${phase.description}\n`;
         fs.writeFileSync(commandFile, builtinClaudeCommand(phase, skillBody, epicRoot), 'utf8');
       }
     }
@@ -2937,10 +2939,13 @@ export class WorkspaceWebview {
       });
       doc.pipelines = doc.pipelines.filter((p) => String(p.id) !== id);
 
-      // `.claude/commands/<phase>.md` files for phases no longer referenced
-      // by any remaining pipeline. Stashed for the FS cleanup below.
+      // `.claude/commands/<pipeline>-<phase>.md` files for phases no longer
+      // referenced by any remaining pipeline. Namespaced by this pipeline id
+      // so we only delete this pipeline's command files. Stashed for FS cleanup.
       const removeCmdIds = new Set<string>(
-        [...myPhaseIds].filter((pid) => !neededStepNames.has(pid)),
+        [...myPhaseIds]
+          .filter((pid) => !neededStepNames.has(pid))
+          .map((pid) => pipelineCommandId(id, pid)),
       );
       Object.assign(this, { _lastDeletePhaseIds: removeCmdIds });
     });
