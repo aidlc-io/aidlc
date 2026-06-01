@@ -424,7 +424,7 @@ function StepperNode({
       type="button"
       onClick={onFocus}
       className="group flex flex-col items-center gap-1 px-1"
-      title={`${step.agent} — ${isAwaitingUpdate ? 'awaiting update' : STEP_LABEL[step.status]}`}
+      title={`${step.stepName ?? step.agent}${step.stepName && step.stepName !== step.agent ? ` · agent ${step.agent}` : ''} — ${isAwaitingUpdate ? 'awaiting update' : STEP_LABEL[step.status]}`}
     >
       <div
         className={cn(
@@ -453,7 +453,7 @@ function StepperNode({
               : 'text-muted-foreground',
         )}
       >
-        {step.agent}
+        {step.stepName ?? step.agent}
       </span>
     </button>
   );
@@ -509,7 +509,7 @@ function StepDetail({
         <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
           Step {focusedIdx + 1}/{total}
         </span>
-        <span className="flex-1 truncate text-sm font-bold text-foreground">{m.name}</span>
+        <span className="flex-1 truncate text-sm font-bold text-foreground">{focused.stepName ?? m.name}</span>
         <StatusBadge status={ui} />
       </div>
 

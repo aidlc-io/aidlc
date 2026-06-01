@@ -851,6 +851,16 @@ export class WorkspaceWebview {
   }
 
   /**
+   * Open the Builder panel and select one of its internal tabs
+   * (workflows / agents / skills / epics). Used by the sidebar stat tiles
+   * so a count doubles as a deep link into the matching tab.
+   */
+  static openBuilderTab(extensionUri: vscode.Uri, tab: string): void {
+    WorkspaceWebview.show(extensionUri, 'builder');
+    void WorkspaceWebview.current?.panel.webview.postMessage({ type: 'setBuilderTab', tab });
+  }
+
+  /**
    * Re-build + push state to the open Builder panel, if any. Used by
    * install/uninstall workflow-globals commands so the Domain dropdown
    * reflects the new set of installed workflows without a manual reload.
@@ -1271,8 +1281,16 @@ export class WorkspaceWebview {
           typeof msg.newId === 'string' ? msg.newId : undefined,
         );
         return;
+      case 'renamePipeline':
+        await this.renameItem(
+          'pipelines',
+          String(msg.id ?? ''),
+          typeof msg.newId === 'string' ? msg.newId : undefined,
+        );
+        return;
       case 'duplicateAgent': await this.duplicateItem('agents', String(msg.id ?? '')); return;
       case 'duplicateSkill': await this.duplicateItem('skills', String(msg.id ?? '')); return;
+      case 'duplicatePipeline': await this.duplicateItem('pipelines', String(msg.id ?? '')); return;
       case 'togglePipelineFailure':
         await this.togglePipelineFailure(String(msg.pipelineId ?? ''));
         return;
@@ -2824,7 +2842,7 @@ export class WorkspaceWebview {
   }
 
   private async renameItem(
-    field: 'agents' | 'skills',
+    field: 'agents' | 'skills' | 'pipelines',
     id: string,
     /** Webview already prompted via inline RenameModal — use this directly
      * and skip the VS Code input box. Falsy for command-palette flows. */
@@ -2848,10 +2866,18 @@ export class WorkspaceWebview {
       if (!item) { return false; }
       if (arr.some((x) => x.id === trimmed)) { return false; }
       item.id = trimmed;
+      // Renaming a pipeline must carry its live references along — slash
+      // commands point at the pipeline by id, so leaving them stale would
+      // silently break `/start-epic`-style entry points.
+      if (field === 'pipelines' && Array.isArray(doc.slash_commands)) {
+        for (const cmd of doc.slash_commands as Array<{ pipeline?: unknown }>) {
+          if (cmd.pipeline === id) { cmd.pipeline = trimmed; }
+        }
+      }
     });
   }
 
-  private async duplicateItem(field: 'agents' | 'skills', id: string): Promise<void> {
+  private async duplicateItem(field: 'agents' | 'skills' | 'pipelines', id: string): Promise<void> {
     if (!id) { return; }
     this.mutateYaml((doc) => {
       const arr = doc[field];
