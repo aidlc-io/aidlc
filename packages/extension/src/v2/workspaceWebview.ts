@@ -42,7 +42,7 @@ import {
   writeBuiltinAutoReviewValidators,
   BUILTIN_WORKFLOWS,
 } from './builtinPresets';
-import { uninstallWorkflowGlobalsByIds } from './globalDefaultsInstaller';
+import { uninstallWorkflowGlobalsByIds, installWorkflowGlobalsByIds } from './globalDefaultsInstaller';
 import { PresetStore } from './presetStore';
 import type {
   PipelineStepConfig,
@@ -1146,6 +1146,18 @@ export class WorkspaceWebview {
         const draft = msg.draft;
         if (!draft || typeof draft !== 'object') { return; }
         await this.addPipelineInline(draft as Record<string, unknown>);
+        return;
+      }
+      case 'loadDefaultPipelineAssets': {
+        // "Load AIDLC default" in the Add-pipeline modal prefills steps that
+        // reference the built-in agents/skills — make sure those exist so they
+        // don't show up as "(missing)". Installs the SDLC workflow's global
+        // agent + skill files (~/.claude); a refresh re-surfaces them.
+        const builtin = BUILTIN_WORKFLOWS[0];
+        if (builtin) {
+          installWorkflowGlobalsByIds(this.extensionUri.fsPath, [builtin.id]);
+          this.refresh();
+        }
         return;
       }
       case 'editPipelineInline': {

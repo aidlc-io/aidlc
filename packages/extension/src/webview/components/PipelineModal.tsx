@@ -3,6 +3,7 @@ import { ArrowDown, ArrowUp, Plus, X, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { AgentSummary } from '@/lib/types';
 import { Modal, ModalFooter, ModalCancelButton, ModalConfirmButton } from './Modal';
+import { postMessage } from '@/lib/bridge';
 
 const ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
 
@@ -143,6 +144,9 @@ export function PipelineModal({
     setOnFailure(aidlcDefault.on_failure);
     // Clone so later edits don't mutate the shared default.
     setSteps(aidlcDefault.steps.map((s) => ({ ...s, skills: s.skills ? [...s.skills] : undefined, depends_on: s.depends_on ? [...s.depends_on] : undefined })));
+    // The default steps reference the built-in agents/skills — install them so
+    // the dropdowns resolve (otherwise they'd show "(missing)") and Create works.
+    postMessage({ type: 'loadDefaultPipelineAssets' });
   };
 
   const isEdit = mode === 'edit';
@@ -209,7 +213,7 @@ export function PipelineModal({
                 <button
                   type="button"
                   onClick={loadDefault}
-                  title="Prefill with the built-in AIDLC SDLC pipeline (plan → design ∥ test-plan → implement ∥ generate-test-cases → execute-test)"
+                  title="Prefill the built-in AIDLC SDLC pipeline and install its agents + skills (plan → design ∥ test-plan → implement ∥ generate-test-cases → execute-test)"
                   className="inline-flex items-center gap-1 rounded-md border border-primary/40 bg-primary/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-primary transition-colors hover:border-primary/60 hover:bg-primary/20"
                 >
                   <Sparkles className="h-2.5 w-2.5" />
