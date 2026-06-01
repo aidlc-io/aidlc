@@ -101,6 +101,7 @@ export function StartEpicModal({
   const [loadSource, setLoadSource] = useState<ExternalSource | null>(null);
   const [loadRef, setLoadRef] = useState('');
   const [loadingExternal, setLoadingExternal] = useState(false);
+  const [loadingSource, setLoadingSource] = useState<ExternalSource | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const hasWorkflows = pipelines.length > 0 || recipes.length > 0;
@@ -119,6 +120,15 @@ export function StartEpicModal({
   // The ref of the in-flight external load. Streamed chunks / results carry
   // their ref; we drop any that don't match (the user moved on to another).
   const activeLoadRef = useRef('');
+  // Watchdog so a load can never spin forever (e.g. the host never replies
+  // because the connector hung). Cleared by every terminal load message.
+  const loadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearLoad = () => {
+    if (loadTimer.current) { clearTimeout(loadTimer.current); loadTimer.current = null; }
+    activeLoadRef.current = '';
+    setLoadingExternal(false);
+    setLoadingSource(null);
+  };
 
   // Suggestion is deliberate, not per-keystroke: classify only once there's
   // real requirement content — when the user clicks "Suggest", or right after
@@ -149,6 +159,8 @@ export function StartEpicModal({
   useEffect(() => {
     idInputRef.current?.focus();
     idInputRef.current?.select();
+    // Clear any pending load watchdog if the modal unmounts mid-load.
+    return () => { if (loadTimer.current) { clearTimeout(loadTimer.current); } };
   }, []);
 
   // Workflows can arrive async (e.g. after applying the preset). Keep the
@@ -200,7 +212,7 @@ export function StartEpicModal({
       }
       if (m.type === 'requirementLoaded') {
         if (String(m.ref ?? '').trim() !== activeLoadRef.current) { return; }
-        setLoadingExternal(false);
+        clearLoad();
         setLoadSource(null);
         setLoadRef('');
         const loadedEpicId = String(m.epicId ?? '');
@@ -210,14 +222,15 @@ export function StartEpicModal({
         setDescLoadInfo({ kind: 'loaded', text: `Loaded from ${String(m.source ?? '')}` });
         // Deliberately do NOT set lastAnalyzed: the description is now filled,
         // so the auto-fire effect classifies it for a recipe (+ title/epicId).
-        activeLoadRef.current = '';
         return;
       }
       if (m.type === 'requirementLoadError') {
-        if (String(m.ref ?? '').trim() !== activeLoadRef.current) { return; }
-        setLoadingExternal(false);
-        setDescription('');        // drop the partial stream
-        activeLoadRef.current = '';
+        // Always stop the spinner — a stuck "loading…" with no message is the
+        // worst case. Only touch the description for the load we started.
+        const ref = String(m.ref ?? '').trim();
+        const ours = !ref || ref === activeLoadRef.current;
+        clearLoad();
+        if (ours) { setDescription(''); }  // drop the partial stream
         setLoadError(String(m.message ?? 'Failed to load requirement.'));
         return;
       }
@@ -230,12 +243,24 @@ export function StartEpicModal({
   const startLoad = (source: ExternalSource, ref: string) => {
     const r = ref.trim();
     if (!r) { return; }
+    if (loadTimer.current) { clearTimeout(loadTimer.current); }
     activeLoadRef.current = r;
     setLoadingExternal(true);
+    setLoadingSource(source);
     setLoadError(null);
     setSuggestion(null);
     setDescription('');
     postMessage({ type: 'loadRequirement', source, ref: r });
+    // Safety net: if the host never replies (connector hung, process wedged),
+    // stop the spinner and tell the user instead of loading forever.
+    loadTimer.current = setTimeout(() => {
+      if (activeLoadRef.current !== r) { return; }
+      clearLoad();
+      setDescription('');
+      setLoadError(
+        `Timed out loading from ${source}. The connector may be unreachable from the background CLI — paste the requirement text into the description instead.`,
+      );
+    }, 140_000);
   };
 
   const loadFromSource = () => {
@@ -503,6 +528,19 @@ export function StartEpicModal({
                 type="button"
                 onClick={() => { setLoadSource(null); setLoadError(null); }}
                 className="rounded px-1.5 py-1.5 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground"
+              >
+                Cancel
+              </button>
+            </div>
+          )}
+          {loadingExternal && (
+            <div className="mb-1.5 flex items-center gap-2 text-[10px] text-muted-foreground">
+              <Loader2 className="h-3 w-3 shrink-0 animate-spin text-primary" />
+              <span>Fetching from {loadingSource ?? 'source'} via Claude… (can take a while)</span>
+              <button
+                type="button"
+                onClick={() => { clearLoad(); setLoadError(null); }}
+                className="rounded px-1.5 py-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
               >
                 Cancel
               </button>
