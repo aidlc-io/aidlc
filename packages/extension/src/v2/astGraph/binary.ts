@@ -1,6 +1,6 @@
 /**
  * Download / cache / verify the pinned `ast-graph` CLI binary in extension
- * globalStorage. Pinned to v0.1.0 — bump AST_GRAPH_VERSION + checksums
+ * globalStorage. Pinned to v0.3.0 — bump AST_GRAPH_VERSION + checksums
  * together when picking up a new upstream release.
  *
  * Cache layout:
@@ -19,12 +19,12 @@ import * as https from 'https';
 import * as crypto from 'crypto';
 import { execFile } from 'child_process';
 
-export const AST_GRAPH_VERSION = '0.1.0';
+export const AST_GRAPH_VERSION = '0.3.0';
 const RELEASE_BASE = `https://github.com/emtyty/ast-graph/releases/download/v${AST_GRAPH_VERSION}`;
 
 /**
  * Per-target asset name + SHA256 of the archive itself (not the unpacked
- * binary) — taken from dist-manifest.json on the v0.1.0 release. Keep
+ * binary) — taken from sha256.sum on the v0.3.0 release. Keep
  * sorted alphabetically by target triple.
  */
 interface TargetSpec {
@@ -38,25 +38,22 @@ interface TargetSpec {
 const TARGETS: Record<string, TargetSpec> = {
   'aarch64-apple-darwin': {
     asset: 'ast-graph-cli-aarch64-apple-darwin.tar.xz',
-    sha256: '67d30ecb823b53e36b0e76804e6cb2030a36ceedbdcbf744c22779d67e35946b',
+    sha256: 'e69a381bd8c3aafc211dd6339e4391a4779315d8c4cc8e0604960522cc456f7a',
     exe: 'ast-graph',
   },
   'x86_64-apple-darwin': {
     asset: 'ast-graph-cli-x86_64-apple-darwin.tar.xz',
-    sha256: '099ba006610afb79fa60036d4ba15114881395b12a04f63d2ef5cb3cbc28bcb2',
+    sha256: '0baac18505437da795a35cd98a53c90e819849276ef2a95edb57534d44b149f5',
     exe: 'ast-graph',
   },
   'x86_64-unknown-linux-gnu': {
     asset: 'ast-graph-cli-x86_64-unknown-linux-gnu.tar.xz',
-    // Upstream publishes a `.sha256` sidecar; we verify on first download and
-    // log a mismatch instead of blocking — the official checksum file is the
-    // source of truth, this constant is a defense-in-depth check.
-    sha256: '',
+    sha256: 'd52ae4a96bd4d6963f741b5e7118cbff5a1fd587ff089e8aed9373324e6cd7de',
     exe: 'ast-graph',
   },
   'x86_64-pc-windows-msvc': {
     asset: 'ast-graph-cli-x86_64-pc-windows-msvc.zip',
-    sha256: '606763a7821caeb3169479db05896e526c3f76054c8fb77f2d7dde478405c840',
+    sha256: '120f03b617b7d33f9ecc1a165602bd5c795ec53ae12b4ac109f0d5af40736497',
     exe: 'ast-graph.exe',
   },
 };
