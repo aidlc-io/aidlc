@@ -10,6 +10,8 @@ export interface StepConfigDraft {
   /** Subset of the agent's `skills:` array — which skills this step makes
    *  available to the persona. Omitted when no skills are picked. */
   skills: string[];
+  /** Node ids (name ?? agent) this step runs after. Drives the DAG column. */
+  depends_on: string[];
   human_review: boolean;
   auto_review: boolean;
   auto_review_runner?: string;
@@ -22,11 +24,14 @@ interface Props {
   /** Agents available in the workspace — used to scope the skill picker to
    *  whatever the step's agent (persona) declares it can do. */
   agents: AgentSummary[];
+  /** Node ids of the *other* steps in this pipeline (name ?? agent) — the
+   *  candidates this step can depend on. Drives the "Runs after" picker. */
+  siblingNodeIds?: string[];
   onSubmit: (config: StepConfigDraft) => void;
   onClose: () => void;
 }
 
-export function StepConfigModal({ pipelineId, idx, step, agents, onSubmit, onClose }: Props) {
+export function StepConfigModal({ pipelineId, idx, step, agents, siblingNodeIds = [], onSubmit, onClose }: Props) {
   const [enabled, setEnabled] = useState(step.enabled);
   const [requires, setRequires] = useState((step.requires ?? []).join('\n'));
   const [produces, setProduces] = useState((step.produces ?? []).join('\n'));
@@ -34,6 +39,13 @@ export function StepConfigModal({ pipelineId, idx, step, agents, onSubmit, onClo
   const [autoReview, setAutoReview] = useState(step.auto_review);
   const [runner, setRunner] = useState(step.auto_review_runner ?? '');
   const [pickedSkills, setPickedSkills] = useState<string[]>(step.skills ?? []);
+  // Drop any stale deps that no longer match a sibling node id.
+  const [pickedDeps, setPickedDeps] = useState<string[]>(
+    () => (step.depends_on ?? []).filter((d) => siblingNodeIds.includes(d)),
+  );
+  const toggleDep = (id: string) => {
+    setPickedDeps((prev) => (prev.includes(id) ? prev.filter((d) => d !== id) : [...prev, id]));
+  };
   const firstInputRef = useRef<HTMLTextAreaElement>(null);
 
   const agentRecord = useMemo(() => agents.find((a) => a.id === step.agent), [agents, step.agent]);
@@ -68,6 +80,7 @@ export function StepConfigModal({ pipelineId, idx, step, agents, onSubmit, onClo
       requires: splitLines(requires),
       produces: splitLines(produces),
       skills: pickedSkills,
+      depends_on: pickedDeps,
       human_review: humanReview,
       auto_review: autoReview,
       auto_review_runner: autoReview ? runner.trim() : undefined,
@@ -131,6 +144,48 @@ export function StepConfigModal({ pipelineId, idx, step, agents, onSubmit, onClo
             Output artifacts the step writes. Existence is validated when the user marks the step done.
           </p>
         </div>
+
+        {/* Runs-after picker — drives the DAG column. Empty = a root step
+            (runs at the start). This is the only way to reposition a node:
+            dragging only reorders the YAML array, not the visual level. */}
+        {siblingNodeIds.length > 0 && (
+          <div>
+            <label className="mb-1 block text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">
+              Runs after <span className="font-normal normal-case tracking-normal">(steps this one depends on — controls its place in the flow)</span>
+            </label>
+            <div className="flex flex-wrap gap-1">
+              {siblingNodeIds.map((id) => {
+                const checked = pickedDeps.includes(id);
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => toggleDep(id)}
+                    className={cn(
+                      'inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-[10.5px] transition-colors',
+                      checked
+                        ? 'border-primary/60 bg-primary/15 text-primary'
+                        : 'border-border bg-transparent text-foreground hover:border-border/80 hover:bg-accent/40',
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        'inline-grid h-2.5 w-2.5 place-items-center rounded-sm border',
+                        checked ? 'border-primary bg-primary' : 'border-muted-foreground/40',
+                      )}
+                    >
+                      {checked && <span className="h-1 w-1 rounded-[1px] bg-primary-foreground" />}
+                    </span>
+                    {id}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="mt-1 text-[10px] italic text-muted-foreground">
+              Pick the upstream steps — this step lands one column after the latest of them. Leave empty to make it a starting step.
+            </p>
+          </div>
+        )}
 
         {/* Skill picker — multi-select scoped to the step's agent. Empty
             list means the agent declares no skills in workspace.yaml — the

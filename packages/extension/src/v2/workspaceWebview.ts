@@ -1454,6 +1454,10 @@ export class WorkspaceWebview {
     // touch skills), and the existing step.skills get preserved via prevObj.
     // An empty array from the inline path means "clear all skills".
     let inlineSkills: string[] | undefined;
+    // `depends_on` edited via the modal's "Runs after" picker. Undefined on the
+    // QuickPick path → preserve the existing edges; an array (incl. empty)
+    // replaces them, letting the user reposition or root a node.
+    let inlineDeps: string[] | undefined;
     if (inlineConfig) {
       const requires = Array.isArray(inlineConfig.requires)
         ? (inlineConfig.requires as unknown[]).map(String)
@@ -1463,6 +1467,9 @@ export class WorkspaceWebview {
         : [];
       if (Array.isArray(inlineConfig.skills)) {
         inlineSkills = (inlineConfig.skills as unknown[]).map(String).filter((s) => s.length > 0);
+      }
+      if (Array.isArray(inlineConfig.depends_on)) {
+        inlineDeps = (inlineConfig.depends_on as unknown[]).map(String).filter((s) => s.length > 0);
       }
       const runnerRaw = inlineConfig.auto_review_runner;
       draft = {
@@ -1522,6 +1529,15 @@ export class WorkspaceWebview {
         } else {
           delete obj.skills;
           delete obj.skill;
+        }
+      }
+      // Same for `depends_on` — the inline modal sends the full edge set;
+      // an empty array roots the step (drops it to the first column).
+      if (inlineDeps !== undefined) {
+        if (inlineDeps.length > 0) {
+          obj.depends_on = inlineDeps;
+        } else {
+          delete obj.depends_on;
         }
       }
       p.steps[idx] = obj as unknown as PipelineStepConfig;
@@ -2534,23 +2550,13 @@ export class WorkspaceWebview {
       return;
     }
 
-    // Reject duplicates: agent ids must be unique within a pipeline because
-    // `depends_on` references them by name. Adding a second `design` step
-    // creates two nodes that look interchangeable in YAML but only one wins
-    // when other steps resolve `depends_on: ['design']`, which corrupts the
-    // DAG layout (the original `design` gets pulled to whichever level the
-    // duplicate ended up at).
+    // Duplicate agent ids are allowed — multiple steps can share one agent
+    // with different skills / step names (e.g. several QA phases). DAG edges
+    // reference each step's *node id* (`name ?? agent`), not the bare agent,
+    // so duplicates stay distinct as long as their names differ. The picker
+    // requires a unique step name, which guarantees that.
     const pipeline = doc.pipelines.find((x) => x.id === pipelineId);
     if (!pipeline || !Array.isArray(pipeline.steps)) { return; }
-    const alreadyInPipeline = (pipeline.steps as PipelineStepConfig[]).some(
-      (s) => (typeof s === 'string' ? s : (s as { agent?: unknown }).agent) === agentId,
-    );
-    if (alreadyInPipeline) {
-      void vscode.window.showWarningMessage(
-        `Agent "${agentId}" is already a step in this workflow. Pick a different agent — DAG dependencies reference agents by name, so duplicates aren't supported.`,
-      );
-      return;
-    }
 
     this.mutateYaml((mdoc) => {
       const pipeline = mdoc.pipelines.find((x) => x.id === pipelineId);
@@ -2563,6 +2569,12 @@ export class WorkspaceWebview {
           : typeof (s as { agent?: unknown }).agent === 'string'
             ? (s as { agent: string }).agent
             : '';
+      const stepNameOf = (s: PipelineStepConfig): string | undefined =>
+        typeof s === 'object' && s && typeof (s as { name?: unknown }).name === 'string'
+          ? (s as { name: string }).name
+          : undefined;
+      // Node id keys the DAG (matches PipelineCard + addStepToPipeline).
+      const stepNodeId = (s: PipelineStepConfig): string => stepNameOf(s) ?? stepAgent(s);
       const stepDeps = (s: PipelineStepConfig): string[] => {
         if (typeof s === 'string') { return []; }
         const d = (s as { depends_on?: unknown }).depends_on;
@@ -2577,16 +2589,16 @@ export class WorkspaceWebview {
       // parallel relationship the user just created would be invisible.
       // Fix: when a linear pipeline gains its first parallel step, inflate
       // each existing step's `depends_on` from positional order so the
-      // chain becomes an explicit DAG. The picker step that was the
-      // parallel target keeps its (possibly empty) deps; downstream nodes
-      // chain off it as before.
+      // chain becomes an explicit DAG. Chaining keys by node id so the
+      // edges line up with the visual nodes (and survive duplicate agents).
       const usesDag = steps.some((s) => stepDeps(s).length > 0);
       if (!usesDag) {
-        let prevAgent = '';
+        let prevNodeId = '';
         for (let i = 0; i < steps.length; i++) {
           const s = steps[i];
           const agent = stepAgent(s);
           if (!agent) { continue; }
+          const name = stepNameOf(s);
           const inflated: Record<string, unknown> = {
             agent,
             enabled: typeof s === 'string'
@@ -2608,17 +2620,26 @@ export class WorkspaceWebview {
             auto_review: typeof s !== 'string'
               && (s as { auto_review?: unknown }).auto_review === true,
           };
+          // Preserve name + skills so inflation doesn't wipe them.
+          if (name) { inflated.name = name; }
+          const skills = typeof s === 'object' && s && Array.isArray((s as { skills?: unknown }).skills)
+            ? ((s as { skills: unknown[] }).skills as unknown[])
+            : undefined;
+          if (skills && skills.length > 0) { inflated.skills = skills; }
           const runner = typeof s === 'string'
             ? undefined
             : (s as { auto_review_runner?: unknown }).auto_review_runner;
           if (typeof runner === 'string') { inflated.auto_review_runner = runner; }
-          if (i > 0 && prevAgent) { inflated.depends_on = [prevAgent]; }
+          if (i > 0 && prevNodeId) { inflated.depends_on = [prevNodeId]; }
           steps[i] = inflated as unknown as PipelineStepConfig;
-          prevAgent = agent;
+          prevNodeId = name ?? agent;
         }
       }
 
-      const source = steps.find((s) => stepAgent(s) === parallelToAgent);
+      // `parallelToAgent` carries the source step's node id (the webview
+      // sends `name ?? agent`). Match on node id so the right step is found
+      // even when its agent appears more than once.
+      const source = steps.find((s) => stepNodeId(s) === parallelToAgent);
       if (!source) { return false; }
       const sourceDeps = stepDeps(source);
 
