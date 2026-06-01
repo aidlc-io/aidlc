@@ -4,6 +4,7 @@ import chalk from 'chalk';
 import {
   validateWorkspace,
   assemblePipeline,
+  recipePipelineId,
   PipelineAssembleError,
   heuristicClassify,
   buildClassificationPrompt,
@@ -121,10 +122,11 @@ export function registerPipeline(program: Command): void {
     .description('Classify a requirement brief into a task-type recipe')
     .option('--llm', 'use the `claude` CLI to classify (falls back to heuristic on failure)')
     .option('--generate', 'also assemble + add the chosen recipe as a pipeline')
-    .option('--id <id>', 'pipeline id when --generate is set (defaults to <recipe>-<epic-ish>)')
+    .option('--id <id>', 'pipeline id when --generate is set (defaults to the recipe id, or the epic id with --epic)')
+    .option('--epic <id>', 'name the generated pipeline after this epic (same convention as the extension)')
     .option('--json', 'output the verdict as JSON')
     .action((briefParts: string[], opts: {
-      llm?: boolean; generate?: boolean; id?: string; json?: boolean;
+      llm?: boolean; generate?: boolean; id?: string; epic?: string; json?: boolean;
     }, actionCmd: Command) => {
       const root  = resolveWorkspaceRoot(actionCmd);
       const doc   = requireYaml(root);
@@ -162,7 +164,8 @@ export function registerPipeline(program: Command): void {
 
       if (!opts.generate) { return; }
 
-      const pipelineId = opts.id ?? verdict.recipeId;
+      const pipelineId = opts.id
+        ?? recipePipelineId({ recipeId: verdict.recipeId, epicId: opts.epic, taken: existingIds(doc.pipelines) });
       if (existingIds(doc.pipelines).has(pipelineId)) {
         console.error(chalk.red(`\nPipeline "${pipelineId}" already exists. Pass --id <newId>.`));
         process.exit(1);
@@ -199,10 +202,11 @@ export function registerPipeline(program: Command): void {
     .description('Assemble a pipeline from a task-type recipe and add it to workspace.yaml')
     .requiredOption('--recipe <id>', 'recipe id (see `aidlc pipeline recipes`)')
     .option('--id <id>', 'id for the generated pipeline (defaults to the recipe id)')
+    .option('--epic <id>', 'name the generated pipeline after this epic (same convention as the extension)')
     .option('--from <pipelineId>', 'override the recipe\'s source pipeline')
     .option('--dry-run', 'print the assembled pipeline without writing workspace.yaml')
     .action((opts: {
-      recipe: string; id?: string; from?: string; dryRun?: boolean;
+      recipe: string; id?: string; epic?: string; from?: string; dryRun?: boolean;
     }, actionCmd: Command) => {
       const root = resolveWorkspaceRoot(actionCmd);
       const doc  = requireYaml(root);
@@ -223,9 +227,11 @@ export function registerPipeline(program: Command): void {
         if (recipe) { recipe.from = opts.from; }
       }
 
+      const pipelineId = opts.id
+        ?? recipePipelineId({ recipeId: opts.recipe, epicId: opts.epic, taken: existingIds(doc.pipelines) });
       let pipeline;
       try {
-        pipeline = assemblePipeline(config, { recipeId: opts.recipe, pipelineId: opts.id });
+        pipeline = assemblePipeline(config, { recipeId: opts.recipe, pipelineId });
       } catch (err) {
         if (err instanceof PipelineAssembleError) {
           console.error(chalk.red('Could not assemble pipeline:'));
@@ -339,7 +345,7 @@ export function registerPipeline(program: Command): void {
  * parsed verdict, or null on any failure (binary missing, timeout, bad JSON)
  * so the caller can fall back to the heuristic.
  */
-function classifyWithLlm(
+export function classifyWithLlm(
   brief: string,
   recipes: Parameters<typeof buildClassificationPrompt>[0],
 ): TaskTypeVerdict | null {

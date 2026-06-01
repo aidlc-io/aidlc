@@ -152,6 +152,36 @@ export function assemblePipeline(
   return assembled;
 }
 
+/**
+ * Pick the id for a pipeline assembled from a recipe — the single naming
+ * convention shared by the CLI and the extension so both produce the same id
+ * for the same inputs.
+ *
+ *   - With an `epicId` (UI "Start epic", CLI `epic start`): name the pipeline
+ *     after the epic (`CPD-1356`), falling back to `<epicId>-<recipeId>` then
+ *     `<epicId>-<recipeId>-N` when taken — keeps a 1:1 epic↔pipeline link.
+ *   - Without one (CLI `pipeline generate` / `classify --generate`): name it
+ *     after the recipe (`small-feature`), falling back to `<recipeId>-N`.
+ */
+export function recipePipelineId(opts: {
+  recipeId: string;
+  epicId?: string;
+  taken: Set<string> | ReadonlySet<string>;
+}): string {
+  const { recipeId, epicId, taken } = opts;
+  const candidates = epicId
+    ? [epicId, `${epicId}-${recipeId}`]
+    : [recipeId];
+  for (const c of candidates) {
+    if (!taken.has(c)) { return c; }
+  }
+  const base = candidates[candidates.length - 1];
+  for (let n = 2; ; n++) {
+    const c = `${base}-${n}`;
+    if (!taken.has(c)) { return c; }
+  }
+}
+
 function resolveSource(config: WorkspaceConfig, recipe: RecipeConfig): PipelineConfig {
   if (recipe.from) {
     const found = config.pipelines.find((p) => p.id === recipe.from);

@@ -1,9 +1,21 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import Table from 'cli-table3';
+import {
+  validateWorkspace,
+  assemblePipeline,
+  recipePipelineId,
+  PipelineAssembleError,
+  heuristicClassify,
+  scaffoldEpic,
+  EpicScaffoldError,
+  stepAgentId,
+  type PipelineConfig,
+} from '@aidlc/core';
 import { resolveWorkspaceRoot } from '../workspaceRoot';
-import { readYaml } from '../yamlIO';
+import { readYaml, requireYaml, writeYaml, existingIds } from '../yamlIO';
 import { listEpics, loadEpic, type EpicStatus, type EpicSummary } from '../epicsList';
+import { classifyWithLlm } from './pipeline';
 
 export function registerEpic(program: Command): void {
   const cmd = program
@@ -87,6 +99,134 @@ export function registerEpic(program: Command): void {
 
       printEpicDetail(epic);
     });
+
+  // ── start ────────────────────────────────────────────────────────────────────
+  cmd
+    .command('start <epicId>')
+    .description('Scaffold a new epic on disk (folder + artifacts + run state) — mirrors the extension\'s "Start epic"')
+    .option('--recipe <id>', 'assemble a right-sized pipeline from this recipe')
+    .option('--pipeline <id>', 'use an existing pipeline as-is')
+    .option('--brief <text...>', 'classify this requirement brief into a recipe, then assemble')
+    .option('--llm', 'use the `claude` CLI to classify --brief (falls back to heuristic)')
+    .option('--from <pipelineId>', 'override the recipe\'s source pipeline')
+    .option('--title <title>', 'epic title')
+    .option('--desc <description>', 'epic description / requirement snapshot')
+    .option('--input <kv>', 'capability input as key=value (repeatable)', collectKv, [] as string[])
+    .action((epicId: string, opts: {
+      recipe?: string; pipeline?: string; brief?: string[]; llm?: boolean;
+      from?: string; title?: string; desc?: string; input: string[];
+    }, actionCmd: Command) => {
+      const root = resolveWorkspaceRoot(actionCmd);
+      const doc  = requireYaml(root);
+
+      const modes = [opts.recipe, opts.pipeline, opts.brief?.length ? 'brief' : undefined]
+        .filter(Boolean).length;
+      if (modes !== 1) {
+        console.error(chalk.red('Pick exactly one of --recipe <id>, --pipeline <id>, or --brief <text>.'));
+        process.exit(1);
+      }
+
+      let config;
+      try {
+        config = validateWorkspace(doc, '.aidlc/workspace.yaml');
+      } catch (err) {
+        console.error(chalk.red('workspace.yaml is invalid — fix it before starting an epic:'));
+        console.error(chalk.dim(err instanceof Error ? err.message : String(err)));
+        process.exit(1);
+      }
+
+      // Resolve the target pipeline — either an existing one, or one assembled
+      // from a recipe (chosen directly or via classification) and written back.
+      let pipelineCfg: PipelineConfig;
+      if (opts.pipeline) {
+        const found = (doc.pipelines as Array<Record<string, unknown>>)
+          .find((p) => String(p.id) === opts.pipeline);
+        if (!found) {
+          console.error(chalk.red(`Pipeline "${opts.pipeline}" not found in workspace.yaml.`));
+          process.exit(1);
+        }
+        pipelineCfg = found as unknown as PipelineConfig;
+      } else {
+        if (config.recipes.length === 0) {
+          console.error(chalk.red('No recipes defined. Apply a preset that ships recipes, or add a `recipes:` block.'));
+          process.exit(1);
+        }
+        let recipeId = opts.recipe;
+        if (!recipeId) {
+          const brief = (opts.brief ?? []).join(' ').trim();
+          const verdict = (opts.llm ? classifyWithLlm(brief, config.recipes) : null)
+            ?? heuristicClassify(brief, config.recipes);
+          recipeId = verdict.recipeId;
+          console.log(chalk.dim(`Classified → ${chalk.bold(recipeId)} (${verdict.confidence}, ${verdict.source})`));
+        }
+        if (opts.from) {
+          const recipe = config.recipes.find((r) => r.id === recipeId);
+          if (recipe) { recipe.from = opts.from; }
+        }
+        const pipelineId = recipePipelineId({ recipeId, epicId, taken: existingIds(doc.pipelines) });
+        try {
+          pipelineCfg = assemblePipeline(config, { recipeId, pipelineId });
+        } catch (err) {
+          if (err instanceof PipelineAssembleError) {
+            console.error(chalk.red('Could not assemble pipeline: ') + chalk.dim(err.message));
+            process.exit(1);
+          }
+          throw err;
+        }
+        doc.pipelines.push(pipelineCfg as unknown as Record<string, unknown>);
+        try {
+          validateWorkspace(doc, '.aidlc/workspace.yaml');
+        } catch (err) {
+          console.error(chalk.red('Assembled pipeline failed validation — not written:'));
+          console.error(chalk.dim(err instanceof Error ? err.message : String(err)));
+          process.exit(1);
+        }
+        writeYaml(root, doc);
+        console.log(chalk.dim(`Assembled pipeline ${chalk.bold(pipelineCfg.id)} from recipe ${chalk.bold(recipeId)}`));
+      }
+
+      const agents = Array.isArray(pipelineCfg.steps)
+        ? (pipelineCfg.steps as unknown[]).map(stepAgentId)
+        : [];
+
+      const inputs: Record<string, string> = {};
+      for (const kv of opts.input) {
+        const eq = kv.indexOf('=');
+        if (eq > 0) { inputs[kv.slice(0, eq).trim()] = kv.slice(eq + 1).trim(); }
+      }
+
+      try {
+        const { epicDir } = scaffoldEpic({
+          workspaceRoot: root,
+          doc,
+          epicId,
+          title: opts.title?.trim() ?? '',
+          description: opts.desc?.trim() ?? '',
+          target: { kind: 'pipeline', id: pipelineCfg.id },
+          agents,
+          inputs,
+          pipeline: pipelineCfg,
+        });
+        const steps = agents.join(' → ');
+        console.log(chalk.green('✔') + ` Started epic ${chalk.bold(epicId)}`);
+        console.log(chalk.dim(`  Pipeline: ${pipelineCfg.id}`));
+        console.log(chalk.dim(`  Steps:    ${steps}`));
+        console.log(chalk.dim(`  Dir:      ${epicDir}`));
+        console.log(`\nRun ${chalk.cyan(`/${agents[0]} ${epicId}`)} in Claude to begin.`);
+      } catch (err) {
+        if (err instanceof EpicScaffoldError) {
+          console.error(chalk.red(err.message));
+          process.exit(1);
+        }
+        throw err;
+      }
+    });
+}
+
+/** Commander collector for repeatable `--input key=value` flags. */
+function collectKv(value: string, acc: string[]): string[] {
+  acc.push(value);
+  return acc;
 }
 
 // ── Rendering helpers ─────────────────────────────────────────────────────────

@@ -31,6 +31,7 @@ export type {
 
 export {
   assemblePipeline,
+  recipePipelineId,
   PipelineAssembleError,
 } from './runs/PipelineAssembler';
 export type { AssembleOptions } from './runs/PipelineAssembler';
@@ -39,8 +40,22 @@ export {
   heuristicClassify,
   buildClassificationPrompt,
   parseClassificationVerdict,
+  slugEpicId,
 } from './runs/TaskClassifier';
 export type { TaskTypeVerdict, Confidence } from './runs/TaskClassifier';
+
+export {
+  scaffoldEpic,
+  mirrorRunStateToEpic,
+  mapStepStatusToEpic,
+  epicsRoot,
+  EpicScaffoldError,
+} from './runs/EpicScaffold';
+export type {
+  EpicStatus,
+  ScaffoldEpicArgs,
+  ScaffoldEpicResult,
+} from './runs/EpicScaffold';
 
 export {
   WorkspaceLoader,

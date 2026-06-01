@@ -95,12 +95,6 @@ const REQUIREMENT_FETCH_ACTION: Record<string, string> = {
     'Fetch the URL in the user message once and read its main content (the requirement / spec). Do not crawl other pages.',
 };
 
-/** Normalize a free-text string into a valid epic-id slug (UPPER-DASH, starts with a letter). */
-function slugEpicId(s: string): string {
-  const up = (s || '').toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32);
-  return /^[A-Z]/.test(up) ? up : (up ? `E-${up}`.slice(0, 32) : '');
-}
-
 /** Pull the first balanced `{...}` JSON object out of free text (tolerates fences/prose). */
 function extractJsonObject(raw: string): unknown {
   const start = raw.indexOf('{');
@@ -155,8 +149,14 @@ import {
   targetPath,
   validateWorkspace,
   assemblePipeline,
+  recipePipelineId,
   PipelineAssembleError,
   heuristicClassify,
+  buildClassificationPrompt,
+  parseClassificationVerdict,
+  slugEpicId,
+  scaffoldEpic,
+  EpicScaffoldError,
 } from '@aidlc/core';
 import { SKILL_TEMPLATES } from './skillTemplates';
 import {
@@ -2241,13 +2241,8 @@ export class WorkspaceWebview {
     }
 
     const taken = new Set((doc.pipelines as Array<{ id?: unknown }>).map((p) => String(p.id)));
-    const pipelineId = taken.has(epicId) ? `${epicId}-${recipeId}` : epicId;
-    if (taken.has(pipelineId)) {
-      void vscode.window.showErrorMessage(
-        `AIDLC: pipeline "${pipelineId}" already exists. Remove it or pick a different epic id.`,
-      );
-      return null;
-    }
+    // Shared naming convention (core) so the CLI's `epic start` lands the same id.
+    const pipelineId = recipePipelineId({ recipeId, epicId, taken });
 
     let pipeline;
     try {
@@ -2289,7 +2284,6 @@ export class WorkspaceWebview {
     try { config = validateWorkspace(doc, '.aidlc/workspace.yaml'); } catch { return; }
     if (config.recipes.length === 0) { return; }
 
-    const recipeIds = config.recipes.map((r) => r.id);
     const post = (
       v: { recipeId: string; confidence: string; reasoning: string; title?: string; epicId?: string },
       source: string,
@@ -2307,32 +2301,23 @@ export class WorkspaceWebview {
     };
 
     // 1) LLM: analyze the requirement → recipe + a suggested title + epic id.
+    //    Same prompt/parser the CLI uses (core), so both pick consistently;
+    //    core also returns the suggested title + (slugged) epicId for the UI.
     try {
-      const system =
-        `You analyze a software requirement and pick the best-fitting pipeline recipe.\n\n` +
-        `Recipes:\n${config.recipes.map((r) => `- ${r.id}: ${r.description ?? ''}`).join('\n')}\n\n` +
-        `Respond with ONLY a JSON object (no markdown fences, no commentary):\n` +
-        `{"recipeId": "<one of: ${recipeIds.join(', ')}>", "confidence": "high|medium|low", ` +
-        `"reasoning": "<one sentence>", "title": "<short imperative title>", ` +
-        `"epicId": "<UPPERCASE-WITH-DASHES slug derived from the requirement, max 24 chars, e.g. EULA-ACCEPTANCE-GATE>"}`;
+      const system = buildClassificationPrompt(config.recipes);
       const stdout = await runClaude(
         ['--print', '--append-system-prompt', system, brief],
         { cwd: root, timeoutMs: 60_000 },
       );
-      const parsed = extractJsonObject(stdout) as
-        | { recipeId?: string; confidence?: string; reasoning?: string; title?: string; epicId?: string }
-        | null;
-      if (parsed?.recipeId && recipeIds.includes(parsed.recipeId)) {
-        post({
-          recipeId: parsed.recipeId,
-          confidence: parsed.confidence ?? 'medium',
-          reasoning: parsed.reasoning ?? '',
-          title: parsed.title?.trim() ?? '',
-          epicId: slugEpicId(parsed.epicId ?? ''),
-        }, 'llm');
-        return;
-      }
-      throw new Error('unparseable classifier output');
+      const verdict = parseClassificationVerdict(stdout, config.recipes);
+      post({
+        recipeId: verdict.recipeId,
+        confidence: verdict.confidence,
+        reasoning: verdict.reasoning,
+        title: verdict.title ?? '',
+        epicId: verdict.epicId ?? '',
+      }, 'llm');
+      return;
     } catch {
       // 2) Fallback: keyword heuristic so the user still gets a suggestion.
       try {
@@ -2516,83 +2501,33 @@ export class WorkspaceWebview {
       return;
     }
 
-    const epicRoot = readEpicRoot(doc);
-    const epicDir = path.resolve(root, epicRoot, epicId);
-    if (fs.existsSync(epicDir)) {
+    const pipelineCfg = targetKind === 'pipeline'
+      ? (doc.pipelines as PipelineConfig[] | undefined)?.find((p) => p.id === targetId)
+      : undefined;
+
+    // Scaffold the epic on disk via the shared core helper — same folder
+    // layout / state.json / RunState the CLI's `epic start` produces.
+    try {
+      scaffoldEpic({
+        workspaceRoot: root,
+        doc,
+        epicId,
+        title,
+        description,
+        target: { kind: targetKind as 'pipeline' | 'agent', id: targetId },
+        agents,
+        inputs,
+        pipeline: pipelineCfg,
+      });
+    } catch (err) {
+      if (err instanceof EpicScaffoldError) {
+        void vscode.window.showWarningMessage(`AIDLC: ${err.message}`);
+        return;
+      }
       void vscode.window.showWarningMessage(
-        `Epic dir already exists at ${path.relative(root, epicDir) || epicDir}. Delete it first.`,
+        `Epic could not be scaffolded: ${err instanceof Error ? err.message : String(err)}`,
       );
       return;
-    }
-
-    fs.mkdirSync(epicDir, { recursive: true });
-    const artifactsDir = path.join(epicDir, 'artifacts');
-    fs.mkdirSync(artifactsDir, { recursive: true });
-
-    // Copy artifact templates from .aidlc/aidlc-templates/<pipelineId>/ into
-    // the epic's artifacts/ folder so Claude has a structured starting point.
-    if (targetKind === 'pipeline') {
-      const templatesDir = path.join(root, WORKSPACE_DIR, 'aidlc-templates', targetId);
-      if (fs.existsSync(templatesDir)) {
-        for (const fileName of fs.readdirSync(templatesDir)) {
-          const src = path.join(templatesDir, fileName);
-          const dest = path.join(artifactsDir, fileName);
-          if (!fs.existsSync(dest)) { fs.copyFileSync(src, dest); }
-        }
-      }
-    }
-
-    const state = {
-      id: epicId,
-      title,
-      description,
-      pipeline: targetKind === 'pipeline' ? targetId : null,
-      agent: targetKind === 'agent' ? targetId : null,
-      agents,
-      currentStep: 0,
-      status: 'pending' as const,
-      createdAt: new Date().toISOString(),
-      stepStates: agents.map((a) => ({
-        agent: a,
-        status: 'pending' as const,
-        startedAt: null,
-        finishedAt: null,
-      })),
-    };
-
-    fs.writeFileSync(
-      path.join(epicDir, 'state.json'),
-      JSON.stringify(state, null, 2) + '\n',
-      'utf8',
-    );
-    fs.writeFileSync(
-      path.join(epicDir, 'inputs.json'),
-      JSON.stringify(inputs, null, 2) + '\n',
-      'utf8',
-    );
-
-    if (targetKind === 'pipeline') {
-      const pipelineCfg = (doc.pipelines as PipelineConfig[] | undefined)?.find(
-        (p) => p.id === targetId,
-      );
-      if (pipelineCfg && Array.isArray(pipelineCfg.steps) && pipelineCfg.steps.length > 0) {
-        const existingRun = RunStateStore.load(root, epicId);
-        if (!existingRun) {
-          try {
-            const runState = startRun({
-              runId: epicId,
-              pipeline: pipelineCfg,
-              context: { epic: epicId, ...inputs },
-            });
-            RunStateStore.save(root, runState);
-            mirrorRunStateToEpic(root, runState, doc);
-          } catch (err) {
-            void vscode.window.showWarningMessage(
-              `Epic created, but pipeline run could not be scaffolded: ${err instanceof Error ? err.message : String(err)}`,
-            );
-          }
-        }
-      }
     }
 
     void vscode.window.showInformationMessage(

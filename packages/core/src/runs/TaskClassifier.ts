@@ -29,6 +29,35 @@ export interface TaskTypeVerdict {
   reasoning: string;
   /** Which strategy produced this verdict. */
   source: 'heuristic' | 'llm';
+  /**
+   * Short imperative title suggested from the brief (LLM only — the heuristic
+   * leaves it undefined). UI auto-fills the epic title with it.
+   */
+  title?: string;
+  /**
+   * Suggested epic id slug derived from the brief (LLM only), already
+   * normalized via {@link slugEpicId}. UI auto-fills the epic id with it.
+   */
+  epicId?: string;
+}
+
+/**
+ * Normalize a free-text string into a workspace-safe epic id slug:
+ * UPPERCASE, dashes for separators, max 24 chars, must start with a letter.
+ * Returns '' when nothing usable remains (caller falls back to its default).
+ * Shared by the CLI and the extension so both derive the same id from the
+ * same brief.
+ */
+export function slugEpicId(raw: string): string {
+  const slug = (raw ?? '')
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 24)
+    .replace(/-+$/g, '');
+  // Must start with a letter to satisfy the id pattern.
+  return /^[A-Z]/.test(slug) ? slug : '';
 }
 
 /**
@@ -135,11 +164,18 @@ const VerdictSchema = z.object({
   recipeId: z.string().min(1),
   confidence: z.enum(['high', 'medium', 'low']),
   reasoning: z.string().min(1),
+  // Optional UI-oriented suggestions — the classifier may also name the epic.
+  title: z.string().optional(),
+  epicId: z.string().optional(),
 });
 
 /**
  * System prompt for the LLM classifier. Paired with the brief as the user
  * message (mirrors the runner's `claude --print --append-system-prompt`).
+ *
+ * Always asks for a suggested `title` + `epicId` too so the UI can auto-fill
+ * the epic from the same single round-trip. Non-UI callers (CLI) simply ignore
+ * those fields — but the prompt stays the single source of truth.
  */
 export function buildClassificationPrompt(recipes: RecipeConfig[]): string {
   const menu = recipes
@@ -153,7 +189,9 @@ export function buildClassificationPrompt(recipes: RecipeConfig[]): string {
     menu,
     '',
     'Respond with ONLY a JSON object, no prose, no markdown fences:',
-    '{"recipeId": "<one of the ids above>", "confidence": "high|medium|low", "reasoning": "<one sentence>"}',
+    '{"recipeId": "<one of the ids above>", "confidence": "high|medium|low", '
+      + '"reasoning": "<one sentence>", "title": "<short imperative title>", '
+      + '"epicId": "<UPPERCASE-WITH-DASHES slug from the brief, max 24 chars, e.g. EULA-ACCEPTANCE-GATE>"}',
     '',
     'Prefer the smallest recipe that covers the work. A bug fix is not a feature.',
   ].join('\n');
@@ -163,6 +201,7 @@ export function buildClassificationPrompt(recipes: RecipeConfig[]): string {
  * Parse + validate an LLM classification response into a {@link TaskTypeVerdict}.
  * Tolerates surrounding prose / ```json fences. Throws when no valid JSON is
  * found or when the chosen `recipeId` isn't one of the workspace's recipes.
+ * `title` / `epicId` are carried through when present (epicId normalized).
  */
 export function parseClassificationVerdict(raw: string, recipes: RecipeConfig[]): TaskTypeVerdict {
   const ids = new Set(recipes.map((r) => r.id));
@@ -179,7 +218,13 @@ export function parseClassificationVerdict(raw: string, recipes: RecipeConfig[])
       `Classifier chose unknown recipe "${parsed.data.recipeId}". Available: ${[...ids].join(', ')}`,
     );
   }
-  return { ...parsed.data, source: 'llm' };
+  const { title, epicId, ...rest } = parsed.data;
+  const verdict: TaskTypeVerdict = { ...rest, source: 'llm' };
+  const cleanTitle = title?.trim();
+  if (cleanTitle) { verdict.title = cleanTitle; }
+  const slug = slugEpicId(epicId ?? '');
+  if (slug) { verdict.epicId = slug; }
+  return verdict;
 }
 
 /** Pull the first balanced `{...}` object out of free text. */
