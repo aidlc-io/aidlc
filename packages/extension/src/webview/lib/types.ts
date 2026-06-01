@@ -391,6 +391,9 @@ export interface WorkspaceState {
   runIds: string[];
   /** Built-in skill templates surfaced for the inline AddSkill modal. */
   skillTemplates: SkillTemplateRef[];
+  /** The built-in AIDLC SDLC pipeline — used by the Add-pipeline modal's
+   *  "Load AIDLC default" button to prefill steps. */
+  defaultPipeline?: PipelineSummary;
   /** Suggested next sequential id for the inline Start-Epic modal (e.g. EPIC-007). */
   nextEpicId: string;
   /** All existing epic ids (folders under epicRoot) — for uniqueness check. */

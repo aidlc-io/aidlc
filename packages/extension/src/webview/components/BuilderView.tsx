@@ -123,6 +123,22 @@ export function BuilderView({ state }: { state: WorkspaceState }) {
           mode="add"
           agents={pipelineAgents}
           existingPipelineIds={state.pipelines.map((p) => p.id)}
+          aidlcDefault={
+            state.defaultPipeline
+              ? {
+                  on_failure: state.defaultPipeline.on_failure,
+                  steps: state.defaultPipeline.steps.map((s) => ({
+                    agent: s.agent,
+                    name: s.name,
+                    skills: s.skills,
+                    human_review: s.human_review,
+                    auto_review: s.auto_review,
+                    auto_review_runner: s.auto_review_runner,
+                    depends_on: s.depends_on,
+                  })),
+                }
+              : undefined
+          }
           onSubmit={(draft) =>
             postMessage({ type: 'addPipelineInline', draft })
           }

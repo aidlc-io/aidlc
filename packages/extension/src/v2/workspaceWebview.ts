@@ -229,6 +229,8 @@ interface WorkspaceState {
   runIds: string[];
   /** Built-in skill templates surfaced for the inline AddSkill modal. */
   skillTemplates: SkillTemplateRef[];
+  /** Built-in AIDLC SDLC pipeline — prefilled by the Add-pipeline modal. */
+  defaultPipeline?: PipelineSummary;
   /** Suggested next sequential id for the inline Start-Epic modal. */
   nextEpicId: string;
   /** All existing epic ids (folders under epicRoot) — for uniqueness check. */
@@ -364,6 +366,9 @@ function buildState(initialView: WorkspaceView): WorkspaceState {
     epicsCount: epics.length,
     runIds: listRunIds(root),
     skillTemplates: SKILL_TEMPLATE_REFS,
+    defaultPipeline: BUILTIN_WORKFLOWS[0]
+      ? getBuiltinPipelineSummary(BUILTIN_WORKFLOWS[0])
+      : undefined,
     nextEpicId: suggestNextEpicId(epicIds),
     existingEpicIds: epicIds,
     initialView,
