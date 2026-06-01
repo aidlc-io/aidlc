@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { onHostMessage, getPersistedUi, setPersistedUi } from '@/lib/bridge';
-import { Plus, FileCode2, Layers, Pencil, Copy, Trash2 } from 'lucide-react';
+import { Plus, FileCode2, Pencil, Copy, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { WorkspaceState, AgentSummary, SkillSummary, AssetScope } from '@/lib/types';
 import { AgentCard, KebabMenu } from './AgentCard';
@@ -10,32 +10,27 @@ import { ConfirmModal } from './ConfirmModal';
 import { PipelineModal } from './PipelineModal';
 import { AddSkillModal } from './AddSkillModal';
 import { AddAgentModal } from './AddAgentModal';
-import { StartEpicModal } from './StartEpicModal';
 import { postMessage } from '@/lib/bridge';
 
-type BuilderTab = 'workflows' | 'agents' | 'skills' | 'epics';
+type BuilderTab = 'workflows' | 'agents' | 'skills';
 
 export function BuilderView({ state }: { state: WorkspaceState }) {
   const [tab, setTab] = useState<BuilderTab>('agents');
   const [addPipelineOpen, setAddPipelineOpen] = useState(false);
   const [addSkillOpen, setAddSkillOpen] = useState(false);
   const [addAgentOpen, setAddAgentOpen] = useState(false);
-  const [startEpicOpen, setStartEpicOpen] = useState(false);
 
   const tabs: { id: BuilderTab; label: string; count: number }[] = [
     { id: 'workflows', label: 'Workflows', count: state.pipelines.length },
     { id: 'agents', label: 'Agents', count: state.agents.length },
     { id: 'skills', label: 'Skills', count: state.skills.length },
-    { id: 'epics', label: 'Epics', count: state.epics.length },
   ];
 
   const addLabel = tab === 'workflows'
     ? 'Add Pipeline'
     : tab === 'agents'
     ? 'Add Agent'
-    : tab === 'skills'
-    ? 'Add Skill'
-    : 'Start Epic';
+    : 'Add Skill';
 
   // Agent picker shown in AddPipelineModal — project + global only.
   // Mirrors the Agents tab so the user picks from the same set they see
@@ -49,17 +44,18 @@ export function BuilderView({ state }: { state: WorkspaceState }) {
   const onAdd = () => {
     if (tab === 'workflows') { setAddPipelineOpen(true); }
     else if (tab === 'agents') { setAddAgentOpen(true); }
-    else if (tab === 'skills') { setAddSkillOpen(true); }
-    else { setStartEpicOpen(true); }
+    else { setAddSkillOpen(true); }
   };
 
-  // Sidebar's "Start Epic" pings the workspace panel; switch to Epics tab
-  // and pop the modal regardless of which view was last active.
+  // Stat tiles in the sidebar deep-link into a tab via `setBuilderTab`.
+  // (Epics live in the separate top-level Epics view, handled there.)
   useEffect(() => {
     return onHostMessage((msg) => {
-      if (msg.type === 'triggerStartEpic') {
-        setTab('epics');
-        setStartEpicOpen(true);
+      if (msg.type === 'setBuilderTab') {
+        const t = msg.tab;
+        if (t === 'workflows' || t === 'agents' || t === 'skills') {
+          setTab(t);
+        }
       }
     });
   }, []);
@@ -121,7 +117,6 @@ export function BuilderView({ state }: { state: WorkspaceState }) {
       {tab === 'agents' && <AgentsByScope agents={state.agents} skills={state.skills} />}
       {tab === 'skills' && <SkillsByScope skills={state.skills} />}
       {tab === 'workflows' && <PipelinesGrid state={state} />}
-      {tab === 'epics' && <EpicsMiniGrid state={state} />}
 
       {addPipelineOpen && (
         <PipelineModal
@@ -150,16 +145,6 @@ export function BuilderView({ state }: { state: WorkspaceState }) {
           takenSkillIds={allSkillIds}
           onSubmit={(draft) => postMessage({ type: 'addAgentInline', draft })}
           onClose={() => setAddAgentOpen(false)}
-        />
-      )}
-      {startEpicOpen && (
-        <StartEpicModal
-          pipelines={state.pipelines}
-          agentMeta={state.agentMeta}
-          nextEpicId={state.nextEpicId}
-          existingEpicIds={state.existingEpicIds}
-          onSubmit={(draft) => postMessage({ type: 'startEpicInline', draft })}
-          onClose={() => setStartEpicOpen(false)}
         />
       )}
     </div>
@@ -473,45 +458,12 @@ function PipelinesGrid({ state }: { state: WorkspaceState }) {
           {state.pipelines.length} available
         </span>
       </div>
-      <PipelineCard pipeline={selected} agents={allAgents} runIds={state.runIds} />
-    </div>
-  );
-}
-
-function EpicsMiniGrid({ state }: { state: WorkspaceState }) {
-  if (state.epics.length === 0) { return <EmptyHint kind="epics" />; }
-  return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-      {state.epics.map((e) => (
-        <div
-          key={e.id}
-          role="button"
-          tabIndex={0}
-          onClick={() => postMessage({ type: 'openEpicState', path: e.statePath })}
-          onKeyDown={(ev) => {
-            if (ev.key === 'Enter' || ev.key === ' ') {
-              ev.preventDefault();
-              postMessage({ type: 'openEpicState', path: e.statePath });
-            }
-          }}
-          className="cursor-pointer rounded-lg border border-border bg-card p-3.5 transition-all hover:border-primary/40"
-        >
-          <div className="flex items-center gap-2">
-            <Layers className="h-3.5 w-3.5 text-primary" />
-            <div className="truncate font-mono text-xs font-bold text-primary">{e.id}</div>
-          </div>
-          <p className="mt-1.5 truncate text-sm text-foreground">{e.title}</p>
-          <div className="mt-2 h-1 overflow-hidden rounded-full bg-secondary">
-            <div
-              className={cn(
-                'h-full rounded-full',
-                e.status === 'done' ? 'bg-success' : 'bg-primary',
-              )}
-              style={{ width: `${e.progress}%` }}
-            />
-          </div>
-        </div>
-      ))}
+      <PipelineCard
+        pipeline={selected}
+        agents={allAgents}
+        runIds={state.runIds}
+        allPipelineIds={state.pipelines.map((p) => p.id)}
+      />
     </div>
   );
 }

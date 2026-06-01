@@ -3,6 +3,7 @@ import {
   Play,
   Plus,
   Pencil,
+  Copy,
   X,
   ArrowUp,
   ArrowDown,
@@ -18,15 +19,20 @@ import { StepPickerModal } from './StepPickerModal';
 import { StartRunModal } from './StartRunModal';
 import { StepConfigModal } from './StepConfigModal';
 import { PipelineModal, type PipelineDraft } from './PipelineModal';
+import { KebabMenu } from './AgentCard';
+import { RenameModal } from './RenameModal';
 
 export function PipelineCard({
   pipeline,
   agents,
   runIds,
+  allPipelineIds,
 }: {
   pipeline: PipelineSummary;
   agents: AgentSummary[];
   runIds: string[];
+  /** Every workflow id in the workspace — used to validate a rename target. */
+  allPipelineIds: string[];
 }) {
   const total = pipeline.steps.length;
   const [dragSrc, setDragSrc] = useState<number | null>(null);
@@ -39,6 +45,7 @@ export function PipelineCard({
   const [parallelToAgent, setParallelToAgent] = useState<string | null>(null);
   const [runOpen, setRunOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [renameOpen, setRenameOpen] = useState(false);
 
   const initialDraft: PipelineDraft = {
     id: pipeline.id,
@@ -57,7 +64,7 @@ export function PipelineCard({
     })),
   };
   return (
-    <div className="rounded-lg border border-border bg-card p-3">
+    <div className="group rounded-lg border border-border bg-card p-3">
       <div className="flex items-center gap-2 border-b border-border pb-2">
         <div className="font-mono text-xs font-bold text-primary">{pipeline.id}</div>
         <span className="text-[10px] text-muted-foreground">{total} steps</span>
@@ -100,6 +107,21 @@ export function PipelineCard({
         >
           <X className="h-3.5 w-3.5" />
         </button>
+        <KebabMenu
+          items={[
+            {
+              label: 'Rename',
+              icon: <Pencil className="h-3 w-3" />,
+              onSelect: () => setRenameOpen(true),
+            },
+            {
+              label: 'Duplicate',
+              icon: <Copy className="h-3 w-3" />,
+              action: 'duplicatePipeline',
+            },
+          ]}
+          payload={{ id: pipeline.id }}
+        />
       </div>
 
       {hasDagShape(pipeline) ? (
@@ -234,6 +256,17 @@ export function PipelineCard({
             postMessage({ type: 'editPipelineInline', id: pipeline.id, draft })
           }
           onClose={() => setEditOpen(false)}
+        />
+      )}
+      {renameOpen && (
+        <RenameModal
+          kind="workflow"
+          currentId={pipeline.id}
+          existingIds={allPipelineIds}
+          onRename={(newId) =>
+            postMessage({ type: 'renamePipeline', id: pipeline.id, newId })
+          }
+          onClose={() => setRenameOpen(false)}
         />
       )}
     </div>

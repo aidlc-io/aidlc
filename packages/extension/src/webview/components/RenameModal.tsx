@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Modal, ModalFooter, ModalCancelButton, ModalConfirmButton } from './Modal';
 
 interface Props {
-  kind: 'agent' | 'skill';
+  kind: 'agent' | 'skill' | 'workflow';
   currentId: string;
   existingIds: string[];
   onRename: (newId: string) => void;
@@ -23,7 +23,7 @@ export function RenameModal({ kind, currentId, existingIds, onRename, onClose }:
     !trimmed
       ? 'ID cannot be empty'
       : trimmed !== currentId && existingIds.includes(trimmed)
-      ? `${kind === 'agent' ? 'Agent' : 'Skill'} with this ID already exists`
+      ? `${kind === 'agent' ? 'Agent' : kind === 'skill' ? 'Skill' : 'Workflow'} with this ID already exists`
       : null;
   const canSubmit = !error && trimmed !== currentId;
 

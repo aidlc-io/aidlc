@@ -426,6 +426,11 @@ export class SidebarWebviewProvider implements vscode.WebviewViewProvider {
       case 'openBuilder':
         await vscode.commands.executeCommand('aidlc.openBuilder');
         return;
+      case 'openBuilderTab': {
+        const tab = String(msg.tab ?? '');
+        if (tab) { WorkspaceWebview.openBuilderTab(this.extensionUri, tab); }
+        return;
+      }
       case 'openClaude':
         await vscode.commands.executeCommand('aidlc.openClaudeTerminal');
         return;
