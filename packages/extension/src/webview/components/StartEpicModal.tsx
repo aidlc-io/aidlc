@@ -102,6 +102,7 @@ export function StartEpicModal({
   const [loadRef, setLoadRef] = useState('');
   const [loadingExternal, setLoadingExternal] = useState(false);
   const [loadingSource, setLoadingSource] = useState<ExternalSource | null>(null);
+  const [loadElapsed, setLoadElapsed] = useState(0);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const hasWorkflows = pipelines.length > 0 || recipes.length > 0;
@@ -123,8 +124,10 @@ export function StartEpicModal({
   // Watchdog so a load can never spin forever (e.g. the host never replies
   // because the connector hung). Cleared by every terminal load message.
   const loadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const loadTick = useRef<ReturnType<typeof setInterval> | null>(null);
   const clearLoad = () => {
     if (loadTimer.current) { clearTimeout(loadTimer.current); loadTimer.current = null; }
+    if (loadTick.current) { clearInterval(loadTick.current); loadTick.current = null; }
     activeLoadRef.current = '';
     setLoadingExternal(false);
     setLoadingSource(null);
@@ -159,8 +162,11 @@ export function StartEpicModal({
   useEffect(() => {
     idInputRef.current?.focus();
     idInputRef.current?.select();
-    // Clear any pending load watchdog if the modal unmounts mid-load.
-    return () => { if (loadTimer.current) { clearTimeout(loadTimer.current); } };
+    // Clear any pending load watchdog / tick if the modal unmounts mid-load.
+    return () => {
+      if (loadTimer.current) { clearTimeout(loadTimer.current); }
+      if (loadTick.current) { clearInterval(loadTick.current); }
+    };
   }, []);
 
   // Workflows can arrive async (e.g. after applying the preset). Keep the
@@ -244,13 +250,16 @@ export function StartEpicModal({
     const r = ref.trim();
     if (!r) { return; }
     if (loadTimer.current) { clearTimeout(loadTimer.current); }
+    if (loadTick.current) { clearInterval(loadTick.current); }
     activeLoadRef.current = r;
     setLoadingExternal(true);
     setLoadingSource(source);
+    setLoadElapsed(0);
     setLoadError(null);
     setSuggestion(null);
     setDescription('');
     postMessage({ type: 'loadRequirement', source, ref: r });
+    loadTick.current = setInterval(() => setLoadElapsed((s) => s + 1), 1000);
     // Safety net: if the host never replies (connector hung, process wedged),
     // stop the spinner and tell the user instead of loading forever.
     loadTimer.current = setTimeout(() => {
@@ -536,7 +545,7 @@ export function StartEpicModal({
           {loadingExternal && (
             <div className="mb-1.5 flex items-center gap-2 text-[10px] text-muted-foreground">
               <Loader2 className="h-3 w-3 shrink-0 animate-spin text-primary" />
-              <span>Fetching from {loadingSource ?? 'source'} via Claude… (can take a while)</span>
+              <span>Fetching from {loadingSource ?? 'source'} via Claude… (~{loadElapsed}s)</span>
               <button
                 type="button"
                 onClick={() => { clearLoad(); setLoadError(null); }}
