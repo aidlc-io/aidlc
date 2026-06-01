@@ -148,7 +148,9 @@ export function registerEpic(program: Command): void {
         pipelineCfg = found as unknown as PipelineConfig;
       } else {
         if (config.recipes.length === 0) {
-          console.error(chalk.red('No recipes defined. Apply a preset that ships recipes, or add a `recipes:` block.'));
+          console.error(chalk.red('No recipes defined — task-type suggestion needs them.'));
+          console.error(chalk.dim('  Back-fill from your existing pipeline: aidlc recipe init'));
+          console.error(chalk.dim('  Or apply the preset that ships them:    aidlc preset apply sdlc'));
           process.exit(1);
         }
         let recipeId = opts.recipe;

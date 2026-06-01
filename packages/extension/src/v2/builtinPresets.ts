@@ -21,6 +21,7 @@ export {
   getSdlcBuiltinPipelineSummary,
   getAllBuiltinPipelineSummaries,
   getBuiltinRecipeSummaries,
+  planRecipeMigration,
   loadBuiltinPreset,
   loadAllBuiltinPresets,
   builtinClaudeCommand,
