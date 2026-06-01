@@ -56,6 +56,11 @@ export function BuilderView({ state }: { state: WorkspaceState }) {
         if (t === 'workflows' || t === 'agents' || t === 'skills') {
           setTab(t);
         }
+      } else if (msg.type === 'triggerAddPipeline') {
+        // Start-Epic modal's "Create new pipeline" → open the Workflows tab
+        // and pop the inline Add-pipeline modal.
+        setTab('workflows');
+        setAddPipelineOpen(true);
       }
     });
   }, []);

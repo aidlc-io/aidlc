@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ListOrdered, ChevronRight, FileUp, Loader2 } from 'lucide-react';
+import { ListOrdered, ChevronRight, FileUp, Loader2, Sparkles, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { AgentMeta, PipelineSummary } from '@/lib/types';
 import { Modal, ModalFooter, ModalCancelButton, ModalConfirmButton } from './Modal';
 import { pickAndReadFile } from '@/lib/pickFile';
+import { postMessage } from '@/lib/bridge';
 
 const ID_PATTERN = /^[A-Z][A-Z0-9-]*$/;
 
@@ -88,6 +89,14 @@ export function StartEpicModal({
     idInputRef.current?.select();
   }, []);
 
+  // When pipelines appear (e.g. after "Load SDLC pipeline example" applies the
+  // preset and state refreshes), auto-select the first one so the form is ready.
+  useEffect(() => {
+    if (!pipelineId && pipelines.length > 0) {
+      setPipelineId(pipelines[0].id);
+    }
+  }, [pipelines, pipelineId]);
+
   const capabilities = useMemo<string[]>(() => {
     const targetAgents = pipelines.find((p) => p.id === pipelineId)?.steps.map((s) => s.agent) ?? [];
     const seen = new Set<string>();
@@ -164,7 +173,7 @@ export function StartEpicModal({
           </label>
           <div className="max-h-44 overflow-y-auto rounded-md border border-border">
             {pipelines.length === 0 ? (
-              <NoPipelines />
+              <NoPipelines onClose={onClose} />
             ) : (
               pipelines.map((p) => {
                 const steps = p.steps.map((s) => s.name ?? s.agent);
@@ -323,11 +332,38 @@ export function StartEpicModal({
   );
 }
 
-function NoPipelines() {
+function NoPipelines({ onClose }: { onClose: () => void }) {
   return (
-    <div className="flex items-center gap-2 p-3 text-[11px] text-muted-foreground">
-      <ChevronRight className="h-3 w-3 shrink-0" />
-      <span>No pipelines available. Go to the <strong>Builder</strong> tab to create one.</span>
+    <div className="flex flex-col gap-2.5 p-3">
+      <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+        <ChevronRight className="h-3 w-3 shrink-0" />
+        <span>No pipelines yet. Load the built-in SDLC pipeline or create your own.</span>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => postMessage({ type: 'initSdlcPreset' })}
+          title="Apply the built-in AIDLC SDLC pipeline (installs its agents + skills). It'll appear here once applied."
+          className="inline-flex items-center gap-1.5 rounded-md border border-primary/40 bg-primary/15 px-3 py-1.5 text-[11px] font-semibold text-primary transition-colors hover:border-primary/60 hover:bg-primary/25"
+        >
+          <Sparkles className="h-3 w-3" />
+          Load SDLC pipeline example
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            // Hand off to the Builder's inline Add-pipeline modal, then close
+            // this one so the user isn't stacking modals.
+            postMessage({ type: 'openAddPipeline' });
+            onClose();
+          }}
+          title="Open the Add-pipeline form to build a custom workflow"
+          className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-[11px] font-medium text-foreground transition-colors hover:bg-accent"
+        >
+          <Plus className="h-3 w-3" />
+          Create new pipeline
+        </button>
+      </div>
     </div>
   );
 }
