@@ -655,6 +655,85 @@ export function getBuiltinRecipeSummaries(): Array<{
 }
 
 /**
+ * A recipe row as it lives in `workspace.yaml` (`config.recipes[]`): the
+ * built-in {@link RecipeDef} plus the `from` pipeline it draws steps from.
+ */
+export interface WorkspaceRecipe {
+  id: string;
+  description: string;
+  from: string;
+  steps: string[];
+}
+
+/** The DAG identity the runner/assembler keys a pipeline step by: `name ?? agent`. */
+function stepDagIdsOf(pipeline: unknown): Set<string> {
+  const ids = new Set<string>();
+  const steps = (pipeline as { steps?: unknown }).steps;
+  if (!Array.isArray(steps)) { return ids; }
+  for (const s of steps) {
+    if (!s || typeof s !== 'object') { continue; }
+    const step = s as { name?: unknown; agent?: unknown };
+    const id = typeof step.name === 'string' && step.name
+      ? step.name
+      : typeof step.agent === 'string' ? step.agent : '';
+    if (id) { ids.add(id); }
+  }
+  return ids;
+}
+
+/**
+ * Plan a recipe back-fill for an existing workspace that predates recipes.
+ *
+ * Recipes power task-type suggestion in `aidlc epic start --brief`. A workspace
+ * scaffolded before recipes existed has a pipeline but an empty `recipes:`
+ * block, so the classifier has nothing to choose from. This figures out which
+ * built-in recipes can be grafted onto the workspace's *existing* pipeline.
+ *
+ * A recipe is valid against a pipeline only when its `steps` (DAG ids) exist in
+ * that pipeline, so each built-in recipe is filtered to the steps the pipeline
+ * actually has, and `from` is rebound to that pipeline's id. We prefer a
+ * pipeline whose id matches a built-in workflow's `pipelineId`, then fall back
+ * to whichever pipeline covers the most recipe steps — this also handles a
+ * renamed/duplicated SDLC pipeline.
+ *
+ * Returns `null` when nothing should change: recipes already present, no
+ * pipelines, or no pipeline whose steps overlap any built-in recipe. The result
+ * is the array to assign to `doc.recipes`; the caller persists it.
+ */
+export function planRecipeMigration(
+  doc: { recipes?: unknown; pipelines?: unknown },
+  workflows: BuiltinWorkflow[] = BUILTIN_WORKFLOWS,
+): WorkspaceRecipe[] | null {
+  if (Array.isArray(doc.recipes) && doc.recipes.length > 0) { return null; }
+  const pipelines = Array.isArray(doc.pipelines) ? doc.pipelines : [];
+  if (pipelines.length === 0) { return null; }
+
+  let best: { recipes: WorkspaceRecipe[]; score: number } | null = null;
+  for (const wf of workflows) {
+    const wfRecipes = wf.recipes ?? [];
+    if (wfRecipes.length === 0) { continue; }
+    for (const pipe of pipelines) {
+      const pid = (pipe as { id?: unknown }).id;
+      if (typeof pid !== 'string' || !pid) { continue; }
+      const ids = stepDagIdsOf(pipe);
+      const built: WorkspaceRecipe[] = [];
+      for (const r of wfRecipes) {
+        const steps = r.steps.filter((s) => ids.has(s));
+        if (steps.length === 0) { continue; }
+        built.push({ id: r.id, description: r.description, from: pid, steps });
+      }
+      if (built.length === 0) { continue; }
+      // Exact pipelineId match dominates; otherwise prefer the pipeline that
+      // covers the most recipe steps.
+      const covered = built.reduce((n, r) => n + r.steps.length, 0);
+      const score = (pid === wf.pipelineId ? 10_000 : 0) + covered;
+      if (!best || score > best.score) { best = { recipes: built, score }; }
+    }
+  }
+  return best ? best.recipes : null;
+}
+
+/**
  * Generate the content of `.claude/commands/<phase.id>.md` for a given
  * built-in phase. Inlines the composed skill + AIDLC task wiring (read
  * state/inputs, write artifact, tell user to mark done).

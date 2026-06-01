@@ -148,6 +148,7 @@ export {
   getSdlcBuiltinPipelineSummary,
   getAllBuiltinPipelineSummaries,
   getBuiltinRecipeSummaries,
+  planRecipeMigration,
   loadBuiltinPreset,
   loadAllBuiltinPresets,
   builtinClaudeCommand,
@@ -159,7 +160,7 @@ export {
   BUILTIN_PRESET_IDS,
   isBuiltinPreset,
 } from './presets/builtinWorkflows';
-export type { BuiltinWorkflow, WorkspacePreset as BuiltinWorkspacePreset } from './presets/builtinWorkflows';
+export type { BuiltinWorkflow, WorkspacePreset as BuiltinWorkspacePreset, WorkspaceRecipe } from './presets/builtinWorkflows';
 
 // Global ~/.claude install of built-in agent/skill files (shared by ext + CLI).
 export {

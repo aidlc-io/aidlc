@@ -186,6 +186,7 @@ import {
 import { SKILL_TEMPLATES } from './skillTemplates';
 import {
   loadBuiltinPreset,
+  planRecipeMigration,
   getBuiltinPipelineSummary,
   getBuiltinArtifactTemplates,
   getBuiltinWorkflowByPipelineId,
@@ -2233,6 +2234,16 @@ export class WorkspaceWebview {
         const dest = path.join(dir, fileName);
         if (!fs.existsSync(dest)) { fs.writeFileSync(dest, content, 'utf8'); }
       }
+    }
+
+    // Back-fill recipes for workspaces scaffolded before recipes existed, so
+    // the Start-Epic "Auto" task-type suggestion has something to classify
+    // against. Idempotent: planRecipeMigration returns null once recipes exist.
+    const recipes = planRecipeMigration(doc as { recipes?: unknown; pipelines?: unknown });
+    if (recipes) {
+      (doc as { recipes?: unknown }).recipes = recipes;
+      writeYaml(root, doc);
+      rlog(`[migrate] back-filled ${recipes.length} recipe(s) from pipeline "${recipes[0].from}"`);
     }
   }
 
