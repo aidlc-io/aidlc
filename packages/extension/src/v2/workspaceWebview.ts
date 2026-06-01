@@ -2336,9 +2336,11 @@ export class WorkspaceWebview {
     //    prompt/parser the CLI uses (core) so both pick consistently.
     try {
       const system = buildClassificationPrompt(config.recipes);
+      // Neutral cwd: classification needs no MCP at all, so don't pay the
+      // project MCP boot cost (npx sdlc / ast-graph) for it.
       const stdout = await runClaude(
         ['--print', '--append-system-prompt', system, brief],
-        { cwd: root, timeoutMs: 60_000 },
+        { cwd: os.tmpdir(), timeoutMs: 60_000 },
       );
       const verdict = parseClassificationVerdict(stdout, config.recipes);
       post({
@@ -2408,6 +2410,10 @@ export class WorkspaceWebview {
     void this.panel.webview.postMessage({ type: 'requirementLoadStart', source, ref });
 
     try {
+      // Must run in the workspace root: the claude.ai connectors (Atlassian /
+      // Drive) are enabled per-project, so a neutral cwd has no Jira tool. This
+      // does mean the project's other MCP servers boot too — unavoidable.
+      rlog(`[${source}] claude fetch "${ref}" (cwd=root, max-turns 12)`);
       // Stream stdout chunks straight into the description as they arrive.
       const stdout = await runClaude(
         ['--print', '--dangerously-skip-permissions', '--max-turns', '12', '--append-system-prompt', system, ref],
