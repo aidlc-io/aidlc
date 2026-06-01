@@ -90,6 +90,12 @@
         "category": "AIDLC"
       },
       {
+        "command": "aidlc.generateFromRecipe",
+        "title": "Generate Pipeline from Recipe (by task type)",
+        "icon": "$(zap)",
+        "category": "AIDLC"
+      },
+      {
         "command": "aidlc.openClaudeTerminal",
         "title": "Open Claude CLI Terminal",
         "icon": "$(terminal)",

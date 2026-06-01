@@ -25,6 +25,11 @@ import {
   WORKSPACE_FILENAME,
   discoverAssets,
   targetPath,
+  validateWorkspace,
+  assemblePipeline,
+  PipelineAssembleError,
+  heuristicClassify,
+  type TaskTypeVerdict,
   type AssetScope,
   type AssetKind,
 } from '@aidlc/core';
@@ -829,5 +834,112 @@ export async function addPipelineCommand(): Promise<void> {
 
   void vscode.window.showInformationMessage(
     `Pipeline \`${pipelineId}\` added: ${picked.map((p) => p.label).join(' → ')}`,
+  );
+}
+
+/**
+ * aidlc.generateFromRecipe — pick a task-type recipe, assemble a right-sized
+ * pipeline from the workspace's source pipeline, and append it to
+ * workspace.yaml.
+ *
+ * Recipes are seeded by built-in presets (or hand-authored under `recipes:`).
+ * Unlike `addPipeline`, the structure is deterministic — the user only picks
+ * the task type; {@link assemblePipeline} selects steps + re-links depends_on.
+ */
+export async function generateFromRecipeCommand(): Promise<void> {
+  const ctx = await loadOrInit();
+  if (!ctx) { return; }
+  const { root, doc } = ctx;
+
+  // Validate the current workspace so the assembler gets a typed config.
+  let config;
+  try {
+    config = validateWorkspace(doc, `.aidlc/${WORKSPACE_FILENAME}`);
+  } catch (err) {
+    void vscode.window.showErrorMessage(
+      `AIDLC: workspace.yaml is invalid — fix it before generating: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return;
+  }
+
+  if (config.recipes.length === 0) {
+    void vscode.window.showWarningMessage(
+      'AIDLC: no recipes defined. Apply a built-in preset (it ships task-type recipes), or add a `recipes:` block to workspace.yaml.',
+    );
+    return;
+  }
+
+  // Optional brief → heuristic classifier suggests a recipe. Empty brief just
+  // shows the unranked list.
+  const brief = await vscode.window.showInputBox({
+    prompt: 'Describe the task (optional — used to suggest a recipe)',
+    placeHolder: 'e.g. Fix crash when exporting billing report to CSV',
+    ignoreFocusOut: true,
+  });
+  if (brief === undefined) { return; } // Esc → cancel
+
+  let verdict: TaskTypeVerdict | undefined;
+  if (brief.trim()) {
+    try { verdict = heuristicClassify(brief, config.recipes); } catch { /* no recipes — handled above */ }
+  }
+
+  // Build the pick list; float the suggested recipe to the top and annotate it.
+  const items = config.recipes.map((r) => ({
+    label: r.id,
+    description: r.id === verdict?.recipeId
+      ? `★ suggested · ${verdict.confidence}${r.description ? ` · ${r.description}` : ''}`
+      : (r.description ?? ''),
+    detail: r.steps.join(' → '),
+  }));
+  if (verdict) {
+    const i = items.findIndex((it) => it.label === verdict!.recipeId);
+    if (i > 0) { items.unshift(items.splice(i, 1)[0]); }
+  }
+
+  const recipePick = await vscode.window.showQuickPick(items, {
+    placeHolder: verdict
+      ? `Suggested: ${verdict.recipeId} (${verdict.reasoning}) — confirm or pick another`
+      : 'Pick a task-type recipe',
+    ignoreFocusOut: true,
+  });
+  if (!recipePick) { return; }
+
+  const pipelineId = await promptUniqueId({
+    prompt: 'Id for the generated pipeline',
+    placeholder: `e.g. ${recipePick.label} or an epic key`,
+    existing: existingIds(doc.pipelines),
+  });
+  if (!pipelineId) { return; }
+
+  let pipeline;
+  try {
+    pipeline = assemblePipeline(config, { recipeId: recipePick.label, pipelineId });
+  } catch (err) {
+    if (err instanceof PipelineAssembleError) {
+      void vscode.window.showErrorMessage(`AIDLC: ${err.message}`);
+      return;
+    }
+    throw err;
+  }
+
+  doc.pipelines.push(pipeline as unknown as Record<string, unknown>);
+
+  // Re-validate the whole doc so a malformed assembly never lands on disk.
+  try {
+    validateWorkspace(doc, `.aidlc/${WORKSPACE_FILENAME}`);
+  } catch (err) {
+    void vscode.window.showErrorMessage(
+      `AIDLC: generated pipeline failed validation — not written: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return;
+  }
+
+  writeYaml(root, doc);
+
+  const stepNames = pipeline.steps
+    .map((s) => (typeof s === 'string' ? s : String((s as { name?: string; agent?: string }).name ?? (s as { agent?: string }).agent ?? '?')))
+    .join(' → ');
+  void vscode.window.showInformationMessage(
+    `Pipeline \`${pipelineId}\` generated from recipe \`${recipePick.label}\`: ${stepNames}`,
   );
 }

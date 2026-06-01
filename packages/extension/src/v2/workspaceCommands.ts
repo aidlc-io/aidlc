@@ -25,6 +25,7 @@ import {
   addSkillCommand,
   addAgentCommand,
   addPipelineCommand,
+  generateFromRecipeCommand,
 } from './wizards';
 import { WorkspaceWebview } from './workspaceWebview';
 import { PresetStore } from './presetStore';
@@ -122,6 +123,11 @@ export function registerV2WorkspaceCommands(
   const addPipelineCmd = vscode.commands.registerCommand(
     'aidlc.addPipeline',
     () => addPipelineCommand(),
+  );
+
+  const generateFromRecipeCmd = vscode.commands.registerCommand(
+    'aidlc.generateFromRecipe',
+    () => generateFromRecipeCommand(),
   );
 
   const openBuilderCmd = vscode.commands.registerCommand(
@@ -458,6 +464,7 @@ export function registerV2WorkspaceCommands(
       addSkillCmd,
       addAgentCmd,
       addPipelineCmd,
+      generateFromRecipeCmd,
       openBuilderCmd,
       openClaudeTerminalCmd,
       runWithFeedbackCmd,

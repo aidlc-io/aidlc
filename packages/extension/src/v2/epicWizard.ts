@@ -26,18 +26,35 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 
-import { stepAgentId, startRun, RunStateStore } from '@aidlc/core';
+import {
+  stepAgentId,
+  startRun,
+  RunStateStore,
+  validateWorkspace,
+  assemblePipeline,
+  PipelineAssembleError,
+  heuristicClassify,
+  WORKSPACE_FILENAME,
+  type TaskTypeVerdict,
+  type RecipeConfig,
+} from '@aidlc/core';
 import type { PipelineConfig } from '@aidlc/core';
 
-import { readYaml, type YamlDocument } from './yamlIO';
+import { readYaml, writeYaml, existingIds, type YamlDocument } from './yamlIO';
 
 // ── Types ───────────────────────────────────────────────────────────────
 
 interface RunTarget {
-  kind: 'pipeline' | 'agent';
+  /**
+   * `recipe` is resolved into a concrete `pipeline` (named after the epic)
+   * during the wizard — see `materializeRecipe`. The runner never sees it.
+   */
+  kind: 'pipeline' | 'agent' | 'recipe';
   id: string;
-  /** Ordered list of agent ids that will execute. */
+  /** Ordered list of agent ids that will execute. Filled after assembly for recipes. */
   agents: string[];
+  /** Set when kind === 'recipe': the recipe id to assemble from. */
+  recipeId?: string;
 }
 
 interface EpicState {
@@ -106,12 +123,20 @@ export async function startEpicCommand(): Promise<void> {
     return;
   }
 
-  const target = await pickTarget(doc);
+  let target = await pickTarget(doc);
   if (!target) { return; }
 
   const epicRoot = readEpicRoot(doc);
   const epicId = await pickEpicId(root, epicRoot);
   if (!epicId) { return; }
+
+  // Materialize a recipe target into a concrete pipeline named after the epic
+  // (so the run + workspace.yaml stay traceable), then continue as a pipeline.
+  if (target.kind === 'recipe' && target.recipeId) {
+    const materialized = materializeRecipe(root, doc, target.recipeId, epicId);
+    if (!materialized) { return; }
+    target = materialized;
+  }
 
   const title = await vscode.window.showInputBox({
     prompt: 'Epic title (optional)',
@@ -217,6 +242,19 @@ export async function startEpicCommand(): Promise<void> {
 async function pickTarget(doc: YamlDocument): Promise<RunTarget | undefined> {
   const items: Array<vscode.QuickPickItem & { target: RunTarget }> = [];
 
+  // Recipes (if any) get a "suggest from description" entry at the very top —
+  // the auto-generate path. Read leniently so a slightly-off workspace still
+  // shows the manual pipeline/agent options below.
+  const recipes = readRecipes(doc);
+  if (recipes.length > 0) {
+    items.push({
+      label: '$(sparkle) Suggest pipeline from task description',
+      description: `${recipes.length} recipes`,
+      detail: 'Classify a brief → right-sized pipeline (auto-generated)',
+      target: { kind: 'recipe', id: '', agents: [] },
+    });
+  }
+
   for (const p of doc.pipelines) {
     const id = String(p.id);
     const steps = Array.isArray(p.steps) ? (p.steps as unknown[]).map(stepAgentId) : [];
@@ -246,7 +284,130 @@ async function pickTarget(doc: YamlDocument): Promise<RunTarget | undefined> {
     matchOnDetail: true,
     ignoreFocusOut: true,
   });
-  return picked?.target;
+  if (!picked) { return undefined; }
+
+  // The "suggest" entry opens the brief → classify → pick-recipe sub-flow.
+  // It returns a `recipe` target; startEpicCommand materializes it into a
+  // concrete pipeline once the epic id is known.
+  if (picked.target.kind === 'recipe' && picked.target.id === '') {
+    const recipeId = await pickRecipe(recipes);
+    if (!recipeId) { return undefined; }
+    return { kind: 'recipe', id: recipeId, recipeId, agents: [] };
+  }
+
+  return picked.target;
+}
+
+/**
+ * Assemble `recipeId` into a concrete pipeline, append it to workspace.yaml
+ * (named after the epic, deduped if needed), and return it as a pipeline
+ * target. Returns undefined + surfaces an error on any failure.
+ */
+function materializeRecipe(
+  root: string,
+  doc: YamlDocument,
+  recipeId: string,
+  epicId: string,
+): RunTarget | undefined {
+  let config;
+  try {
+    config = validateWorkspace(doc, `.aidlc/${WORKSPACE_FILENAME}`);
+  } catch (err) {
+    void vscode.window.showErrorMessage(
+      `AIDLC: workspace.yaml is invalid — cannot generate from recipe: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return undefined;
+  }
+
+  // Name the pipeline after the epic; fall back to `<epic>-<recipe>` if taken.
+  const taken = existingIds(doc.pipelines);
+  const pipelineId = taken.has(epicId) ? `${epicId}-${recipeId}` : epicId;
+  if (taken.has(pipelineId)) {
+    void vscode.window.showErrorMessage(
+      `AIDLC: pipeline "${pipelineId}" already exists. Remove it or pick a different epic id.`,
+    );
+    return undefined;
+  }
+
+  let pipeline;
+  try {
+    pipeline = assemblePipeline(config, { recipeId, pipelineId });
+  } catch (err) {
+    if (err instanceof PipelineAssembleError) {
+      void vscode.window.showErrorMessage(`AIDLC: ${err.message}`);
+      return undefined;
+    }
+    throw err;
+  }
+
+  doc.pipelines.push(pipeline as unknown as Record<string, unknown>);
+  try {
+    validateWorkspace(doc, `.aidlc/${WORKSPACE_FILENAME}`);
+  } catch (err) {
+    void vscode.window.showErrorMessage(
+      `AIDLC: generated pipeline failed validation — not written: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return undefined;
+  }
+  writeYaml(root, doc);
+
+  const agents = pipeline.steps.map(stepAgentId);
+  void vscode.window.showInformationMessage(
+    `Generated pipeline \`${pipelineId}\` from recipe \`${recipeId}\`: ${agents.join(' → ')}`,
+  );
+  return { kind: 'pipeline', id: pipelineId, agents };
+}
+
+/** Parse `recipes:` leniently (no full schema validation) for the menu. */
+function readRecipes(doc: YamlDocument): RecipeConfig[] {
+  const raw = (doc as { recipes?: unknown }).recipes;
+  if (!Array.isArray(raw)) { return []; }
+  return raw.filter(
+    (r): r is RecipeConfig =>
+      !!r && typeof r === 'object' &&
+      typeof (r as RecipeConfig).id === 'string' &&
+      Array.isArray((r as RecipeConfig).steps),
+  );
+}
+
+/**
+ * Prompt for a task brief, run the heuristic classifier, and let the user
+ * confirm the suggested recipe (floated to the top + starred) or pick another.
+ * Returns the chosen recipe id, or undefined on cancel.
+ */
+async function pickRecipe(recipes: RecipeConfig[]): Promise<string | undefined> {
+  const brief = await vscode.window.showInputBox({
+    prompt: 'Describe the task (optional — used to suggest a recipe)',
+    placeHolder: 'e.g. Fix crash when exporting billing report to CSV',
+    ignoreFocusOut: true,
+  });
+  if (brief === undefined) { return undefined; }
+
+  let verdict: TaskTypeVerdict | undefined;
+  if (brief.trim()) {
+    try { verdict = heuristicClassify(brief, recipes); } catch { /* ignore */ }
+  }
+
+  const items = recipes.map((r) => ({
+    label: r.id,
+    description: r.id === verdict?.recipeId
+      ? `★ suggested · ${verdict.confidence}${r.description ? ` · ${r.description}` : ''}`
+      : (r.description ?? ''),
+    detail: r.steps.join(' → '),
+  }));
+  if (verdict) {
+    const i = items.findIndex((it) => it.label === verdict!.recipeId);
+    if (i > 0) { items.unshift(items.splice(i, 1)[0]); }
+  }
+
+  const pick = await vscode.window.showQuickPick(items, {
+    placeHolder: verdict
+      ? `Suggested: ${verdict.recipeId} (${verdict.reasoning}) — confirm or pick another`
+      : 'Pick a task-type recipe',
+    matchOnDetail: true,
+    ignoreFocusOut: true,
+  });
+  return pick?.label;
 }
 
 function readEpicRoot(doc: YamlDocument): string {

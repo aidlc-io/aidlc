@@ -123,6 +123,12 @@
   --sidebar-ring: #2DD4BF;
 }
 
+/* Indeterminate progress bar (Auto classifier "analyzing" state). */
+@keyframes indeterminate {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
+
 @layer base {
   * {
     border-color: var(--color-border);

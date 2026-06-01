@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ListOrdered, ChevronRight, FileUp, Loader2, Sparkles, Plus } from 'lucide-react';
+import { ListOrdered, ChevronRight, FileUp, Loader2, Sparkles, Plus, Wand2, DownloadCloud } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { AgentMeta, PipelineSummary } from '@/lib/types';
+import type { AgentMeta, PipelineSummary, RecipeSummary } from '@/lib/types';
 import { Modal, ModalFooter, ModalCancelButton, ModalConfirmButton } from './Modal';
 import { pickAndReadFile } from '@/lib/pickFile';
-import { postMessage } from '@/lib/bridge';
+import { postMessage, onHostMessage } from '@/lib/bridge';
 
 const ID_PATTERN = /^[A-Z][A-Z0-9-]*$/;
 
@@ -24,7 +24,16 @@ const CAPABILITY_PROMPTS: Record<string, CapabilityPrompt> = {
   web: { prompt: 'URLs to fetch (comma-separated, optional)', placeholder: 'https://example.com/...' },
 };
 
-export type EpicTargetKind = 'pipeline' | 'agent';
+export type EpicTargetKind = 'pipeline' | 'agent' | 'recipe';
+
+type ExternalSource = 'jira' | 'github' | 'drive' | 'url';
+
+const EXTERNAL_SOURCES: { id: ExternalSource; label: string; placeholder: string }[] = [
+  { id: 'jira', label: 'Jira', placeholder: 'PROJ-123 or https://acme.atlassian.net/browse/PROJ-123' },
+  { id: 'github', label: 'GitHub', placeholder: 'owner/repo#123 or https://github.com/owner/repo/pull/42' },
+  { id: 'drive', label: 'Drive', placeholder: 'https://docs.google.com/document/d/… or file id' },
+  { id: 'url', label: 'URL', placeholder: 'https://… (spec / requirement page)' },
+];
 
 export interface StartEpicDraft {
   target: { kind: EpicTargetKind; id: string };
@@ -36,6 +45,7 @@ export interface StartEpicDraft {
 
 interface Props {
   pipelines: PipelineSummary[];
+  recipes: RecipeSummary[];
   agentMeta: Record<string, AgentMeta>;
   nextEpicId: string;
   existingEpicIds: string[];
@@ -43,25 +53,78 @@ interface Props {
   onClose: () => void;
 }
 
+/**
+ * What the user picked in the WORKFLOW section:
+ *   - `auto`     → let the classifier suggest a recipe from the task description.
+ *   - `pipeline` → a concrete pipeline (user-defined or built-in AIDLC).
+ * An `auto` selection resolves to a recipe target at submit time via the
+ * current {@link Suggestion}.
+ */
+type Selection = { kind: 'auto' } | { kind: 'pipeline'; id: string };
+
+interface Suggestion {
+  recipeId: string;
+  confidence: 'high' | 'medium' | 'low';
+  reasoning: string;
+  /** `llm` = Claude analyzed the requirement; `heuristic` = keyword fallback. */
+  source: 'llm' | 'heuristic';
+}
+
 export function StartEpicModal({
   pipelines,
+  recipes,
   agentMeta,
   nextEpicId,
   existingEpicIds,
   onSubmit,
   onClose,
 }: Props) {
-  const [pipelineId, setPipelineId] = useState<string>(pipelines[0]?.id ?? '');
-  const [epicId, setEpicId] = useState(nextEpicId);
+  const [selected, setSelected] = useState<Selection>(
+    recipes.length > 0
+      ? { kind: 'auto' }
+      : pipelines[0]
+        ? { kind: 'pipeline', id: pipelines[0].id }
+        : { kind: 'auto' },
+  );
+  // Start empty (nextEpicId is shown only as a placeholder). A pre-filled
+  // "EPIC-100" looks like a Jira key and would trigger auto-analysis on open.
+  const [epicId, setEpicId] = useState('');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [inputs, setInputs] = useState<Record<string, string>>({});
   const idInputRef = useRef<HTMLInputElement>(null);
   const [descLoading, setDescLoading] = useState(false);
-  const [descLoadInfo, setDescLoadInfo] = useState<{
-    kind: 'loaded' | 'error';
-    text: string;
-  } | null>(null);
+  const [descLoadInfo, setDescLoadInfo] = useState<{ kind: 'loaded' | 'error'; text: string } | null>(null);
+  const [suggestion, setSuggestion] = useState<Suggestion | null>(null);
+  const [classifying, setClassifying] = useState(false);
+  // External requirement loading (Jira / GitHub / Drive / URL via Claude MCP).
+  const [loadSource, setLoadSource] = useState<ExternalSource | null>(null);
+  const [loadRef, setLoadRef] = useState('');
+  const [loadingExternal, setLoadingExternal] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const hasWorkflows = pipelines.length > 0 || recipes.length > 0;
+  const userPipelines = useMemo(() => pipelines.filter((p) => !p.builtin), [pipelines]);
+  const aidlcPipelines = useMemo(() => pipelines.filter((p) => p.builtin), [pipelines]);
+
+  // Live mirrors of the inputs so the (deps-frozen) host-message listener can
+  // tell whether an async analysis result is still relevant or stale.
+  const epicIdRef = useRef(epicId);
+  const descriptionRef = useRef(description);
+  useEffect(() => { epicIdRef.current = epicId; }, [epicId]);
+  useEffect(() => { descriptionRef.current = description; }, [description]);
+  // The signal the auto-classifier last acted on — set it when we fill the
+  // description programmatically (from a load) so it doesn't re-analyze.
+  const lastAnalyzed = useRef('');
+
+  // Suggestion is deliberate, not per-keystroke: classify only once there's
+  // real requirement content — when the user clicks "Suggest", or right after
+  // content loads from a file / Jira.
+  const requestSuggestion = (brief: string) => {
+    if (recipes.length === 0 || !brief.trim()) { return; }
+    setClassifying(true);
+    postMessage({ type: 'classifyBrief', brief });
+  };
 
   const onLoadDescriptionFromFile = async () => {
     setDescLoading(true);
@@ -70,15 +133,11 @@ export function StartEpicModal({
       const result = await pickAndReadFile();
       if (!result) { return; }
       setDescription(result.content);
-      setDescLoadInfo({
-        kind: 'loaded',
-        text: `Loaded ${result.fileName} (${formatBytes(result.byteLength)})`,
-      });
+      setDescLoadInfo({ kind: 'loaded', text: `Loaded ${result.fileName} (${formatBytes(result.byteLength)})` });
+      // Real requirement content just arrived → suggest a recipe.
+      requestSuggestion(result.content);
     } catch (err) {
-      setDescLoadInfo({
-        kind: 'error',
-        text: err instanceof Error ? err.message : String(err),
-      });
+      setDescLoadInfo({ kind: 'error', text: err instanceof Error ? err.message : String(err) });
     } finally {
       setDescLoading(false);
     }
@@ -89,29 +148,149 @@ export function StartEpicModal({
     idInputRef.current?.select();
   }, []);
 
-  // When pipelines appear (e.g. after "Load SDLC pipeline example" applies the
-  // preset and state refreshes), auto-select the first one so the form is ready.
+  // Workflows can arrive async (e.g. after applying the preset). Keep the
+  // selection valid: fall back to a pipeline when `auto` has no recipes, or
+  // fill in a pipeline id once one exists.
   useEffect(() => {
-    if (!pipelineId && pipelines.length > 0) {
-      setPipelineId(pipelines[0].id);
+    if (selected.kind === 'auto' && recipes.length === 0 && pipelines[0]) {
+      setSelected({ kind: 'pipeline', id: pipelines[0].id });
+    } else if (selected.kind === 'pipeline' && !selected.id && pipelines[0]) {
+      setSelected({ kind: 'pipeline', id: pipelines[0].id });
     }
-  }, [pipelines, pipelineId]);
+  }, [pipelines, recipes, selected]);
+
+  // Host messages: classifier verdict + external requirement loads.
+  useEffect(() => {
+    return onHostMessage((m) => {
+      if (m.type === 'recipeSuggestion') {
+        setClassifying(false);
+        // Ignore a verdict for a brief the user has since edited.
+        if (m.brief !== undefined && String(m.brief).trim() !== descriptionRef.current.trim()) { return; }
+        const recipeId = String(m.recipeId ?? '');
+        if (!recipeId || !recipes.some((r) => r.id === recipeId)) { return; }
+        setSuggestion({
+          recipeId,
+          confidence: (m.confidence as Suggestion['confidence']) ?? 'low',
+          reasoning: String(m.reasoning ?? ''),
+          source: m.source === 'llm' ? 'llm' : 'heuristic',
+        });
+        // Also suggest an epic id + title from the description (don't clobber
+        // what the user already typed).
+        const sugId = String(m.epicId ?? '');
+        if (sugId && ID_PATTERN.test(sugId)) { setEpicId((cur) => (cur.trim() ? cur : sugId)); }
+        const sugTitle = String(m.title ?? '');
+        if (sugTitle) { setTitle((cur) => (cur.trim() ? cur : sugTitle)); }
+        return;
+      }
+      if (m.type === 'requirementLoaded') {
+        setLoadingExternal(false);
+        // Drop a result the user has navigated away from (analyzed A, typed B):
+        // compare the ref we fetched against the current relevant input.
+        const src = String(m.source ?? '');
+        const usedRef = String(m.ref ?? '').trim();
+        const curRelevant = src === 'jira'
+          ? epicIdRef.current.trim()
+          : src === 'url'
+            ? (descriptionRef.current.match(/https?:\/\/\S+/)?.[0] ?? '')
+            : descriptionRef.current.trim();
+        if (usedRef && curRelevant && usedRef !== curRelevant) { return; }
+        setLoadSource(null);
+        setLoadRef('');
+        const summary = String(m.summary ?? '');
+        const loadedTitle = String(m.title ?? '');
+        const loadedEpicId = String(m.epicId ?? '');
+        const recipeId = String(m.recipeId ?? '');
+        // Don't clobber the editable description — the pipeline agents read the
+        // ticket at run time. We only use the analysis to fill the epic id /
+        // title and suggest a recipe; the summary is shown as a note.
+        if (loadedEpicId && ID_PATTERN.test(loadedEpicId)) { setEpicId((cur) => (cur.trim() ? cur : loadedEpicId)); }
+        setTitle((cur) => (cur.trim() ? cur : loadedTitle));
+        // Fill the description with the fetched summary. Mark it as already
+        // analyzed so the auto-classifier doesn't re-run on this text.
+        if (summary) {
+          setDescription(summary);
+          lastAnalyzed.current = `brief:${summary.trim()}`;
+        }
+        setDescLoadInfo({ kind: 'loaded', text: `Loaded from ${src}` });
+        if (recipeId && recipes.some((r) => r.id === recipeId)) {
+          setSuggestion({
+            recipeId,
+            confidence: (m.confidence as Suggestion['confidence']) ?? 'medium',
+            reasoning: String(m.reasoning ?? ''),
+            source: 'llm',
+          });
+          setSelected({ kind: 'auto' });
+        }
+        return;
+      }
+      if (m.type === 'requirementLoadError') {
+        setLoadingExternal(false);
+        const src = String(m.source ?? '');
+        const usedRef = String(m.ref ?? '').trim();
+        const curRelevant = src === 'jira' ? epicIdRef.current.trim() : descriptionRef.current.trim();
+        // Don't surface an error for an input the user already moved past.
+        if (usedRef && curRelevant && !curRelevant.includes(usedRef) && usedRef !== curRelevant) { return; }
+        setLoadError(String(m.message ?? 'Failed to load requirement.'));
+      }
+    });
+  }, [recipes]);
+
+  const loadFromSource = () => {
+    if (!loadSource || !loadRef.trim()) { return; }
+    setLoadingExternal(true);
+    setLoadError(null);
+    postMessage({ type: 'loadRequirement', source: loadSource, ref: loadRef.trim() });
+  };
+
+  // Auto mode is hands-off: once "Auto" is selected, analyze whatever signal is
+  // available (a Jira-key epic id, a URL or brief in the description) and
+  // auto-select the recipe — no button press. Debounced; fires once per signal.
+  useEffect(() => {
+    if (selected.kind !== 'auto' || recipes.length === 0) { return; }
+    if (classifying || loadingExternal) { return; }
+    const key = epicId.trim();
+    const desc = description.trim();
+    const isJiraKey = /^[A-Z][A-Z0-9]*-\d+$/.test(key);
+    const urlMatch = desc.match(/https?:\/\/\S+/);
+
+    let signal = '';
+    let fire = () => {};
+    if (urlMatch) {
+      signal = `url:${urlMatch[0]}`;
+      fire = () => { setLoadingExternal(true); setLoadError(null); postMessage({ type: 'loadRequirement', source: 'url', ref: urlMatch[0] }); };
+    } else if (desc) {
+      signal = `brief:${desc}`;
+      fire = () => requestSuggestion(desc);
+    } else if (isJiraKey) {
+      signal = `jira:${key}`;
+      fire = () => { setLoadingExternal(true); setLoadError(null); postMessage({ type: 'loadRequirement', source: 'jira', ref: key }); };
+    }
+    if (!signal || signal === lastAnalyzed.current) { return; }
+    const t = setTimeout(() => { lastAnalyzed.current = signal; fire(); }, 800);
+    return () => clearTimeout(t);
+  }, [selected, epicId, description, recipes.length, classifying, loadingExternal]);
+
+  const effectiveRecipeId = selected.kind === 'auto' ? suggestion?.recipeId : undefined;
+
+  const selectedAgents = useMemo<string[]>(() => {
+    if (selected.kind === 'pipeline') {
+      return pipelines.find((p) => p.id === selected.id)?.steps.map((s) => s.agent) ?? [];
+    }
+    return effectiveRecipeId
+      ? recipes.find((r) => r.id === effectiveRecipeId)?.agents ?? []
+      : [];
+  }, [selected, effectiveRecipeId, pipelines, recipes]);
 
   const capabilities = useMemo<string[]>(() => {
-    const targetAgents = pipelines.find((p) => p.id === pipelineId)?.steps.map((s) => s.agent) ?? [];
     const seen = new Set<string>();
     const out: string[] = [];
-    for (const a of targetAgents) {
-      const caps = agentMeta[a]?.capabilities ?? [];
-      for (const c of caps) {
-        if (!seen.has(c)) {
-          seen.add(c);
-          out.push(c);
-        }
+    for (const a of selectedAgents) {
+      for (const c of agentMeta[a]?.capabilities ?? []) {
+        if (!seen.has(c)) { seen.add(c); out.push(c); }
       }
     }
     return out;
-  }, [pipelineId, pipelines, agentMeta]);
+  }, [selectedAgents, agentMeta]);
 
   useEffect(() => {
     setInputs((cur) => {
@@ -120,30 +299,28 @@ export function StartEpicModal({
       for (const cap of capabilities) {
         if (!(cap in next)) {
           const def = CAPABILITY_PROMPTS[cap]?.defaultValue ?? '';
-          if (def) {
-            next[cap] = def;
-            changed = true;
-          }
+          if (def) { next[cap] = def; changed = true; }
         }
       }
       return changed ? next : cur;
     });
   }, [capabilities]);
 
+  // Empty field falls back to the suggested next id (shown as placeholder).
+  const effectiveId = epicId.trim() || nextEpicId;
   const trimmedId = epicId.trim();
   const idError = useMemo(() => {
-    if (!trimmedId) { return 'Epic id is required'; }
-    if (!ID_PATTERN.test(trimmedId)) {
+    if (!effectiveId) { return 'Epic id is required'; }
+    if (!ID_PATTERN.test(effectiveId)) {
       return 'Uppercase letters / digits / dashes only — must start with a letter';
     }
-    if (existingEpicIds.includes(trimmedId)) {
-      return `Epic "${trimmedId}" already exists`;
-    }
+    if (existingEpicIds.includes(effectiveId)) { return `Epic "${effectiveId}" already exists`; }
     return null;
-  }, [trimmedId, existingEpicIds]);
+  }, [effectiveId, existingEpicIds]);
 
-  const targetError = !pipelineId ? 'Pick a pipeline' : null;
-
+  const targetError = selected.kind === 'pipeline'
+    ? (!selected.id ? 'Pick a pipeline' : null)
+    : (!effectiveRecipeId ? 'Add a task description and click “Suggest recipe”, or pick a pipeline' : null);
   const error = idError || targetError;
 
   const submit = () => {
@@ -153,9 +330,12 @@ export function StartEpicModal({
       const v = (inputs[cap] ?? '').trim();
       if (v) { cleanInputs[cap] = v; }
     }
+    const target = selected.kind === 'auto'
+      ? { kind: 'recipe' as const, id: effectiveRecipeId! }
+      : { kind: 'pipeline' as const, id: selected.id };
     onSubmit({
-      target: { kind: 'pipeline', id: pipelineId },
-      epicId: trimmedId,
+      target,
+      epicId: effectiveId,
       title: title.trim(),
       description: description.trim(),
       inputs: cleanInputs,
@@ -171,41 +351,54 @@ export function StartEpicModal({
             <ListOrdered className="h-3 w-3" />
             Workflow
           </label>
-          <div className="max-h-44 overflow-y-auto rounded-md border border-border">
-            {pipelines.length === 0 ? (
+          <div className="max-h-56 overflow-y-auto rounded-md border border-border">
+            {!hasWorkflows ? (
               <NoPipelines onClose={onClose} />
             ) : (
-              pipelines.map((p) => {
-                const steps = p.steps.map((s) => s.name ?? s.agent);
-                return (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onClick={() => setPipelineId(p.id)}
-                    className={cn(
-                      'flex w-full flex-col items-start gap-0.5 border-b border-border/50 px-2.5 py-1.5 text-left last:border-b-0',
-                      pipelineId === p.id ? 'bg-primary/10' : 'hover:bg-accent/40',
-                    )}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-[12px] font-medium text-foreground">
-                        {p.id}
-                      </span>
-                      {p.builtin && (
-                        <span className="rounded-full bg-primary/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-primary">
-                          built-in
-                        </span>
-                      )}
-                      <span className="text-[10px] text-muted-foreground">
-                        {steps.length} step{steps.length === 1 ? '' : 's'}
-                      </span>
-                    </div>
-                    <div className="truncate text-[10.5px] text-muted-foreground">
-                      {steps.join(' → ')}
-                    </div>
-                  </button>
-                );
-              })
+              <>
+                {recipes.length > 0 && (
+                  <AutoRow
+                    active={selected.kind === 'auto'}
+                    classifying={classifying || loadingExternal}
+                    suggestion={suggestion}
+                    recipes={recipes}
+                    onClick={() => setSelected({ kind: 'auto' })}
+                  />
+                )}
+                {userPipelines.length > 0 && (
+                  <GroupHeader label="Your pipelines" />
+                )}
+                {userPipelines.map((p) => {
+                  const steps = p.steps.map((s) => s.name ?? s.agent);
+                  return (
+                    <WorkflowRow
+                      key={`p:${p.id}`}
+                      id={p.id}
+                      active={selected.kind === 'pipeline' && selected.id === p.id}
+                      stepCount={steps.length}
+                      steps={steps}
+                      onClick={() => setSelected({ kind: 'pipeline', id: p.id })}
+                    />
+                  );
+                })}
+                {aidlcPipelines.length > 0 && (
+                  <GroupHeader label="AIDLC pipelines (built-in)" />
+                )}
+                {aidlcPipelines.map((p) => {
+                  const steps = p.steps.map((s) => s.name ?? s.agent);
+                  return (
+                    <WorkflowRow
+                      key={`p:${p.id}`}
+                      id={p.id}
+                      active={selected.kind === 'pipeline' && selected.id === p.id}
+                      badge="built-in"
+                      stepCount={steps.length}
+                      steps={steps}
+                      onClick={() => setSelected({ kind: 'pipeline', id: p.id })}
+                    />
+                  );
+                })}
+              </>
             )}
           </div>
         </div>
@@ -220,9 +413,9 @@ export function StartEpicModal({
               type="text"
               value={epicId}
               onChange={(e) => setEpicId(e.target.value)}
-              placeholder="EPIC-001"
+              placeholder={nextEpicId || 'EPIC-001'}
               spellCheck={false}
-              disabled={pipelines.length === 0}
+              disabled={!hasWorkflows}
               className="w-full rounded-md border border-border bg-input/50 px-2.5 py-2 font-mono text-[12px] text-foreground placeholder:text-muted-foreground/70 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/40 disabled:opacity-50"
             />
             {idError && trimmedId && (
@@ -238,7 +431,7 @@ export function StartEpicModal({
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder='e.g. "Add user profile page"'
-              disabled={pipelines.length === 0}
+              disabled={!hasWorkflows}
               className="w-full rounded-md border border-border bg-input/50 px-2.5 py-2 text-[12px] text-foreground placeholder:text-muted-foreground/70 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/40 disabled:opacity-50"
             />
           </div>
@@ -249,36 +442,96 @@ export function StartEpicModal({
             <label className="text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">
               Description / requirement <span className="font-normal normal-case tracking-normal text-muted-foreground/80">(optional)</span>
             </label>
-            <button
-              type="button"
-              onClick={onLoadDescriptionFromFile}
-              disabled={descLoading || pipelines.length === 0}
-              className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
-              title="Load contents of a text/markdown file into the description"
-            >
-              {descLoading ? (
-                <Loader2 className="h-2.5 w-2.5 animate-spin" />
-              ) : (
-                <FileUp className="h-2.5 w-2.5" />
-              )}
-              <span>Load from file…</span>
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={onLoadDescriptionFromFile}
+                disabled={descLoading || !hasWorkflows}
+                className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
+                title="Load contents of a text/markdown file into the description"
+              >
+                {descLoading ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <FileUp className="h-2.5 w-2.5" />}
+                <span>Load from file…</span>
+              </button>
+              {EXTERNAL_SOURCES.map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => {
+                    setLoadSource(s.id);
+                    // Jira key is usually the epic id the user already typed — prefill it.
+                    setLoadRef(s.id === 'jira' ? epicId.trim() : '');
+                    setLoadError(null);
+                  }}
+                  disabled={!hasWorkflows}
+                  className={cn(
+                    'flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] hover:bg-accent hover:text-foreground disabled:opacity-50',
+                    loadSource === s.id ? 'bg-accent text-foreground' : 'text-muted-foreground',
+                  )}
+                  title={`Load the requirement from ${s.label} (via Claude's MCP integration)`}
+                >
+                  <DownloadCloud className="h-2.5 w-2.5" />
+                  <span>{s.label}</span>
+                </button>
+              ))}
+            </div>
           </div>
+          {loadSource && (
+            <div className="mb-1.5 flex items-center gap-1.5">
+              <input
+                type="text"
+                value={loadRef}
+                autoFocus
+                onChange={(e) => setLoadRef(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); loadFromSource(); } }}
+                placeholder={EXTERNAL_SOURCES.find((s) => s.id === loadSource)?.placeholder}
+                className="flex-1 rounded-md border border-border bg-input/50 px-2.5 py-1.5 text-[11px] text-foreground placeholder:text-muted-foreground/70 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/40"
+              />
+              <button
+                type="button"
+                onClick={loadFromSource}
+                disabled={loadingExternal || !loadRef.trim()}
+                className="flex items-center gap-1 rounded-md border border-primary/40 bg-primary/15 px-2.5 py-1.5 text-[11px] font-semibold text-primary hover:bg-primary/25 disabled:opacity-40"
+              >
+                {loadingExternal ? <Loader2 className="h-3 w-3 animate-spin" /> : <DownloadCloud className="h-3 w-3" />}
+                <span>{loadingExternal ? 'Loading…' : 'Load'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => { setLoadSource(null); setLoadError(null); }}
+                className="rounded px-1.5 py-1.5 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground"
+              >
+                Cancel
+              </button>
+            </div>
+          )}
+          {loadError && (
+            <div className="mb-1.5 text-[10px] text-destructive">{loadError}</div>
+          )}
           <textarea
             value={description}
-            onChange={(e) => setDescription(e.target.value)}
+            onChange={(e) => { setDescription(e.target.value); if (suggestion) { setSuggestion(null); } }}
             placeholder="Paste a requirement / PRD, or load it from a file. The text is snapshotted into the epic at submit time."
             rows={5}
-            disabled={pipelines.length === 0}
+            disabled={!hasWorkflows}
             className="w-full resize-y rounded-md border border-border bg-input/50 px-2.5 py-2 text-[12px] text-foreground placeholder:text-muted-foreground/70 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/40 disabled:opacity-50"
           />
+          {suggestion && recipes.length > 0 && (
+            <div className="mt-1 flex items-center gap-1.5 text-[10px] text-primary">
+              <Wand2 className="h-2.5 w-2.5 shrink-0" />
+              <span>
+                Suggested recipe <span className="font-mono font-semibold">{suggestion.recipeId}</span>
+                {' '}<span className="text-muted-foreground">
+                  ({suggestion.confidence} · {suggestion.source === 'llm' ? 'analyzed' : 'keyword'}) — {suggestion.reasoning}
+                </span>
+              </span>
+            </div>
+          )}
           {descLoadInfo && (
             <div
               className={cn(
                 'mt-1 text-[10px]',
-                descLoadInfo.kind === 'loaded'
-                  ? 'text-muted-foreground'
-                  : 'text-destructive',
+                descLoadInfo.kind === 'loaded' ? 'text-muted-foreground' : 'text-destructive',
               )}
             >
               {descLoadInfo.text}
@@ -293,7 +546,7 @@ export function StartEpicModal({
                 Capability inputs
               </span>
               <span className="text-[10px] text-muted-foreground">
-                ({capabilities.length} from pipeline)
+                ({capabilities.length} from {selected.kind})
               </span>
             </div>
             <div className="space-y-2">
@@ -310,9 +563,7 @@ export function StartEpicModal({
                     <input
                       type="text"
                       value={inputs[cap] ?? ''}
-                      onChange={(e) =>
-                        setInputs((cur) => ({ ...cur, [cap]: e.target.value }))
-                      }
+                      onChange={(e) => setInputs((cur) => ({ ...cur, [cap]: e.target.value }))}
                       placeholder={meta?.placeholder ?? 'Value, or leave blank to skip'}
                       className="w-full rounded-md border border-border bg-input/50 px-2.5 py-1.5 font-mono text-[11px] text-foreground placeholder:text-muted-foreground/70 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/40"
                     />
@@ -329,6 +580,143 @@ export function StartEpicModal({
         <ModalConfirmButton onClick={submit} label="Start epic" disabled={!!error} />
       </ModalFooter>
     </Modal>
+  );
+}
+
+function GroupHeader({ label }: { label: string }) {
+  return (
+    <div className="border-b border-border/50 bg-muted/30 px-2.5 py-1 text-[9px] font-bold uppercase tracking-wider text-muted-foreground">
+      {label}
+    </div>
+  );
+}
+
+/** Rotating status lines shown while the classifier is working. */
+const ANALYZING_STEPS = [
+  'Reading the requirement…',
+  'Understanding the context…',
+  'Detecting the task type…',
+  'Sizing the work (bug / feature / spike…)',
+  'Matching the right pipeline…',
+  'Almost there — finalizing the recipe…',
+];
+
+/**
+ * The "auto-classify → suggest a recipe" workflow option. Selecting it makes
+ * the epic use whichever recipe the classifier picks from the description.
+ */
+function AutoRow({
+  active, classifying, suggestion, recipes, onClick,
+}: {
+  active: boolean;
+  classifying: boolean;
+  suggestion: Suggestion | null;
+  recipes: RecipeSummary[];
+  onClick: () => void;
+}) {
+  const recipe = suggestion ? recipes.find((r) => r.id === suggestion.recipeId) : undefined;
+
+  // Rotate through the analyzing steps so the user can see it's actively
+  // working (the host gives us no real progress events, so these are paced
+  // hints). Reset to the first step whenever a new analysis starts.
+  const [stepIdx, setStepIdx] = useState(0);
+  useEffect(() => {
+    if (!classifying) { setStepIdx(0); return; }
+    const t = setInterval(() => {
+      setStepIdx((i) => Math.min(i + 1, ANALYZING_STEPS.length - 1));
+    }, 1400);
+    return () => clearInterval(t);
+  }, [classifying]);
+
+  const sub = suggestion && recipe
+    ? `→ ${suggestion.recipeId} (${suggestion.confidence}) · ${recipe.steps.join(' → ')}`
+    : 'Enter an epic id (Jira key), a URL, or a description — I\'ll pick the pipeline automatically.';
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'relative flex w-full flex-col items-start gap-0.5 overflow-hidden border-b border-border/50 px-2.5 py-2 text-left last:border-b-0 transition-colors',
+        classifying
+          ? 'bg-primary/10 ring-1 ring-inset ring-primary/50'
+          : active ? 'bg-primary/10' : 'hover:bg-accent/40',
+      )}
+    >
+      <div className="flex items-center gap-2">
+        {classifying
+          ? <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+          : <Wand2 className="h-3 w-3 text-primary" />}
+        <span className="text-[12px] font-medium text-foreground">Auto — suggest from task</span>
+        {classifying ? (
+          <span className="flex items-center gap-1 rounded-full bg-primary/20 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-primary">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
+            Analyzing
+          </span>
+        ) : (
+          <span className="rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-400">
+            classifier
+          </span>
+        )}
+      </div>
+      {classifying ? (
+        <div className="flex items-center gap-1.5 text-[10.5px] font-medium text-primary">
+          <span>{ANALYZING_STEPS[stepIdx]}</span>
+        </div>
+      ) : (
+        <div className="truncate text-[10.5px] text-muted-foreground">{sub}</div>
+      )}
+      {classifying && (
+        <span className="pointer-events-none absolute inset-x-0 bottom-0 h-0.5 overflow-hidden bg-primary/15">
+          <span className="block h-full w-1/3 animate-[indeterminate_1.2s_ease-in-out_infinite] rounded-full bg-primary" />
+        </span>
+      )}
+    </button>
+  );
+}
+
+function WorkflowRow({
+  id, active, badge, suggested, stepCount, steps, description, onClick,
+}: {
+  id: string;
+  active: boolean;
+  badge?: string;
+  suggested?: 'high' | 'medium' | 'low';
+  stepCount: number;
+  steps: string[];
+  description?: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'flex w-full flex-col items-start gap-0.5 border-b border-border/50 px-2.5 py-1.5 text-left last:border-b-0',
+        active ? 'bg-primary/10' : 'hover:bg-accent/40',
+      )}
+    >
+      <div className="flex items-center gap-2">
+        <span className="font-mono text-[12px] font-medium text-foreground">{id}</span>
+        {badge && (
+          <span className="rounded-full bg-primary/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-primary">
+            {badge}
+          </span>
+        )}
+        {suggested && (
+          <span className="rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-400">
+            ★ suggested · {suggested}
+          </span>
+        )}
+        <span className="text-[10px] text-muted-foreground">
+          {stepCount} step{stepCount === 1 ? '' : 's'}
+        </span>
+      </div>
+      {description && (
+        <div className="truncate text-[10px] text-muted-foreground/90">{description}</div>
+      )}
+      <div className="truncate text-[10.5px] text-muted-foreground">{steps.join(' → ')}</div>
+    </button>
   );
 }
 
@@ -352,8 +740,6 @@ function NoPipelines({ onClose }: { onClose: () => void }) {
         <button
           type="button"
           onClick={() => {
-            // Hand off to the Builder's inline Add-pipeline modal, then close
-            // this one so the user isn't stacking modals.
             postMessage({ type: 'openAddPipeline' });
             onClose();
           }}

@@ -16,21 +16,147 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { execFile } from 'child_process';
+import { execFile, spawn } from 'child_process';
 import { promisify } from 'util';
 
 const execFileAsync = promisify(execFile);
+
+/** Diagnostics for the recipe classifier / requirement loader (Output → "AIDLC Recipe"). */
+let recipeLog: vscode.OutputChannel | undefined;
+function rlog(msg: string): void {
+  if (!recipeLog) { recipeLog = vscode.window.createOutputChannel('AIDLC Recipe'); }
+  recipeLog.appendLine(msg);
+}
+
+/**
+ * Run the `claude` CLI headlessly with stdin CLOSED. Closing stdin (`'ignore'`)
+ * is essential: with an open-but-empty stdin pipe, `claude --print` waits ~3s
+ * for piped input and prints a "no stdin data received" warning that pollutes
+ * output. Mirrors DefaultRunner's stdio. Resolves stdout on exit 0; rejects
+ * with `{ stderr }` attached otherwise (or on timeout).
+ */
+function runClaude(args: string[], opts: { cwd: string; timeoutMs: number }): Promise<string> {
+  return new Promise((resolve, reject) => {
+    // VS Code launched from the Dock has a minimal PATH (no node/npx/claude
+    // from nvm/homebrew), which makes `claude` (and the stdio MCP servers it
+    // spawns) fail. Augment PATH with the common install locations.
+    const extraPath = ['/opt/homebrew/bin', '/usr/local/bin', `${process.env.HOME ?? ''}/.local/bin`]
+      .filter(Boolean)
+      .join(':');
+    const env: NodeJS.ProcessEnv = { ...process.env, PATH: `${process.env.PATH ?? ''}:${extraPath}` };
+    // Use the user's own `claude` login (claude.ai subscription), not any
+    // inherited API key / session vars — a stale or scoped ANTHROPIC_API_KEY
+    // (e.g. inherited when VS Code is launched from a Claude Code session)
+    // makes the spawned CLI fail with "Invalid API key".
+    delete env.ANTHROPIC_API_KEY;
+    delete env.ANTHROPIC_AUTH_TOKEN;
+    delete env.ANTHROPIC_BASE_URL;
+    delete env.CLAUDE_CODE_ENTRYPOINT;
+    delete env.CLAUDE_CODE_SESSION_ID;
+    delete env.CLAUDE_CODE_EXECPATH;
+    const proc = spawn('claude', args, { cwd: opts.cwd, stdio: ['ignore', 'pipe', 'pipe'], env });
+    let out = '';
+    let err = '';
+    const timer = setTimeout(() => {
+      proc.kill('SIGKILL');
+      reject(new Error('Timed out waiting for the source (the MCP may be slow or unavailable).'));
+    }, opts.timeoutMs);
+    proc.stdout.on('data', (d: Buffer) => { out += d.toString('utf8'); });
+    proc.stderr.on('data', (d: Buffer) => { err += d.toString('utf8'); });
+    proc.on('error', (e) => { clearTimeout(timer); rlog(`[runClaude] spawn error: ${String(e)}`); reject(e); });
+    proc.on('close', (code) => {
+      clearTimeout(timer);
+      rlog(`[runClaude] exit=${code}\n  stdout: ${out.trim().slice(0, 600)}\n  stderr: ${err.trim().slice(0, 600)}`);
+      if (code === 0) { resolve(out); }
+      else { reject(Object.assign(new Error(`claude exited ${code}`), { stderr: err, stdout: out })); }
+    });
+  });
+}
+
+/**
+ * Per-source "how to fetch" actions for the `claude` CLI. Claude uses whatever
+ * MCP integrations the user has configured (Atlassian, GitHub, Google Drive,
+ * web fetch) to retrieve the content. The analysis/JSON spec is appended by
+ * {@link WorkspaceWebview.loadRequirementForWebview}.
+ */
+const REQUIREMENT_FETCH_ACTION: Record<string, string> = {
+  jira:
+    'Read the SINGLE Jira issue named in the user message (a key like PROJ-123 or a browse URL): ' +
+    'resolve the cloud id if needed, then fetch only that one issue\'s `summary` and `description` fields. ' +
+    'Do NOT search, do NOT run JQL, do NOT fetch or enumerate child / linked / related issues, do NOT read files. ' +
+    'As soon as you have the summary, STOP and answer — if the description is empty or null, answer immediately ' +
+    'using only the summary. Do not look for more context.',
+  github:
+    'Make ONE GitHub tool call to read only the issue or pull request named in the user message ' +
+    '(owner/repo#123 or a URL) — its title and body. Do not enumerate other issues.',
+  drive:
+    'Make ONE Google Drive tool call to read only the document named in the user message (a Drive URL or file id).',
+  url:
+    'Fetch the URL in the user message once and read its main content (the requirement / spec). Do not crawl other pages.',
+};
+
+/** Normalize a free-text string into a valid epic-id slug (UPPER-DASH, starts with a letter). */
+function slugEpicId(s: string): string {
+  const up = (s || '').toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32);
+  return /^[A-Z]/.test(up) ? up : (up ? `E-${up}`.slice(0, 32) : '');
+}
+
+/** Pull the first balanced `{...}` JSON object out of free text (tolerates fences/prose). */
+function extractJsonObject(raw: string): unknown {
+  const start = raw.indexOf('{');
+  if (start === -1) { return null; }
+  let depth = 0, inStr = false, esc = false;
+  for (let i = start; i < raw.length; i++) {
+    const ch = raw[i];
+    if (inStr) {
+      if (esc) { esc = false; } else if (ch === '\\') { esc = true; } else if (ch === '"') { inStr = false; }
+      continue;
+    }
+    if (ch === '"') { inStr = true; }
+    else if (ch === '{') { depth++; }
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0) {
+        try { return JSON.parse(raw.slice(start, i + 1)); } catch { return null; }
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Surface the useful part of a `claude` failure. In `--print` mode Claude
+ * often writes the real error to stdout, so check both streams before falling
+ * back to the bare "claude exited N" message.
+ */
+function describeExecError(err: unknown): string {
+  const e = err as { stderr?: unknown; stdout?: unknown; message?: unknown };
+  const stderr = typeof e?.stderr === 'string' ? e.stderr.trim() : '';
+  const stdout = typeof e?.stdout === 'string' ? e.stdout.trim() : '';
+  const detail = stderr || stdout;
+  if (detail) {
+    return detail.split('\n').filter(Boolean).slice(-4).join(' ').slice(0, 500);
+  }
+  const msg = typeof e?.message === 'string' ? e.message : String(err);
+  if (msg.includes('ENOENT')) { return '`claude` CLI not found on PATH.'; }
+  return msg.slice(0, 400);
+}
 
 import { readYaml, writeYaml, type YamlDocument } from './yamlIO';
 import {
   WORKSPACE_DIR,
   WORKSPACE_FILENAME,
   stepAgentId,
+  stepDagId,
   normalizeStep,
   discoverAssets,
   RunStateStore,
   startRun,
   targetPath,
+  validateWorkspace,
+  assemblePipeline,
+  PipelineAssembleError,
+  heuristicClassify,
 } from '@aidlc/core';
 import { SKILL_TEMPLATES } from './skillTemplates';
 import {
@@ -38,6 +164,8 @@ import {
   getBuiltinPipelineSummary,
   getBuiltinArtifactTemplates,
   getBuiltinWorkflowByPipelineId,
+  getAllBuiltinPipelineSummaries,
+  getBuiltinRecipeSummaries,
   builtinClaudeCommand,
   pipelineCommandId,
   writeBuiltinAutoReviewValidators,
@@ -50,6 +178,7 @@ import type {
   AssetScope,
   DiscoveredAsset,
   PipelineConfig,
+  RecipeConfig,
   StepStatus,
   AutoReviewVerdict,
   StepHistoryEntry,
@@ -115,6 +244,18 @@ interface PipelineSummary {
   on_failure: 'stop' | 'continue';
   builtin?: boolean;
   name?: string;
+}
+
+/** A task-type recipe surfaced to the Start-Epic modal. */
+interface RecipeSummary {
+  id: string;
+  description?: string;
+  /** Source pipeline id the recipe draws from (resolved; first pipeline if unset). */
+  from: string;
+  /** Selected step ids, in order. */
+  steps: string[];
+  /** Resolved agent ids (ordered) for capability prompts in the modal. */
+  agents: string[];
 }
 
 interface AgentMeta {
@@ -222,6 +363,7 @@ interface WorkspaceState {
   agents: AgentSummary[];
   skills: SkillSummary[];
   pipelines: PipelineSummary[];
+  recipes: RecipeSummary[];
   epics: EpicSummaryUi[];
   agentMeta: Record<string, AgentMeta>;
   slashCommandsByAgent: Record<string, string>;
@@ -250,6 +392,37 @@ const SKILL_TEMPLATE_REFS: SkillTemplateRef[] = SKILL_TEMPLATES.map((t) => ({
 
 // ── State builders ────────────────────────────────────────────────────────
 
+/**
+ * Resolve a raw recipe entry into a {@link RecipeSummary}, mapping its step
+ * ids to the source pipeline's agent ids (in recipe order). Returns null when
+ * the recipe is malformed or its source pipeline is missing — those surface
+ * as load-time warnings elsewhere, not in the picker.
+ */
+function buildRecipeSummary(
+  r: Partial<RecipeConfig>,
+  pipelines: PipelineConfig[],
+): RecipeSummary | null {
+  if (!r || typeof r.id !== 'string' || !Array.isArray(r.steps)) { return null; }
+  const source = r.from
+    ? pipelines.find((p) => String(p.id) === r.from)
+    : pipelines[0];
+  if (!source || !Array.isArray(source.steps)) { return null; }
+  const agentByStep = new Map<string, string>();
+  for (const raw of source.steps as PipelineStepConfig[]) {
+    agentByStep.set(stepDagId(raw), stepAgentId(raw));
+  }
+  const agents = r.steps
+    .map((id) => agentByStep.get(id))
+    .filter((a): a is string => typeof a === 'string');
+  return {
+    id: r.id,
+    description: typeof r.description === 'string' ? r.description : undefined,
+    from: String(source.id),
+    steps: r.steps,
+    agents,
+  };
+}
+
 function buildState(initialView: WorkspaceView): WorkspaceState {
   const folder = vscode.workspace.workspaceFolders?.[0];
   if (!folder) {
@@ -257,7 +430,7 @@ function buildState(initialView: WorkspaceView): WorkspaceState {
       hasFolder: false,
       workspaceName: '',
       configExists: false,
-      agents: [], skills: [], pipelines: [], epics: [],
+      agents: [], skills: [], pipelines: [], recipes: [], epics: [],
       agentMeta: {}, slashCommandsByAgent: {},
       agentsCount: 0, skillsCount: 0, pipelinesCount: 0, epicsCount: 0,
       runIds: [],
@@ -310,17 +483,32 @@ function buildState(initialView: WorkspaceView): WorkspaceState {
     const agents = mergeAgents(null, root, discovered.agents);
     const skills = mergeSkills(null, root, discovered.skills);
     const epicIds0 = listEpicIdsFromDir(root, 'docs/epics');
+    // No workspace yet: still offer the built-in common pipeline + Auto recipes
+    // in Start Epic. Picking either materializes the workspace at Start time
+    // (ensureBuiltinInWorkspace), so the user skips a separate "init" step.
+    const builtinPipelines: PipelineSummary[] = getAllBuiltinPipelineSummaries().map((p) => ({
+      id: p.id,
+      name: p.name,
+      builtin: true,
+      on_failure: p.on_failure,
+      steps: p.steps.map((s) => ({
+        agent: s.agent, name: s.name, skills: s.skills, enabled: s.enabled,
+        produces: s.produces, requires: s.requires, depends_on: s.depends_on,
+        human_review: s.human_review, auto_review: s.auto_review,
+      })),
+    }));
     return {
       hasFolder: true,
       workspaceName: folder.name,
       configExists: false,
       agents, skills,
-      pipelines: [],
+      pipelines: builtinPipelines,
+      recipes: getBuiltinRecipeSummaries(),
       epics,
       agentMeta, slashCommandsByAgent,
       agentsCount: agents.length,
       skillsCount: skills.length,
-      pipelinesCount: 0,
+      pipelinesCount: builtinPipelines.length,
       epicsCount: epics.length,
       runIds: listRunIds(root),
       skillTemplates: SKILL_TEMPLATE_REFS,
@@ -355,6 +543,12 @@ function buildState(initialView: WorkspaceView): WorkspaceState {
       : [],
   }));
 
+  // Recipes → summaries, resolving each to its source pipeline's agents so
+  // the modal can show step count + capability prompts without re-deriving.
+  const recipes: RecipeSummary[] = (Array.isArray(doc.recipes) ? doc.recipes : [])
+    .map((r) => buildRecipeSummary(r as Partial<RecipeConfig>, doc.pipelines as PipelineConfig[]))
+    .filter((r): r is RecipeSummary => r !== null);
+
   const epicRoot = readEpicRoot(doc);
   const epicIds = listEpicIdsFromDir(root, epicRoot);
 
@@ -362,7 +556,7 @@ function buildState(initialView: WorkspaceView): WorkspaceState {
     hasFolder: true,
     workspaceName: folder.name,
     configExists: true,
-    agents, skills, pipelines, epics,
+    agents, skills, pipelines, recipes, epics,
     agentMeta, slashCommandsByAgent,
     agentsCount: agents.length,
     skillsCount: skills.length,
@@ -1196,6 +1390,18 @@ export class WorkspaceWebview {
         await this.startEpicInline(draft as Record<string, unknown>);
         return;
       }
+      case 'classifyBrief': {
+        // Webview asks the host to classify a requirement into a recipe (the
+        // classifier lives in @aidlc/core, which the webview can't bundle).
+        void this.classifyBriefForWebview(String(msg.brief ?? ''));
+        return;
+      }
+      case 'loadRequirement': {
+        // Fetch a requirement from an external source (Jira / GitHub / Drive /
+        // URL) via the `claude` CLI's MCP integrations.
+        void this.loadRequirementForWebview(String(msg.source ?? ''), String(msg.ref ?? ''));
+        return;
+      }
       case 'rerunStepInline': {
         const runId = String(msg.runId ?? '');
         const feedback = String(msg.feedback ?? '');
@@ -1904,6 +2110,16 @@ export class WorkspaceWebview {
       for (const c of (preset.workspace.slash_commands as Array<Record<string, unknown>>) ?? []) {
         if (!existingCmds.has(String(c.name))) { doc.slash_commands.push(c); }
       }
+      // Merge recipes too so the Auto classifier works after scaffolding.
+      const presetRecipes = (preset.workspace as { recipes?: Array<Record<string, unknown>> }).recipes ?? [];
+      if (presetRecipes.length) {
+        const docRecipes = (doc as { recipes?: Array<Record<string, unknown>> }).recipes ?? [];
+        const existingRecipeIds = new Set(docRecipes.map((r) => String(r.id)));
+        for (const r of presetRecipes) {
+          if (!existingRecipeIds.has(String(r.id))) { docRecipes.push(r); }
+        }
+        (doc as { recipes?: Array<Record<string, unknown>> }).recipes = docRecipes;
+      }
       const builtinSteps = getBuiltinPipelineSummary(builtin).steps.map((s) => {
         const step: Record<string, unknown> = {
           agent: s.agent,
@@ -2003,6 +2219,227 @@ export class WorkspaceWebview {
    * Refuses to overwrite an existing epic dir — the modal's existingEpicIds
    * already blocks collisions in normal use; this is the safety net.
    */
+  /**
+   * Assemble `recipeId` into a concrete pipeline named after the epic, append
+   * it to workspace.yaml, and return the new pipeline id (or null on failure,
+   * with a surfaced warning). Mirrors the wizard's `materializeRecipe`.
+   */
+  private assembleRecipeForEpic(root: string, recipeId: string, epicId: string): string | null {
+    const doc = readYaml(root);
+    if (!doc) {
+      void vscode.window.showWarningMessage('AIDLC: no workspace.yaml — initialize first.');
+      return null;
+    }
+    let config;
+    try {
+      config = validateWorkspace(doc, '.aidlc/workspace.yaml');
+    } catch (err) {
+      void vscode.window.showErrorMessage(
+        `AIDLC: workspace.yaml is invalid — cannot generate from recipe: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return null;
+    }
+
+    const taken = new Set((doc.pipelines as Array<{ id?: unknown }>).map((p) => String(p.id)));
+    const pipelineId = taken.has(epicId) ? `${epicId}-${recipeId}` : epicId;
+    if (taken.has(pipelineId)) {
+      void vscode.window.showErrorMessage(
+        `AIDLC: pipeline "${pipelineId}" already exists. Remove it or pick a different epic id.`,
+      );
+      return null;
+    }
+
+    let pipeline;
+    try {
+      pipeline = assemblePipeline(config, { recipeId, pipelineId });
+    } catch (err) {
+      if (err instanceof PipelineAssembleError) {
+        void vscode.window.showErrorMessage(`AIDLC: ${err.message}`);
+        return null;
+      }
+      throw err;
+    }
+
+    doc.pipelines.push(pipeline as unknown as Record<string, unknown>);
+    try {
+      validateWorkspace(doc, '.aidlc/workspace.yaml');
+    } catch (err) {
+      void vscode.window.showErrorMessage(
+        `AIDLC: generated pipeline failed validation — not written: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return null;
+    }
+    writeYaml(root, doc);
+    return pipelineId;
+  }
+
+  /**
+   * Read + analyze a requirement brief and post the chosen recipe back to the
+   * webview (`recipeSuggestion`). Uses the `claude` CLI to actually understand
+   * the requirement, falling back to the keyword heuristic when Claude isn't
+   * available / times out / returns unparseable output. Silent on empty brief
+   * / no recipes.
+   */
+  private async classifyBriefForWebview(brief: string): Promise<void> {
+    const root = this.getRootOrWarn();
+    if (!root || !brief.trim()) { return; }
+    const doc = readYaml(root);
+    if (!doc) { return; }
+    let config;
+    try { config = validateWorkspace(doc, '.aidlc/workspace.yaml'); } catch { return; }
+    if (config.recipes.length === 0) { return; }
+
+    const recipeIds = config.recipes.map((r) => r.id);
+    const post = (
+      v: { recipeId: string; confidence: string; reasoning: string; title?: string; epicId?: string },
+      source: string,
+    ) => {
+      void this.panel.webview.postMessage({
+        type: 'recipeSuggestion',
+        recipeId: v.recipeId,
+        confidence: v.confidence,
+        reasoning: v.reasoning,
+        title: v.title ?? '',
+        epicId: v.epicId ?? '',
+        source,
+        brief,
+      });
+    };
+
+    // 1) LLM: analyze the requirement → recipe + a suggested title + epic id.
+    try {
+      const system =
+        `You analyze a software requirement and pick the best-fitting pipeline recipe.\n\n` +
+        `Recipes:\n${config.recipes.map((r) => `- ${r.id}: ${r.description ?? ''}`).join('\n')}\n\n` +
+        `Respond with ONLY a JSON object (no markdown fences, no commentary):\n` +
+        `{"recipeId": "<one of: ${recipeIds.join(', ')}>", "confidence": "high|medium|low", ` +
+        `"reasoning": "<one sentence>", "title": "<short imperative title>", ` +
+        `"epicId": "<UPPERCASE-WITH-DASHES slug derived from the requirement, max 24 chars, e.g. EULA-ACCEPTANCE-GATE>"}`;
+      const stdout = await runClaude(
+        ['--print', '--append-system-prompt', system, brief],
+        { cwd: root, timeoutMs: 60_000 },
+      );
+      const parsed = extractJsonObject(stdout) as
+        | { recipeId?: string; confidence?: string; reasoning?: string; title?: string; epicId?: string }
+        | null;
+      if (parsed?.recipeId && recipeIds.includes(parsed.recipeId)) {
+        post({
+          recipeId: parsed.recipeId,
+          confidence: parsed.confidence ?? 'medium',
+          reasoning: parsed.reasoning ?? '',
+          title: parsed.title?.trim() ?? '',
+          epicId: slugEpicId(parsed.epicId ?? ''),
+        }, 'llm');
+        return;
+      }
+      throw new Error('unparseable classifier output');
+    } catch {
+      // 2) Fallback: keyword heuristic so the user still gets a suggestion.
+      try {
+        const verdict = heuristicClassify(brief, config.recipes);
+        post(verdict, 'heuristic');
+      } catch { /* no-op */ }
+    }
+  }
+
+  /**
+   * Fetch a requirement from an external source via the `claude` CLI (which
+   * carries the user's MCP integrations), then analyze it into a title +
+   * summary + suggested recipe, and post it back (`requirementLoaded`) so the
+   * modal can auto-fill the epic. Errors come back as `requirementLoadError`
+   * with the real stderr so the user can see why (e.g. the source's MCP isn't
+   * available to the CLI).
+   *
+   * Uses `--dangerously-skip-permissions` so MCP tool calls aren't blocked by
+   * the non-interactive permission prompt (which would otherwise hang/fail).
+   */
+  private async loadRequirementForWebview(source: string, ref: string): Promise<void> {
+    const root = this.getRootOrWarn();
+    if (!root || !ref.trim()) { return; }
+    const doc = readYaml(root);
+    if (!doc) { return; }
+    let config;
+    try { config = validateWorkspace(doc, '.aidlc/workspace.yaml'); } catch { config = null; }
+    const recipes = config?.recipes ?? [];
+    const recipeIds = recipes.map((r) => r.id);
+
+    const action = REQUIREMENT_FETCH_ACTION[source] ?? REQUIREMENT_FETCH_ACTION.url;
+    const recipeMenu = recipes.length
+      ? `\n\nThen choose the best-fitting recipe. Recipes:\n${recipes.map((r) => `- ${r.id}: ${r.description ?? ''}`).join('\n')}`
+      : '';
+    const system =
+      `You fetch and analyze software requirements. ${action}${recipeMenu}\n\n` +
+      `Respond with ONLY a JSON object (no markdown fences, no commentary):\n` +
+      `{"title": "<short imperative title>", "summary": "<2-4 sentence summary of the requirement>", ` +
+      `"epicId": "<UPPERCASE-WITH-DASHES slug derived from the requirement, max 24 chars>"` +
+      (recipeIds.length
+        ? `, "recipeId": "<one of: ${recipeIds.join(', ')}>", "confidence": "high|medium|low", "reasoning": "<one sentence>"`
+        : '') +
+      `}`;
+
+    try {
+      const stdout = await runClaude(
+        ['--print', '--dangerously-skip-permissions', '--max-turns', '25', '--append-system-prompt', system, ref],
+        { cwd: root, timeoutMs: 120_000 },
+      );
+      const parsed = extractJsonObject(stdout) as
+        | { title?: string; summary?: string; epicId?: string; recipeId?: string; confidence?: string; reasoning?: string }
+        | null;
+
+      // Prefer the structured JSON; if Claude returned prose instead, fall back
+      // to using the raw text as the summary + heuristic classification — but
+      // reject CLI status lines ("Error: Reached max turns", empty) which mean
+      // the fetch didn't actually complete.
+      const raw = stdout.trim();
+      if (!parsed && (!raw || /reached max turns|^error[:\s]/i.test(raw))) {
+        throw new Error(
+          raw.includes('max turns')
+            ? 'Claude hit its step limit before reading the source (try again, or the source is too large).'
+            : (raw || 'No content returned — is the source MCP available to the CLI?'),
+        );
+      }
+      const summary = parsed?.summary?.trim() || raw;
+
+      let recipeId = parsed?.recipeId && recipeIds.includes(parsed.recipeId) ? parsed.recipeId : '';
+      let confidence = parsed?.confidence ?? 'medium';
+      let reasoning = parsed?.reasoning ?? '';
+      if (!recipeId && recipes.length) {
+        const v = heuristicClassify(summary, recipes);
+        recipeId = v.recipeId; confidence = v.confidence; reasoning = v.reasoning;
+      }
+
+      // Natural epic id per source: Jira key (LH-50732), GitHub issue (GH-123),
+      // else a slug the model derived from the requirement.
+      let suggestedEpicId = '';
+      if (source === 'jira') {
+        suggestedEpicId = ref.match(/([A-Z][A-Z0-9]+-\d+)/)?.[1] ?? '';
+      } else if (source === 'github') {
+        const n = ref.match(/#(\d+)|\/(?:issues|pull)\/(\d+)/);
+        suggestedEpicId = n ? `GH-${n[1] ?? n[2]}` : '';
+      }
+      if (!suggestedEpicId) { suggestedEpicId = slugEpicId(parsed?.epicId ?? ''); }
+
+      void this.panel.webview.postMessage({
+        type: 'requirementLoaded',
+        source,
+        ref,
+        epicId: suggestedEpicId,
+        title: parsed?.title?.trim() ?? '',
+        summary,
+        recipeId,
+        confidence,
+        reasoning,
+      });
+    } catch (err) {
+      void this.panel.webview.postMessage({
+        type: 'requirementLoadError',
+        source,
+        ref,
+        message: describeExecError(err),
+      });
+    }
+  }
+
   private async startEpicInline(draft: Record<string, unknown>): Promise<void> {
     const root = this.getRootOrWarn();
     if (!root) { return; }
@@ -2010,10 +2447,28 @@ export class WorkspaceWebview {
     const targetRaw = draft.target as Record<string, unknown> | undefined;
     const epicId = String(draft.epicId ?? '').trim();
     if (!targetRaw || !epicId) { return; }
-    const targetKind = String(targetRaw.kind ?? '');
-    const targetId = String(targetRaw.id ?? '').trim();
+    let targetKind = String(targetRaw.kind ?? '');
+    let targetId = String(targetRaw.id ?? '').trim();
     if (!targetId) { return; }
-    if (targetKind !== 'pipeline' && targetKind !== 'agent') { return; }
+    if (targetKind !== 'pipeline' && targetKind !== 'agent' && targetKind !== 'recipe') { return; }
+
+    // Recipe target → assemble a right-sized pipeline named after the epic,
+    // write it to workspace.yaml, then continue as a normal pipeline.
+    if (targetKind === 'recipe') {
+      // Empty project: materialize the built-in workspace (agents/skills/
+      // pipeline/recipes) so the recipe has a source pipeline to draw from.
+      const existing = readYaml(root) as { recipes?: Array<{ id?: unknown }> } | null;
+      const hasRecipe = Array.isArray(existing?.recipes)
+        && existing.recipes.some((r) => String(r.id) === targetId);
+      if (!hasRecipe) {
+        const wf = BUILTIN_WORKFLOWS.find((w) => (w.recipes ?? []).some((r) => r.id === targetId));
+        if (wf) { this.ensureBuiltinInWorkspace(root, wf); }
+      }
+      const generated = this.assembleRecipeForEpic(root, targetId, epicId);
+      if (!generated) { return; }
+      targetKind = 'pipeline';
+      targetId = generated;
+    }
 
     // Auto-scaffold agents/skills/workspace.yaml when a built-in pipeline is
     // selected — covers SDLC plus the 7 stack-specialized workflows.

@@ -244,6 +244,18 @@ export interface PipelineSummary {
   name?: string;
 }
 
+/** A task-type recipe surfaced in the Start-Epic modal (mirrors host RecipeSummary). */
+export interface RecipeSummary {
+  id: string;
+  description?: string;
+  /** Source pipeline id the recipe draws from. */
+  from: string;
+  /** Selected step ids, in order. */
+  steps: string[];
+  /** Resolved agent ids (ordered) — for capability prompts. */
+  agents: string[];
+}
+
 export interface AutoReviewVerdict {
   decision: 'pass' | 'reject';
   reason: string;
@@ -380,6 +392,8 @@ export interface WorkspaceState {
   agents: AgentSummary[];
   skills: SkillSummary[];
   pipelines: PipelineSummary[];
+  /** Task-type recipes for the Start-Epic modal's auto-generate path. */
+  recipes: RecipeSummary[];
   epics: EpicSummary[];
   /** id → display metadata (pulled from workspace.yaml) for the step-detail card. */
   agentMeta: Record<string, AgentMeta>;

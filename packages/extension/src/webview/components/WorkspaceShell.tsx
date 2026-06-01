@@ -4,13 +4,13 @@ import type { WorkspaceState, WorkspaceView } from '@/lib/types';
 import { BuilderView } from './BuilderView';
 import { EpicsView } from './EpicsView';
 import { ThemeToggle } from './ThemeToggle';
-import { InitWorkflowModal } from './InitWorkflowModal';
+import { StartEpicModal } from './StartEpicModal';
 import { onHostMessage, postMessage } from '@/lib/bridge';
 
 export function WorkspaceShell({ state }: { state: WorkspaceState | null }) {
   const initial = state?.initialView ?? 'builder';
   const [view, setView] = useState<WorkspaceView>(initial);
-  const [initOpen, setInitOpen] = useState(false);
+  const [startEpicOpen, setStartEpicOpen] = useState(false);
 
   // Host can switch the view at runtime via openBuilder/openEpicsList.
   useEffect(() => {
@@ -48,7 +48,7 @@ export function WorkspaceShell({ state }: { state: WorkspaceState | null }) {
             </h2>
             <p className="mt-2 text-xs text-muted-foreground">
               {state.hasFolder
-                ? 'Initialize a workspace or load the demo project to start building.'
+                ? 'Start an epic — the workspace is created automatically when you pick a pipeline or let Auto detect one.'
                 : 'Open a folder in VS Code to get started.'}
             </p>
             <div className="mt-4 inline-flex flex-wrap justify-center gap-2">
@@ -65,10 +65,10 @@ export function WorkspaceShell({ state }: { state: WorkspaceState | null }) {
                 <>
                   <button
                     type="button"
-                    onClick={() => setInitOpen(true)}
+                    onClick={() => setStartEpicOpen(true)}
                     className="rounded-md bg-primary px-3.5 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90"
                   >
-                    Init Workspace
+                    Start Epic
                   </button>
                   <button
                     type="button"
@@ -82,15 +82,15 @@ export function WorkspaceShell({ state }: { state: WorkspaceState | null }) {
             </div>
           </div>
         </div>
-        {initOpen && (
-          <InitWorkflowModal
-            onPick={(workflowId) =>
-              // `__empty__` sentinel tells the host to skip its own picker
-              // and scaffold an empty workspace. Any other string is a
-              // built-in workflow id to apply.
-              postMessage({ type: 'init', workflowId: workflowId ?? '__empty__' })
-            }
-            onClose={() => setInitOpen(false)}
+        {startEpicOpen && (
+          <StartEpicModal
+            pipelines={state.pipelines}
+            recipes={state.recipes ?? []}
+            agentMeta={state.agentMeta}
+            nextEpicId={state.nextEpicId}
+            existingEpicIds={state.existingEpicIds}
+            onSubmit={(draft) => postMessage({ type: 'startEpicInline', draft })}
+            onClose={() => setStartEpicOpen(false)}
           />
         )}
       </div>

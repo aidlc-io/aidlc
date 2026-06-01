@@ -185,6 +185,19 @@ into working code on a feature branch.
  *                     `agents/`, `skills/`, `artifacts/` for this workflow.
  * - `description`   : one-liner shown next to the preset name.
  */
+/**
+ * A task-type recipe: a named, ordered subset of the workflow's phase ids.
+ * Seeded into the preset's `recipes:` so `assemblePipeline` (core) can
+ * materialize a right-sized pipeline per task without the user hand-editing
+ * workspace.yaml. `steps` are phase ids (= step `name`s in the installed
+ * pipeline); core prunes/re-links `depends_on` to the selected set.
+ */
+export interface RecipeDef {
+  id: string;
+  description: string;
+  steps: string[];
+}
+
 export interface BuiltinWorkflow {
   id: string;
   pipelineId: string;
@@ -196,7 +209,50 @@ export interface BuiltinWorkflow {
    * Parallel workflows declare a DAG via per-phase `dependsOn` arrays.
    */
   phases: PhaseDef[];
+  /**
+   * Task-type recipes carved out of `phases`. Optional — workflows without
+   * recipes just install the full pipeline.
+   */
+  recipes?: RecipeDef[];
 }
+
+/**
+ * Recipes for the built-in SDLC pipeline, keyed by task type. Each lists a
+ * subset of the SDLC phase ids (plan, design, test-plan, implement,
+ * generate-test-cases, execute-test) in execution order.
+ */
+const SDLC_RECIPES: RecipeDef[] = [
+  {
+    id: 'bugfix',
+    description: 'Small fix with verification — implement then run tests.',
+    steps: ['implement', 'execute-test'],
+  },
+  {
+    id: 'small-feature',
+    description: 'Plan, build, verify. Skips formal design + test-case authoring.',
+    steps: ['plan', 'implement', 'execute-test'],
+  },
+  {
+    id: 'refactor',
+    description: 'Design-led change with verification, no new PRD.',
+    steps: ['design', 'implement', 'execute-test'],
+  },
+  {
+    id: 'feature-parallel',
+    description: 'Mid-size feature, QA track parallel to engineering (design ∥ test-plan).',
+    steps: ['plan', 'design', 'test-plan', 'implement', 'execute-test'],
+  },
+  {
+    id: 'large-feature',
+    description: 'Full SDLC: plan → design ∥ test-plan → implement → test cases → execute.',
+    steps: ['plan', 'design', 'test-plan', 'implement', 'generate-test-cases', 'execute-test'],
+  },
+  {
+    id: 'spike',
+    description: 'Exploration only — produce a PRD / findings doc.',
+    steps: ['plan'],
+  },
+];
 
 export const BUILTIN_WORKFLOWS: BuiltinWorkflow[] = [
   {
@@ -207,6 +263,7 @@ export const BUILTIN_WORKFLOWS: BuiltinWorkflow[] = [
     description:
       'Parallel SDLC pipeline ending at execute-test: Plan → (Design → Implement+UnitTest) ∥ (Test Plan → Generate Test Cases) → Execute Test+Report. PO / Tech Lead / Developer / QA. QA runs concurrently with engineering.',
     phases: PHASES,
+    recipes: SDLC_RECIPES,
   },
 ];
 
@@ -432,6 +489,14 @@ export function loadBuiltinPreset(extensionPath: string, workflow: BuiltinWorkfl
       environment: {},
       slash_commands: slashCommands,
       pipelines: [pipeline],
+      // Task-type recipes draw from the pipeline we just composed, so a
+      // freshly-applied preset can `assemblePipeline` right away.
+      recipes: (workflow.recipes ?? []).map((r) => ({
+        id: r.id,
+        description: r.description,
+        from: workflow.pipelineId,
+        steps: r.steps,
+      })),
       sidebar: {
         views: [
           { type: 'agents-list' },
@@ -526,6 +591,32 @@ export function getSdlcBuiltinPipelineSummary() {
  */
 export function getAllBuiltinPipelineSummaries() {
   return BUILTIN_WORKFLOWS.map((w) => getBuiltinPipelineSummary(w));
+}
+
+/**
+ * Recipe summaries for every built-in workflow, resolved to their source
+ * pipeline's agents. Lets the Start-Epic modal offer the Auto classifier on a
+ * project that hasn't applied a preset yet — the workspace is materialized at
+ * Start time.
+ */
+export function getBuiltinRecipeSummaries(): Array<{
+  id: string;
+  description: string;
+  from: string;
+  steps: string[];
+  agents: string[];
+}> {
+  return BUILTIN_WORKFLOWS.flatMap((wf) => {
+    const summary = getBuiltinPipelineSummary(wf);
+    const agentByStep = new Map(summary.steps.map((s) => [s.name, s.agent]));
+    return (wf.recipes ?? []).map((r) => ({
+      id: r.id,
+      description: r.description,
+      from: wf.pipelineId,
+      steps: r.steps,
+      agents: r.steps.map((id) => agentByStep.get(id)).filter((a): a is string => !!a),
+    }));
+  });
 }
 
 /**
