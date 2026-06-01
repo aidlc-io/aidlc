@@ -116,6 +116,9 @@ export function StartEpicModal({
   // The signal the auto-classifier last acted on — set it when we fill the
   // description programmatically (from a load) so it doesn't re-analyze.
   const lastAnalyzed = useRef('');
+  // The ref of the in-flight external load. Streamed chunks / results carry
+  // their ref; we drop any that don't match (the user moved on to another).
+  const activeLoadRef = useRef('');
 
   // Suggestion is deliberate, not per-keystroke: classify only once there's
   // real requirement content — when the user clicks "Suggest", or right after
@@ -182,64 +185,62 @@ export function StartEpicModal({
         if (sugTitle) { setTitle((cur) => (cur.trim() ? cur : sugTitle)); }
         return;
       }
+      // Streamed external load: clear → append chunks → finalize. Drop messages
+      // for a ref the user has moved past (started another load / edited).
+      if (m.type === 'requirementLoadStart') {
+        if (String(m.ref ?? '').trim() !== activeLoadRef.current) { return; }
+        setDescription('');
+        return;
+      }
+      if (m.type === 'requirementChunk') {
+        if (String(m.ref ?? '').trim() !== activeLoadRef.current) { return; }
+        const chunk = String(m.chunk ?? '');
+        if (chunk) { setDescription((d) => d + chunk); }
+        return;
+      }
       if (m.type === 'requirementLoaded') {
+        if (String(m.ref ?? '').trim() !== activeLoadRef.current) { return; }
         setLoadingExternal(false);
-        // Drop a result the user has navigated away from (analyzed A, typed B):
-        // compare the ref we fetched against the current relevant input.
-        const src = String(m.source ?? '');
-        const usedRef = String(m.ref ?? '').trim();
-        const curRelevant = src === 'jira'
-          ? epicIdRef.current.trim()
-          : src === 'url'
-            ? (descriptionRef.current.match(/https?:\/\/\S+/)?.[0] ?? '')
-            : descriptionRef.current.trim();
-        if (usedRef && curRelevant && usedRef !== curRelevant) { return; }
         setLoadSource(null);
         setLoadRef('');
-        const summary = String(m.summary ?? '');
-        const loadedTitle = String(m.title ?? '');
         const loadedEpicId = String(m.epicId ?? '');
-        const recipeId = String(m.recipeId ?? '');
-        // Don't clobber the editable description — the pipeline agents read the
-        // ticket at run time. We only use the analysis to fill the epic id /
-        // title and suggest a recipe; the summary is shown as a note.
-        if (loadedEpicId && ID_PATTERN.test(loadedEpicId)) { setEpicId((cur) => (cur.trim() ? cur : loadedEpicId)); }
-        setTitle((cur) => (cur.trim() ? cur : loadedTitle));
-        // Fill the description with the fetched summary. Mark it as already
-        // analyzed so the auto-classifier doesn't re-run on this text.
-        if (summary) {
-          setDescription(summary);
-          lastAnalyzed.current = `brief:${summary.trim()}`;
+        if (loadedEpicId && ID_PATTERN.test(loadedEpicId)) {
+          setEpicId((cur) => (cur.trim() ? cur : loadedEpicId));
         }
-        setDescLoadInfo({ kind: 'loaded', text: `Loaded from ${src}` });
-        if (recipeId && recipes.some((r) => r.id === recipeId)) {
-          setSuggestion({
-            recipeId,
-            confidence: (m.confidence as Suggestion['confidence']) ?? 'medium',
-            reasoning: String(m.reasoning ?? ''),
-            source: 'llm',
-          });
-          setSelected({ kind: 'auto' });
-        }
+        setDescLoadInfo({ kind: 'loaded', text: `Loaded from ${String(m.source ?? '')}` });
+        // Deliberately do NOT set lastAnalyzed: the description is now filled,
+        // so the auto-fire effect classifies it for a recipe (+ title/epicId).
+        activeLoadRef.current = '';
         return;
       }
       if (m.type === 'requirementLoadError') {
+        if (String(m.ref ?? '').trim() !== activeLoadRef.current) { return; }
         setLoadingExternal(false);
-        const src = String(m.source ?? '');
-        const usedRef = String(m.ref ?? '').trim();
-        const curRelevant = src === 'jira' ? epicIdRef.current.trim() : descriptionRef.current.trim();
-        // Don't surface an error for an input the user already moved past.
-        if (usedRef && curRelevant && !curRelevant.includes(usedRef) && usedRef !== curRelevant) { return; }
+        setDescription('');        // drop the partial stream
+        activeLoadRef.current = '';
         setLoadError(String(m.message ?? 'Failed to load requirement.'));
+        return;
       }
     });
   }, [recipes]);
 
-  const loadFromSource = () => {
-    if (!loadSource || !loadRef.trim()) { return; }
+  // Kick off an external fetch. The summary streams into the description; the
+  // recipe is classified separately once it lands (see the auto-fire effect),
+  // so the text shows up without waiting on the analysis.
+  const startLoad = (source: ExternalSource, ref: string) => {
+    const r = ref.trim();
+    if (!r) { return; }
+    activeLoadRef.current = r;
     setLoadingExternal(true);
     setLoadError(null);
-    postMessage({ type: 'loadRequirement', source: loadSource, ref: loadRef.trim() });
+    setSuggestion(null);
+    setDescription('');
+    postMessage({ type: 'loadRequirement', source, ref: r });
+  };
+
+  const loadFromSource = () => {
+    if (!loadSource || !loadRef.trim()) { return; }
+    startLoad(loadSource, loadRef.trim());
   };
 
   // Auto mode is hands-off: once "Auto" is selected, analyze whatever signal is
@@ -251,19 +252,21 @@ export function StartEpicModal({
     const key = epicId.trim();
     const desc = description.trim();
     const isJiraKey = /^[A-Z][A-Z0-9]*-\d+$/.test(key);
-    const urlMatch = desc.match(/https?:\/\/\S+/);
+    // Only fetch a URL when the description IS just that URL (a pasted link).
+    // A summary that merely *mentions* URLs should be classified, not re-fetched.
+    const isBareUrl = /^https?:\/\/\S+$/.test(desc);
 
     let signal = '';
     let fire = () => {};
-    if (urlMatch) {
-      signal = `url:${urlMatch[0]}`;
-      fire = () => { setLoadingExternal(true); setLoadError(null); postMessage({ type: 'loadRequirement', source: 'url', ref: urlMatch[0] }); };
+    if (isBareUrl) {
+      signal = `url:${desc}`;
+      fire = () => startLoad('url', desc);
     } else if (desc) {
       signal = `brief:${desc}`;
       fire = () => requestSuggestion(desc);
     } else if (isJiraKey) {
       signal = `jira:${key}`;
-      fire = () => { setLoadingExternal(true); setLoadError(null); postMessage({ type: 'loadRequirement', source: 'jira', ref: key }); };
+      fire = () => startLoad('jira', key);
     }
     if (!signal || signal === lastAnalyzed.current) { return; }
     const t = setTimeout(() => { lastAnalyzed.current = signal; fire(); }, 800);

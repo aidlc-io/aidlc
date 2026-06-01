@@ -35,7 +35,10 @@ function rlog(msg: string): void {
  * output. Mirrors DefaultRunner's stdio. Resolves stdout on exit 0; rejects
  * with `{ stderr }` attached otherwise (or on timeout).
  */
-function runClaude(args: string[], opts: { cwd: string; timeoutMs: number }): Promise<string> {
+function runClaude(
+  args: string[],
+  opts: { cwd: string; timeoutMs: number; onChunk?: (chunk: string) => void },
+): Promise<string> {
   return new Promise((resolve, reject) => {
     // VS Code launched from the Dock has a minimal PATH (no node/npx/claude
     // from nvm/homebrew), which makes `claude` (and the stdio MCP servers it
@@ -61,7 +64,11 @@ function runClaude(args: string[], opts: { cwd: string; timeoutMs: number }): Pr
       proc.kill('SIGKILL');
       reject(new Error('Timed out waiting for the source (the MCP may be slow or unavailable).'));
     }, opts.timeoutMs);
-    proc.stdout.on('data', (d: Buffer) => { out += d.toString('utf8'); });
+    proc.stdout.on('data', (d: Buffer) => {
+      const s = d.toString('utf8');
+      out += s;
+      opts.onChunk?.(s);
+    });
     proc.stderr.on('data', (d: Buffer) => { err += d.toString('utf8'); });
     proc.on('error', (e) => { clearTimeout(timer); rlog(`[runClaude] spawn error: ${String(e)}`); reject(e); });
     proc.on('close', (code) => {
@@ -94,29 +101,6 @@ const REQUIREMENT_FETCH_ACTION: Record<string, string> = {
   url:
     'Fetch the URL in the user message once and read its main content (the requirement / spec). Do not crawl other pages.',
 };
-
-/** Pull the first balanced `{...}` JSON object out of free text (tolerates fences/prose). */
-function extractJsonObject(raw: string): unknown {
-  const start = raw.indexOf('{');
-  if (start === -1) { return null; }
-  let depth = 0, inStr = false, esc = false;
-  for (let i = start; i < raw.length; i++) {
-    const ch = raw[i];
-    if (inStr) {
-      if (esc) { esc = false; } else if (ch === '\\') { esc = true; } else if (ch === '"') { inStr = false; }
-      continue;
-    }
-    if (ch === '"') { inStr = true; }
-    else if (ch === '{') { depth++; }
-    else if (ch === '}') {
-      depth--;
-      if (depth === 0) {
-        try { return JSON.parse(raw.slice(start, i + 1)); } catch { return null; }
-      }
-    }
-  }
-  return null;
-}
 
 /**
  * Surface the useful part of a `claude` failure. In `--print` mode Claude
@@ -2300,9 +2284,15 @@ export class WorkspaceWebview {
       });
     };
 
-    // 1) LLM: analyze the requirement → recipe + a suggested title + epic id.
-    //    Same prompt/parser the CLI uses (core), so both pick consistently;
-    //    core also returns the suggested title + (slugged) epicId for the UI.
+    // 1) Instant heuristic so a recipe shows up immediately (no dead wait while
+    //    the LLM thinks). The keyword classify is local + synchronous.
+    try {
+      post(heuristicClassify(brief, config.recipes), 'heuristic');
+    } catch { /* no-op — fall through to the LLM attempt */ }
+
+    // 2) LLM refine: analyze the requirement → recipe + suggested title + epic
+    //    id, and overwrite the provisional pick when it lands. Same
+    //    prompt/parser the CLI uses (core) so both pick consistently.
     try {
       const system = buildClassificationPrompt(config.recipes);
       const stdout = await runClaude(
@@ -2317,14 +2307,7 @@ export class WorkspaceWebview {
         title: verdict.title ?? '',
         epicId: verdict.epicId ?? '',
       }, 'llm');
-      return;
-    } catch {
-      // 2) Fallback: keyword heuristic so the user still gets a suggestion.
-      try {
-        const verdict = heuristicClassify(brief, config.recipes);
-        post(verdict, 'heuristic');
-      } catch { /* no-op */ }
-    }
+    } catch { /* keep the heuristic suggestion already posted */ }
   }
 
   /**
@@ -2343,58 +2326,47 @@ export class WorkspaceWebview {
     if (!root || !ref.trim()) { return; }
     const doc = readYaml(root);
     if (!doc) { return; }
-    let config;
-    try { config = validateWorkspace(doc, '.aidlc/workspace.yaml'); } catch { config = null; }
-    const recipes = config?.recipes ?? [];
-    const recipeIds = recipes.map((r) => r.id);
 
+    // Fetch + summarize ONLY — recipe classification is decoupled (it runs
+    // afterwards off the filled description), so the text shows up as soon as
+    // Claude starts writing instead of waiting on the whole analysis.
     const action = REQUIREMENT_FETCH_ACTION[source] ?? REQUIREMENT_FETCH_ACTION.url;
-    const recipeMenu = recipes.length
-      ? `\n\nThen choose the best-fitting recipe. Recipes:\n${recipes.map((r) => `- ${r.id}: ${r.description ?? ''}`).join('\n')}`
-      : '';
     const system =
-      `You fetch and analyze software requirements. ${action}${recipeMenu}\n\n` +
-      `Respond with ONLY a JSON object (no markdown fences, no commentary):\n` +
-      `{"title": "<short imperative title>", "summary": "<2-4 sentence summary of the requirement>", ` +
-      `"epicId": "<UPPERCASE-WITH-DASHES slug derived from the requirement, max 24 chars>"` +
-      (recipeIds.length
-        ? `, "recipeId": "<one of: ${recipeIds.join(', ')}>", "confidence": "high|medium|low", "reasoning": "<one sentence>"`
-        : '') +
-      `}`;
+      `You fetch and summarize software requirements. ${action}\n\n` +
+      `Write a concise plain-text summary of the requirement (2-5 sentences, ` +
+      `the key intent + scope). Output ONLY the summary prose — no JSON, no ` +
+      `markdown headers, no preamble like "Here is". If the source has no ` +
+      `usable content, output exactly: NO_CONTENT`;
+
+    // Tell the webview to clear the field and start streaming into it.
+    void this.panel.webview.postMessage({ type: 'requirementLoadStart', source, ref });
 
     try {
+      // Stream stdout chunks straight into the description as they arrive.
       const stdout = await runClaude(
         ['--print', '--dangerously-skip-permissions', '--max-turns', '25', '--append-system-prompt', system, ref],
-        { cwd: root, timeoutMs: 120_000 },
+        {
+          cwd: root,
+          timeoutMs: 120_000,
+          onChunk: (chunk) => {
+            void this.panel.webview.postMessage({ type: 'requirementChunk', source, ref, chunk });
+          },
+        },
       );
-      const parsed = extractJsonObject(stdout) as
-        | { title?: string; summary?: string; epicId?: string; recipeId?: string; confidence?: string; reasoning?: string }
-        | null;
 
-      // Prefer the structured JSON; if Claude returned prose instead, fall back
-      // to using the raw text as the summary + heuristic classification — but
-      // reject CLI status lines ("Error: Reached max turns", empty) which mean
-      // the fetch didn't actually complete.
       const raw = stdout.trim();
-      if (!parsed && (!raw || /reached max turns|^error[:\s]/i.test(raw))) {
+      if (!raw || /^no_content$/i.test(raw) || /reached max turns|^error[:\s]/i.test(raw)) {
         throw new Error(
-          raw.includes('max turns')
+          raw.toLowerCase().includes('max turns')
             ? 'Claude hit its step limit before reading the source (try again, or the source is too large).'
-            : (raw || 'No content returned — is the source MCP available to the CLI?'),
+            : (raw && !/^no_content$/i.test(raw)
+              ? raw
+              : 'No content returned — is the source MCP available to the CLI?'),
         );
-      }
-      const summary = parsed?.summary?.trim() || raw;
-
-      let recipeId = parsed?.recipeId && recipeIds.includes(parsed.recipeId) ? parsed.recipeId : '';
-      let confidence = parsed?.confidence ?? 'medium';
-      let reasoning = parsed?.reasoning ?? '';
-      if (!recipeId && recipes.length) {
-        const v = heuristicClassify(summary, recipes);
-        recipeId = v.recipeId; confidence = v.confidence; reasoning = v.reasoning;
       }
 
       // Natural epic id per source: Jira key (LH-50732), GitHub issue (GH-123),
-      // else a slug the model derived from the requirement.
+      // else a slug derived from the summary's first line.
       let suggestedEpicId = '';
       if (source === 'jira') {
         suggestedEpicId = ref.match(/([A-Z][A-Z0-9]+-\d+)/)?.[1] ?? '';
@@ -2402,18 +2374,16 @@ export class WorkspaceWebview {
         const n = ref.match(/#(\d+)|\/(?:issues|pull)\/(\d+)/);
         suggestedEpicId = n ? `GH-${n[1] ?? n[2]}` : '';
       }
-      if (!suggestedEpicId) { suggestedEpicId = slugEpicId(parsed?.epicId ?? ''); }
+      if (!suggestedEpicId) { suggestedEpicId = slugEpicId(raw.split('\n')[0] ?? ''); }
 
+      // Done: the description is already filled by the streamed chunks. The
+      // webview now runs the standard classify pass on it (recipe + title).
       void this.panel.webview.postMessage({
         type: 'requirementLoaded',
         source,
         ref,
         epicId: suggestedEpicId,
-        title: parsed?.title?.trim() ?? '',
-        summary,
-        recipeId,
-        confidence,
-        reasoning,
+        summary: raw,
       });
     } catch (err) {
       void this.panel.webview.postMessage({

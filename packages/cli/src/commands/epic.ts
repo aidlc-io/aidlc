@@ -154,8 +154,14 @@ export function registerEpic(program: Command): void {
         let recipeId = opts.recipe;
         if (!recipeId) {
           const brief = (opts.brief ?? []).join(' ').trim();
-          const verdict = (opts.llm ? classifyWithLlm(brief, config.recipes) : null)
-            ?? heuristicClassify(brief, config.recipes);
+          // Instant heuristic first (provisional), then refine with the LLM —
+          // same two-stage flow the extension uses for fast feedback.
+          const heur = heuristicClassify(brief, config.recipes);
+          let verdict = heur;
+          if (opts.llm) {
+            console.log(chalk.dim(`Provisional → ${heur.recipeId} (${heur.confidence}, heuristic) — refining with claude…`));
+            verdict = classifyWithLlm(brief, config.recipes) ?? heur;
+          }
           recipeId = verdict.recipeId;
           console.log(chalk.dim(`Classified → ${chalk.bold(recipeId)} (${verdict.confidence}, ${verdict.source})`));
         }
