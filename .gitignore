@@ -24,5 +24,8 @@ packages/*/bin/
 # package-specific build artifacts already covered by out/ + dist/
 packages/extension/scripts/demo/out/
 packages/extension/scripts/demo/out-agents/
+# templates: single source of truth is packages/core/templates; the extension
+# build copies them in via `pnpm copy:templates`.
+packages/extension/templates/
 .ast-graph/
 .claude/settings.json

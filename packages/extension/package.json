@@ -325,7 +325,8 @@
     ]
   },
   "scripts": {
-    "compile": "tsc -p ./ && vite build",
+    "copy:templates": "rm -rf templates && cp -R ../core/templates templates",
+    "compile": "pnpm copy:templates && tsc -p ./ && vite build",
     "watch": "trap 'kill 0' SIGINT EXIT; pnpm watch:tsc & pnpm watch:webviews & wait",
     "watch:tsc": "tsc -watch -p ./",
     "watch:webviews": "vite build --watch",
@@ -334,7 +335,7 @@
     "bundle": "esbuild src/extension.ts --bundle --platform=node --target=node18 --external:vscode --format=cjs --outfile=out/extension.js",
     "bundle:prod": "esbuild src/extension.ts --bundle --platform=node --target=node18 --external:vscode --format=cjs --minify --outfile=out/extension.js",
     "clean:out": "rm -rf out",
-    "package": "pnpm typecheck && pnpm clean:out && pnpm bundle:webviews && pnpm bundle:prod && vsce package --no-dependencies"
+    "package": "pnpm copy:templates && pnpm typecheck && pnpm clean:out && pnpm bundle:webviews && pnpm bundle:prod && vsce package --no-dependencies"
   },
   "dependencies": {
     "@aidlc/core": "workspace:*",

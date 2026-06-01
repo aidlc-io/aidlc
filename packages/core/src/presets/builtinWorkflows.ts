@@ -352,6 +352,23 @@ export function pipelineCommandId(pipelineId: string, phaseId: string): string {
 }
 
 /**
+ * Filesystem root whose `templates/<dir>/…` holds the bundled agent / skill /
+ * artifact markdown. This is the core package root (templates ship via core's
+ * `files`), so callers that don't have their own copy — e.g. the CLI — can do
+ * `loadBuiltinPreset(builtinTemplatesRoot(), workflow)`.
+ *
+ * NOTE: the VS Code extension bundles core with esbuild, so `__dirname` there
+ * points at the extension bundle, not core. The extension therefore keeps
+ * passing its own `extensionPath` (its build copies `templates/` in) rather
+ * than relying on this.
+ */
+export function builtinTemplatesRoot(): string {
+  // dist/presets/builtinWorkflows.js → package root is two levels up; the
+  // sibling `templates/` dir lives there.
+  return path.join(__dirname, '..', '..');
+}
+
+/**
  * Load + compose a built-in preset. Bundled .md files are read at
  * runtime from the extension's installed location, so the build pipeline
  * doesn't need a separate "compose preset JSON" step.

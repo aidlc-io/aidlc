@@ -6,7 +6,8 @@
   "types": "./dist/index.d.ts",
   "files": [
     "dist",
-    "src"
+    "src",
+    "templates"
   ],
   "scripts": {
     "compile": "tsc -p ./",

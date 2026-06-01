@@ -2,7 +2,13 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { WORKSPACE_DIR, BUILTIN_WORKFLOWS, loadBuiltinPreset } from '@aidlc/core';
+import {
+  WORKSPACE_DIR,
+  BUILTIN_WORKFLOWS,
+  loadBuiltinPreset,
+  builtinTemplatesRoot,
+  installWorkflowGlobalsByIds,
+} from '@aidlc/core';
 import { readYaml, requireYaml, writeYaml, YamlDocument } from '../yamlIO';
 import { resolveWorkspaceRoot } from '../workspaceRoot';
 import { SKILL_TEMPLATES } from '../skillTemplates';
@@ -72,7 +78,12 @@ const BUILTIN_PRESETS: BuiltinPreset[] = [
       // (skills resolve to ~/.claude/skills/aidlc-*.md, installed by the
       // extension or `aidlc` global install).
       const workflow = BUILTIN_WORKFLOWS[0];
-      const preset = loadBuiltinPreset(_root, workflow);
+      const templatesRoot = builtinTemplatesRoot();
+      // Install the composed agent/skill markdown into ~/.claude so the
+      // workspace.yaml skill paths (~/.claude/skills/aidlc-*.md) resolve —
+      // same files the extension installs. Idempotent + marker-guarded.
+      installWorkflowGlobalsByIds(templatesRoot, [workflow.id]);
+      const preset = loadBuiltinPreset(templatesRoot, workflow);
       const ws = preset.workspace as {
         agents?: Array<Record<string, unknown>>;
         skills?: Array<Record<string, unknown>>;
