@@ -145,7 +145,8 @@ export function PipelineCard({
               total={total}
               pipelineId={pipeline.id}
               agents={agents}
-              onAddParallel={() => { setParallelToAgent(step.agent); setPickerOpen(true); }}
+              siblingNodeIds={pipeline.steps.map((s) => s.name ?? s.agent).filter((_, j) => j !== i)}
+              onAddParallel={() => { setParallelToAgent(step.name ?? step.agent); setPickerOpen(true); }}
               isDragging={dragSrc === i}
               isDragOver={dragOver === i && dragSrc !== null && dragSrc !== i}
               onDragStart={() => setDragSrc(i)}
@@ -214,16 +215,18 @@ export function PipelineCard({
           pipelineId={pipeline.id}
           agents={agents}
           existingAgentIds={pipeline.steps.map((s) => s.agent)}
-          onPick={(agentId) => {
+          existingStepNames={pipeline.steps.map((s) => s.name ?? s.agent)}
+          onPick={(agentId, stepName) => {
             if (parallelToAgent) {
               postMessage({
                 type: 'addParallelStep',
                 pipelineId: pipeline.id,
                 parallelToAgent,
                 agentId,
+                stepName,
               });
             } else {
-              postMessage({ type: 'addStepToPipeline', pipelineId: pipeline.id, agentId });
+              postMessage({ type: 'addStepToPipeline', pipelineId: pipeline.id, agentId, stepName });
             }
           }}
           onClose={() => { setPickerOpen(false); setParallelToAgent(null); }}
@@ -353,7 +356,8 @@ function DagFlow({
                   total={total}
                   pipelineId={pipeline.id}
                   agents={agents}
-                  onAddParallel={() => onAddParallel(step.agent)}
+                  siblingNodeIds={pipeline.steps.map((s) => s.name ?? s.agent).filter((_, j) => j !== idx)}
+                  onAddParallel={() => onAddParallel(step.name ?? step.agent)}
                   isDragging={dragSrc === idx}
                   isDragOver={dragOver === idx && dragSrc !== null && dragSrc !== idx}
                   onDragStart={() => onDragSrc(idx)}
@@ -447,6 +451,7 @@ function DagNode({
   total,
   pipelineId,
   agents,
+  siblingNodeIds,
   onAddParallel,
   isDragging,
   isDragOver,
@@ -462,6 +467,8 @@ function DagNode({
   total: number;
   pipelineId: string;
   agents: AgentSummary[];
+  /** Node ids of the other steps — candidates for this step's `depends_on`. */
+  siblingNodeIds: string[];
   onAddParallel: () => void;
   isDragging: boolean;
   isDragOver: boolean;
@@ -592,6 +599,7 @@ function DagNode({
           idx={idx}
           step={step}
           agents={agents}
+          siblingNodeIds={siblingNodeIds}
           onSubmit={(config) =>
             postMessage({ type: 'editStepConfig', pipelineId, idx, config })
           }
@@ -608,6 +616,7 @@ function FlowNode({
   total,
   pipelineId,
   agents,
+  siblingNodeIds,
   onAddParallel,
   isDragging,
   isDragOver,
@@ -621,6 +630,8 @@ function FlowNode({
   total: number;
   pipelineId: string;
   agents: AgentSummary[];
+  /** Node ids of the other steps — candidates for this step's `depends_on`. */
+  siblingNodeIds: string[];
   /** Opens the step picker; result is added in parallel with this step. */
   onAddParallel: () => void;
   isDragging: boolean;
@@ -771,6 +782,7 @@ function FlowNode({
           idx={idx}
           step={step}
           agents={agents}
+          siblingNodeIds={siblingNodeIds}
           onSubmit={(config) =>
             postMessage({ type: 'editStepConfig', pipelineId, idx, config })
           }

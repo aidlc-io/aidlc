@@ -208,6 +208,9 @@ export function PipelineModal({
                   total={steps.length}
                   agents={agents}
                   isDag={isDag}
+                  siblingNodeIds={steps
+                    .map((o) => (o.name ?? '').trim() || o.agent)
+                    .filter((_, j) => j !== i)}
                   onRemove={() => removeAt(i)}
                   onMoveUp={() => moveUp(i)}
                   onMoveDown={() => moveDown(i)}
@@ -306,6 +309,7 @@ function StepRow({
   total,
   agents,
   isDag,
+  siblingNodeIds,
   onRemove,
   onMoveUp,
   onMoveDown,
@@ -319,6 +323,9 @@ function StepRow({
    *  so up/down arrows are hidden and parallel relationships are surfaced
    *  via a `∥` badge instead. */
   isDag: boolean;
+  /** Node ids (name ?? agent) of the other steps — candidates for this
+   *  step's `depends_on` (the "Runs after" picker). */
+  siblingNodeIds: string[];
   onRemove: () => void;
   onMoveUp: () => void;
   onMoveDown: () => void;
@@ -415,23 +422,51 @@ function StepRow({
           <X className="h-3 w-3" />
         </button>
       </div>
-      {/* DAG indicator — parallel structure isn't editable from this modal,
-          but we surface what the step waits on so the user understands why
-          up/down arrows disappeared and which other steps it runs alongside. */}
-      {step.depends_on && step.depends_on.length > 0 && (
-        <div
-          className="ml-7 mt-1.5 flex flex-wrap items-center gap-1 text-[10.5px] text-muted-foreground"
-          title="DAG edges — edit parallel structure from the workflow view on the card, not this modal"
-        >
-          <span className="font-mono opacity-70">∥ after</span>
-          {step.depends_on.map((dep) => (
-            <span
-              key={dep}
-              className="rounded border border-border bg-card px-1.5 py-0.5 font-mono text-[10px] text-foreground"
-            >
-              {dep}
+      {/* Runs-after picker — defines the parallel (DAG) structure right here.
+          Each step it depends on pushes it one column later; steps that share
+          the same dependencies render side-by-side (parallel). Pick nothing to
+          make it a starting step. As soon as any step has a dependency the
+          pipeline switches to DAG mode and the up/down arrows give way to this. */}
+      {siblingNodeIds.length > 0 && (
+        <div className="ml-7 mt-1.5">
+          <div className="mb-1 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+            <span className="font-mono opacity-70">∥</span> Runs after
+            <span className="font-normal normal-case tracking-normal text-muted-foreground/80">
+              (leave empty = parallel from the start)
             </span>
-          ))}
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {siblingNodeIds.map((dep) => {
+              const checked = (step.depends_on ?? []).includes(dep);
+              return (
+                <button
+                  key={dep}
+                  type="button"
+                  onClick={() => {
+                    const cur = step.depends_on ?? [];
+                    const next = checked ? cur.filter((d) => d !== dep) : [...cur, dep];
+                    onChange({ depends_on: next });
+                  }}
+                  className={cn(
+                    'inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-[10.5px] transition-colors',
+                    checked
+                      ? 'border-primary/60 bg-primary/15 text-primary'
+                      : 'border-border bg-transparent text-foreground hover:border-border/80 hover:bg-accent/40',
+                  )}
+                >
+                  <span
+                    className={cn(
+                      'inline-grid h-2.5 w-2.5 place-items-center rounded-sm border',
+                      checked ? 'border-primary bg-primary' : 'border-muted-foreground/40',
+                    )}
+                  >
+                    {checked && <span className="h-1 w-1 rounded-[1px] bg-primary-foreground" />}
+                  </span>
+                  {dep}
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
       {/* Skill picker — multi-select scoped to whatever the agent can use.
