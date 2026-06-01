@@ -78,7 +78,7 @@ const BUILTIN_PRESETS: BuiltinPreset[] = [
       // (skills resolve to ~/.claude/skills/aidlc-*.md, installed by the
       // extension or `aidlc` global install).
       const workflow = BUILTIN_WORKFLOWS[0];
-      const templatesRoot = builtinTemplatesRoot();
+      const templatesRoot = cliTemplatesRoot();
       // Install the composed agent/skill markdown into ~/.claude so the
       // workspace.yaml skill paths (~/.claude/skills/aidlc-*.md) resolve —
       // same files the extension installs. Idempotent + marker-guarded.
@@ -152,6 +152,20 @@ function ensureSkillFile(root: string, templateId: string): void {
 
 function addIfMissing(arr: Array<Record<string, unknown>>, item: Record<string, unknown>): void {
   if (!arr.some(x => x.id === item.id)) { arr.push(item); }
+}
+
+/**
+ * Locate the bundled `templates/` for built-in presets. In the published CLI
+ * the entry is an esbuild bundle (`dist/bundle.js`) with @aidlc/core inlined,
+ * so core's `builtinTemplatesRoot()` (which keys off its own `__dirname`)
+ * resolves to the CLI bundle dir, not core — the `bundle` script copies the
+ * templates to `dist/templates` for exactly this case. In a dev / `tsc` run
+ * core is a real node_modules dep, so its resolver works.
+ */
+function cliTemplatesRoot(): string {
+  const bundled = __dirname; // dist/ when running the esbuild bundle
+  if (fs.existsSync(path.join(bundled, 'templates', 'sdlc'))) { return bundled; }
+  return builtinTemplatesRoot();
 }
 
 // ── Command registration ──────────────────────────────────────────────────────

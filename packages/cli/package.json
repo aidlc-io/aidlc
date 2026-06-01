@@ -35,7 +35,7 @@
     "compile": "tsc -p ./",
     "build": "tsc -p ./",
     "clean": "rm -rf dist",
-    "bundle": "esbuild src/index.ts --bundle --platform=node --target=node18 --outfile=dist/bundle.js --external:fsevents",
+    "bundle": "esbuild src/index.ts --bundle --platform=node --target=node18 --outfile=dist/bundle.js --external:fsevents && rm -rf dist/templates && cp -R ../core/templates dist/templates",
     "prepublishOnly": "pnpm bundle"
   },
   "publishConfig": {
