@@ -1,6 +1,6 @@
 /**
  * Cost-saving suggestion engine — port of `analyze_suggestions` from
- * https://github.com/emtyty/claude-token-monitor (monitor.py:1981).
+ * https://github.com/novapizza/claude-token-monitor (monitor.py:1981).
  *
  * Each rule scans the per-call records produced by `tokenRecords.ts` and
  * emits zero or more `Suggestion`s with severity, scope, evidence and a

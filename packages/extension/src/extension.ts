@@ -135,7 +135,7 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(status);
 
   // Token monitor — reads ~/.claude/projects/*.jsonl and shows today/month spend.
-  // Ported from claude-token-monitor (https://github.com/emtyty/claude-token-monitor).
+  // Ported from claude-token-monitor (https://github.com/novapizza/claude-token-monitor).
   registerTokenMonitor(context, output, context.extensionUri);
 
   // AST graph — auto-downloads ast-graph CLI, scans workspace in the

@@ -11,7 +11,7 @@
  * doesn't change any run state file is essentially free.
  *
  * Cost calculation mirrors `tokenMonitor.ts` (and upstream
- * https://github.com/emtyty/claude-token-monitor).
+ * https://github.com/novapizza/claude-token-monitor).
  */
 
 import * as fs from 'fs';

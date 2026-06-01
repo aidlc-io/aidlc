@@ -2,7 +2,7 @@
  * Aggregations for the Token Usage Report webview.
  *
  * Mirrors the report rendered by upstream
- * https://github.com/emtyty/claude-token-monitor `monitor.py report`:
+ * https://github.com/novapizza/claude-token-monitor `monitor.py report`:
  *   - Overview totals (sessions, projects, calls, cache hit, cost)
  *   - By-model table
  *   - Daily breakdown (last 30 active days)

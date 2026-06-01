@@ -633,7 +633,7 @@ function Footer() {
       <div className="mt-1.5">
         Source:{' '}
         <a
-          href="https://github.com/emtyty/claude-token-monitor"
+          href="https://github.com/novapizza/claude-token-monitor"
           className="text-primary hover:underline"
         >
           claude-token-monitor
