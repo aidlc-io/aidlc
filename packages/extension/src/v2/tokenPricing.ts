@@ -1,7 +1,7 @@
 /**
  * Pricing table + cost calc, shared between the status-bar monitor, the
  * per-step epic attribution, and the suggest-engine. Mirrors
- * https://github.com/emtyty/claude-token-monitor (monitor.py:PRICING).
+ * https://github.com/novapizza/claude-token-monitor (monitor.py:PRICING).
  *
  * Per 1M tokens, USD. Prefix-substring match against the model name in
  * the JSONL `message.model` field.

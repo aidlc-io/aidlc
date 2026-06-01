@@ -2,7 +2,7 @@
  * Claude Code token usage monitor — status bar surface.
  *
  * Ports the JSONL reader + cost calculation from
- * https://github.com/emtyty/claude-token-monitor (MIT, monitor.py)
+ * https://github.com/novapizza/claude-token-monitor (MIT, monitor.py)
  * to TypeScript so the extension can show today/month spend without
  * shelling out to Python.
  *
@@ -203,7 +203,7 @@ function buildTooltip(snap: Snapshot): vscode.MarkdownString {
   md.appendMarkdown(row('Today', snap.today) + '\n');
   md.appendMarkdown(row('Month', snap.month) + '\n\n');
   md.appendMarkdown(`_${snap.scannedFiles} log file(s) scanned · click for breakdown_\n\n`);
-  md.appendMarkdown('Source: [claude-token-monitor](https://github.com/emtyty/claude-token-monitor)');
+  md.appendMarkdown('Source: [claude-token-monitor](https://github.com/novapizza/claude-token-monitor)');
   return md;
 }
 
