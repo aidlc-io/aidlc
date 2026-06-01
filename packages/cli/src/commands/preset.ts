@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { WORKSPACE_DIR } from '@aidlc/core';
+import { WORKSPACE_DIR, BUILTIN_WORKFLOWS, loadBuiltinPreset } from '@aidlc/core';
 import { readYaml, requireYaml, writeYaml, YamlDocument } from '../yamlIO';
 import { resolveWorkspaceRoot } from '../workspaceRoot';
 import { SKILL_TEMPLATES } from '../skillTemplates';
@@ -63,50 +63,29 @@ const BUILTIN_PRESETS: BuiltinPreset[] = [
   },
   {
     id: 'sdlc',
-    description: 'Full SDLC pipeline: Plan → Design → Test Plan → Implement → Review → Execute Test → Release → Monitor → Doc Sync',
-    apply(root, doc) {
-      const phases: Array<{ id: string; name: string; skills: string[]; model: string; artifact: string | null }> = [
-        { id: 'planner',       name: 'Planner',          skills: ['hello-world'],   model: 'claude-opus-4-7',    artifact: 'PRD.md' },
-        { id: 'designer',      name: 'Tech Lead',         skills: ['hello-world'],   model: 'claude-opus-4-7',    artifact: 'TECH-DESIGN.md' },
-        { id: 'test-planner',  name: 'QA Engineer',       skills: ['hello-world'],   model: 'claude-sonnet-4-5',  artifact: 'TEST-PLAN.md' },
-        { id: 'developer',     name: 'Developer',         skills: ['hello-world'],   model: 'claude-sonnet-4-5',  artifact: null },
-        { id: 'auto-reviewer', name: 'Auto Reviewer',     skills: ['code-reviewer'], model: 'claude-opus-4-7',    artifact: 'APPROVAL.md' },
-        { id: 'qa-executor',   name: 'QA Executor',       skills: ['hello-world'],   model: 'claude-sonnet-4-5',  artifact: 'TEST-SCRIPT.md' },
-        { id: 'release-mgr',   name: 'Release Manager',   skills: ['release-notes'], model: 'claude-sonnet-4-5',  artifact: 'RELEASE-NOTES.md' },
-        { id: 'sre',           name: 'SRE',               skills: ['hello-world'],   model: 'claude-sonnet-4-5',  artifact: null },
-        { id: 'archivist',     name: 'Archivist',         skills: ['hello-world'],   model: 'claude-sonnet-4-5',  artifact: 'DOC-SYNC.md' },
-      ];
-
-      // Ensure all .md files exist on disk BEFORE modifying doc — if a write
-      // fails we want to abort before workspace.yaml is touched.
-      ensureSkillFile(root, 'hello-world');
-      ensureSkillFile(root, 'code-reviewer');
-      ensureSkillFile(root, 'release-notes');
-
-      addIfMissing(doc.skills, { id: 'hello-world',   path: `./${WORKSPACE_DIR}/skills/hello-world.md` });
-      addIfMissing(doc.skills, { id: 'code-reviewer', path: `./${WORKSPACE_DIR}/skills/code-reviewer.md` });
-      addIfMissing(doc.skills, { id: 'release-notes', path: `./${WORKSPACE_DIR}/skills/release-notes.md` });
-
-      for (const p of phases) {
-        const agent: Record<string, unknown> = {
-          id: p.id, name: p.name, skills: p.skills, model: p.model,
-        };
-        if (p.artifact) { agent.artifact = p.artifact; }
-        addIfMissing(doc.agents, agent);
+    description: 'AIDLC SDLC pipeline (parallel): Plan → (Design ∥ Test Plan) → Implement (+unit-test) ∥ Generate Test Cases → Execute Test (+report)',
+    apply(_root, doc) {
+      // Shared with the extension: build the workspace shape (agents, skills,
+      // slash commands, pipeline) from the canonical built-in workflow in
+      // @aidlc/core. The shape is template-independent — only the composed
+      // skill *bodies* read template files, which the CLI doesn't write here
+      // (skills resolve to ~/.claude/skills/aidlc-*.md, installed by the
+      // extension or `aidlc` global install).
+      const workflow = BUILTIN_WORKFLOWS[0];
+      const preset = loadBuiltinPreset(_root, workflow);
+      const ws = preset.workspace as {
+        agents?: Array<Record<string, unknown>>;
+        skills?: Array<Record<string, unknown>>;
+        slash_commands?: Array<Record<string, unknown>>;
+        pipelines?: Array<Record<string, unknown>>;
+      };
+      for (const a of ws.agents ?? []) { addIfMissing(doc.agents, a); }
+      for (const s of ws.skills ?? []) { addIfMissing(doc.skills, s); }
+      for (const p of ws.pipelines ?? []) { addIfMissing(doc.pipelines, p); }
+      const cmds = doc.slash_commands;
+      for (const c of ws.slash_commands ?? []) {
+        if (!cmds.some((x) => x.name === c.name)) { cmds.push(c); }
       }
-
-      const steps = phases.map(p => ({
-        agent: p.id,
-        ...(p.artifact ? { produces: [`docs/epics/{epic}/${p.artifact}`] } : {}),
-        human_review: ['auto-reviewer', 'release-mgr'].includes(p.id),
-      }));
-
-      addIfMissing(doc.pipelines, {
-        id: 'sdlc-pipeline',
-        steps,
-        on_failure: 'stop',
-      });
-
       return doc;
     },
   },
