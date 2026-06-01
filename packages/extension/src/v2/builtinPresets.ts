@@ -57,7 +57,7 @@ interface PhaseDef {
 /**
  * Sequential SDLC phases — one step at a time, classic linear flow.
  *
- *     plan → design → test-plan → implement → review → execute-test → release → monitor → doc-sync
+ *     plan → design → test-plan → implement → unit-test → review → execute-test → release → monitor → doc-sync
  */
 const PHASES_SEQUENTIAL: PhaseDef[] = [
   {
@@ -91,13 +91,24 @@ const PHASES_SEQUENTIAL: PhaseDef[] = [
     capabilities: ['files', 'jira', 'core-business', 'its'],
   },
   {
-    id: 'implement', name: 'Implement', persona: 'developer', skillFile: null, model: 'claude-sonnet-4-6',
+    id: 'implement', name: 'Implement', persona: 'developer', skillFile: 'implement', model: 'claude-sonnet-4-6',
     description: 'Build the feature on a feature branch.',
     inputs: 'Tech design, test plan, project coding rules',
-    outputs: 'Code + unit tests on feature branch, PR opened',
+    outputs: 'Code on a feature branch, PR opened',
     artifact: 'feature/<EPIC>-<slug>',
     humanReview: true, autoReview: true, autoReviewRunner: '.aidlc/validators/ci.mjs',
     // Developer needs full file access + GitHub for PR / commit operations.
+    capabilities: ['files', 'github'],
+  },
+  {
+    id: 'unit-test', name: 'Unit Test', persona: 'developer', skillFile: 'unit-test', model: 'claude-sonnet-4-6',
+    description: 'Write and run unit tests for the implemented feature.',
+    inputs: 'Feature branch code, test plan unit cases, project test conventions',
+    outputs: 'Unit tests on the feature branch + UNIT-TEST-SUMMARY.md',
+    artifact: 'UNIT-TEST-SUMMARY.md',
+    humanReview: false, autoReview: false,
+    // Same persona as Implement — Developer gets both `implement` and
+    // `unit-test` as its two aidlc skills.
     capabilities: ['files', 'github'],
   },
   {
@@ -154,22 +165,23 @@ const PHASES_SEQUENTIAL: PhaseDef[] = [
 /**
  * Parallel SDLC phases — DAG shape so QA runs concurrently with engineering.
  *
- *     plan → ┬─ design   ─┬─ implement              ─┐
+ *     plan → ┬─ design   ─┬─ implement → unit-test  ─┐
  *            │            │                          ├─→ execute-test → release → doc-sync
  *            └─ test-plan ┴─ generate-test-cases   ─┘
  *
  * Task breakdown lives inside `design` (Tech Lead writes the tech design
  * + the engineering task list in one artifact) — no separate `planning`
  * phase. Phase ids that overlap with the sequential workflow (`plan`,
- * `design`, `test-plan`, `implement`, `execute-test`, `release`,
- * `doc-sync`) share the same agent / skill / global file with sequential.
- * Only `generate-test-cases` is parallel-only.
+ * `design`, `test-plan`, `implement`, `unit-test`, `execute-test`,
+ * `release`, `doc-sync`) share the same agent / skill / global file with
+ * sequential. Only `generate-test-cases` is parallel-only.
  */
 const PHASES_PARALLEL: PhaseDef[] = [
   PHASES_SEQUENTIAL[0], // plan
   { ...PHASES_SEQUENTIAL[1], dependsOn: ['plan'] },     // design
   { ...PHASES_SEQUENTIAL[2], dependsOn: ['plan'] },     // test-plan
   { ...PHASES_SEQUENTIAL[3], dependsOn: ['design'] },   // implement
+  { ...PHASES_SEQUENTIAL[4], dependsOn: ['implement'] }, // unit-test
   {
     id: 'generate-test-cases', name: 'Generate Test Cases', persona: 'qa',
     skillFile: 'generate-test-cases', model: 'claude-sonnet-4-6',
@@ -181,9 +193,9 @@ const PHASES_PARALLEL: PhaseDef[] = [
     capabilities: ['files', 'jira', 'its'],
     dependsOn: ['test-plan'],
   },
-  { ...PHASES_SEQUENTIAL[5], dependsOn: ['implement', 'generate-test-cases'] }, // execute-test
-  { ...PHASES_SEQUENTIAL[6], dependsOn: ['execute-test'] },                     // release
-  { ...PHASES_SEQUENTIAL[8], dependsOn: ['release'] },                          // doc-sync
+  { ...PHASES_SEQUENTIAL[6], dependsOn: ['unit-test', 'generate-test-cases'] }, // execute-test
+  { ...PHASES_SEQUENTIAL[7], dependsOn: ['execute-test'] },                     // release
+  { ...PHASES_SEQUENTIAL[9], dependsOn: ['release'] },                          // doc-sync
 ];
 
 /**
