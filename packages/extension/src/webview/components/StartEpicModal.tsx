@@ -269,7 +269,7 @@ export function StartEpicModal({
       setLoadError(
         `Timed out loading from ${source}. The connector may be unreachable from the background CLI — paste the requirement text into the description instead.`,
       );
-    }, 140_000);
+    }, 110_000);
   };
 
   const loadFromSource = () => {

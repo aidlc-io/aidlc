@@ -2374,8 +2374,10 @@ export class WorkspaceWebview {
     if (source === 'github') {
       void this.panel.webview.postMessage({ type: 'requirementLoadStart', source, ref });
       try {
+        rlog(`[github] gh fetch "${ref}" (host-side, no claude)`);
         const gh = await fetchGithubViaGh(ref);
         const summary = `${gh.title ? `${gh.title}\n\n` : ''}${gh.body}`.trim();
+        rlog(`[github] gh ok — ${summary.length} chars`);
         if (!summary) { throw new Error('That GitHub issue/PR has no body to load.'); }
         void this.panel.webview.postMessage({ type: 'requirementChunk', source, ref, chunk: summary });
         void this.panel.webview.postMessage({
@@ -2411,7 +2413,7 @@ export class WorkspaceWebview {
         ['--print', '--dangerously-skip-permissions', '--max-turns', '12', '--append-system-prompt', system, ref],
         {
           cwd: root,
-          timeoutMs: 120_000,
+          timeoutMs: 90_000,
           onChunk: (chunk) => {
             void this.panel.webview.postMessage({ type: 'requirementChunk', source, ref, chunk });
           },
