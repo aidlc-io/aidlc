@@ -2440,12 +2440,15 @@ export class WorkspaceWebview {
       const noContent = !raw || /\bno_content\b/i.test(raw);
       if (connectorIssue || hitMaxTurns || noContent || /^error[:\s]/i.test(raw)) {
         const label = SOURCE_LABEL[source] ?? 'source';
+        const enableHint = `Claude's ${label} connector isn't enabled for this project yet. `
+          + `Open this folder once in Claude Code (run \`claude\` here and accept the trust prompt) to enable its connectors — `
+          + `or just paste the requirement text into the description.`;
         throw new Error(
-          connectorIssue
-            ? `Claude's ${label} connector isn't reachable from the background CLI (it's an interactive claude.ai connection, not a local MCP server). Paste the requirement text into the description instead.`
+          connectorIssue || noContent
+            ? enableHint
             : hitMaxTurns
               ? `Claude hit its step limit before reading the ${label} item — try again, or paste the text.`
-              : `No content returned from ${label} — the connector may be unavailable to the CLI. Paste the requirement text instead.`,
+              : `Could not read the ${label} item. Paste the requirement text instead.`,
         );
       }
 
