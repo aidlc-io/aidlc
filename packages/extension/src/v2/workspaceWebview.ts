@@ -86,6 +86,11 @@ function runClaude(
  * web fetch) to retrieve the content. The analysis/JSON spec is appended by
  * {@link WorkspaceWebview.loadRequirementForWebview}.
  */
+/** Human label per requirement source, for user-facing messages. */
+const SOURCE_LABEL: Record<string, string> = {
+  jira: 'Jira', github: 'GitHub', drive: 'Google Drive', url: 'web',
+};
+
 const REQUIREMENT_FETCH_ACTION: Record<string, string> = {
   jira:
     'Read the SINGLE Jira issue named in the user message (a key like PROJ-123 or a browse URL): ' +
@@ -2344,7 +2349,7 @@ export class WorkspaceWebview {
     try {
       // Stream stdout chunks straight into the description as they arrive.
       const stdout = await runClaude(
-        ['--print', '--dangerously-skip-permissions', '--max-turns', '25', '--append-system-prompt', system, ref],
+        ['--print', '--dangerously-skip-permissions', '--max-turns', '12', '--append-system-prompt', system, ref],
         {
           cwd: root,
           timeoutMs: 120_000,
@@ -2355,13 +2360,24 @@ export class WorkspaceWebview {
       );
 
       const raw = stdout.trim();
-      if (!raw || /^no_content$/i.test(raw) || /reached max turns|^error[:\s]/i.test(raw)) {
+      const lower = raw.toLowerCase();
+      // The summary sources are claude.ai *connectors* (Atlassian/GitHub/Drive),
+      // authenticated interactively in the user's Claude session — a freshly
+      // spawned headless `claude` often can't reach them. Detect that (and the
+      // NO_CONTENT sentinel, anywhere in the output) and fail fast + clearly
+      // instead of streaming the apology text in as if it were the requirement.
+      const connectorIssue = /not connected|cannot authenticate|can'?t authenticate|isn'?t connected|not authenticated|no access to (jira|github|drive)/.test(lower)
+        || (/\bmcp\b/.test(lower) && /(not|isn'?t|un)\s*(connected|available|able|authenticat)/.test(lower));
+      const hitMaxTurns = /reached max turns|max turns/.test(lower);
+      const noContent = !raw || /\bno_content\b/i.test(raw);
+      if (connectorIssue || hitMaxTurns || noContent || /^error[:\s]/i.test(raw)) {
+        const label = SOURCE_LABEL[source] ?? 'source';
         throw new Error(
-          raw.toLowerCase().includes('max turns')
-            ? 'Claude hit its step limit before reading the source (try again, or the source is too large).'
-            : (raw && !/^no_content$/i.test(raw)
-              ? raw
-              : 'No content returned — is the source MCP available to the CLI?'),
+          connectorIssue
+            ? `Claude's ${label} connector isn't reachable from the background CLI (it's an interactive claude.ai connection, not a local MCP server). Paste the requirement text into the description instead.`
+            : hitMaxTurns
+              ? `Claude hit its step limit before reading the ${label} item — try again, or paste the text.`
+              : `No content returned from ${label} — the connector may be unavailable to the CLI. Paste the requirement text instead.`,
         );
       }
 
