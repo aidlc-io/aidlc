@@ -15,6 +15,10 @@ interface Props {
    * outer modal in a stacked-modal pair so the inner modal's Esc doesn't
    * also dismiss the outer one. */
   inactive?: boolean;
+  /** When false, a backdrop click does NOT dismiss the modal (only the X /
+   * Cancel / Esc do). Use for form modals where an accidental outside click
+   * would throw away in-progress work. Defaults to true. */
+  closeOnBackdrop?: boolean;
 }
 
 export function Modal({
@@ -25,6 +29,7 @@ export function Modal({
   maxWidth = 'max-w-md',
   onSubmit,
   inactive = false,
+  closeOnBackdrop = true,
 }: Props) {
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -46,7 +51,7 @@ export function Modal({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
-      onClick={inactive ? undefined : onClose}
+      onClick={(inactive || !closeOnBackdrop) ? undefined : onClose}
     >
       <div
         ref={panelRef}

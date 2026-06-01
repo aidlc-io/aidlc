@@ -347,7 +347,7 @@ export function StartEpicModal({
   };
 
   return (
-    <Modal title="Start epic" maxWidth="max-w-2xl" onClose={onClose} onSubmit={submit}>
+    <Modal title="Start epic" maxWidth="max-w-2xl" onClose={onClose} onSubmit={submit} closeOnBackdrop={false}>
       <div className="space-y-4">
         <div>
           <label className="mb-1 flex items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">
