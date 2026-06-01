@@ -2748,37 +2748,68 @@ export class WorkspaceWebview {
       if (confirm !== 'Delete') { return; }
     }
 
-    // Phase ids this pipeline owns. Sharing-aware: another pipeline (built-in
-    // or user-defined) still in workspace.yaml may reference the same id, so
-    // we only remove ids that are *exclusively* used by the pipeline we're
-    // deleting.
+    // What this built-in owns, in the *same id-spaces* workspace.yaml uses:
+    //   agents → `aidlc-<persona>`, skills → `aidlc-<…>`, slash → `/<phase>`.
+    // (The previous version compared bare phase ids against agent/skill ids,
+    // which never overlap — so agents + skills were never actually removed
+    // and lingered in the counts after the pipeline was deleted.) Derive the
+    // owned ids from the generated preset so this stays correct regardless of
+    // how skill ids are computed.
+    const preset = loadBuiltinPreset(this.extensionUri.fsPath, builtin);
+    const ws = preset.workspace as {
+      agents?: Array<{ id?: unknown }>;
+      skills?: Array<{ id?: unknown }>;
+      slash_commands?: Array<{ name?: unknown }>;
+    };
+    const ownedAgentIds = new Set((ws.agents ?? []).map((a) => String(a.id ?? '')));
+    const ownedSkillIds = new Set((ws.skills ?? []).map((s) => String(s.id ?? '')));
+    const ownedSlashNames = new Set((ws.slash_commands ?? []).map((c) => String(c.name ?? '')));
+    // Phase ids own the `.claude/commands/<phase>.md` files + the step names
+    // remaining pipelines reference.
     const myPhaseIds = new Set(builtin.phases.map((p) => p.id));
 
     this.mutateYaml((doc) => {
-      const stillNeeded = new Set<string>();
+      // Sharing-aware: collect what *other* pipelines still reference so a
+      // shared agent/skill (used by another applied pipeline) survives.
+      const neededAgents = new Set<string>();
+      const neededSkills = new Set<string>();
+      const neededStepNames = new Set<string>();
       for (const p of doc.pipelines) {
         if (String(p.id) === id) { continue; }
-        for (const step of (p.steps ?? []) as Array<string | { agent?: unknown }>) {
-          const agent = typeof step === 'string'
-            ? step
-            : typeof step.agent === 'string' ? step.agent : '';
-          if (agent) { stillNeeded.add(agent); }
+        for (const step of (p.steps ?? []) as Array<string | Record<string, unknown>>) {
+          if (typeof step === 'string') { neededAgents.add(step); neededStepNames.add(step); continue; }
+          const agent = typeof step.agent === 'string' ? step.agent : '';
+          if (agent) { neededAgents.add(agent); }
+          const stepName = typeof step.name === 'string' ? step.name : agent;
+          if (stepName) { neededStepNames.add(stepName); }
+          if (Array.isArray(step.skills)) {
+            for (const s of step.skills) { neededSkills.add(String(s)); }
+          }
         }
       }
-      const toRemove = new Set<string>(
-        [...myPhaseIds].filter((pid) => !stillNeeded.has(pid)),
-      );
 
-      doc.agents = doc.agents.filter((a) => !toRemove.has(String(a.id)));
-      doc.skills = doc.skills.filter((s) => !toRemove.has(String(s.id)));
-      doc.slash_commands = doc.slash_commands.filter(
-        (c) => !toRemove.has(String(c.name).replace(/^\//, '')),
+      doc.agents = doc.agents.filter(
+        (a) => !(ownedAgentIds.has(String(a.id)) && !neededAgents.has(String(a.id))),
       );
+      doc.skills = doc.skills.filter(
+        (s) => !(ownedSkillIds.has(String(s.id)) && !neededSkills.has(String(s.id))),
+      );
+      doc.slash_commands = doc.slash_commands.filter((c) => {
+        const name = String(c.name);
+        const agent = typeof (c as { agent?: unknown }).agent === 'string'
+          ? (c as { agent: string }).agent : '';
+        // Drop an owned slash command only when the agent it points at is
+        // being removed (i.e. no remaining pipeline still needs that agent).
+        return !(ownedSlashNames.has(name) && agent !== '' && !neededAgents.has(agent));
+      });
       doc.pipelines = doc.pipelines.filter((p) => String(p.id) !== id);
 
-      // Stash the to-remove set on the closure so the FS cleanup below can
-      // use the same set without re-reading workspace.yaml.
-      Object.assign(this, { _lastDeletePhaseIds: toRemove });
+      // `.claude/commands/<phase>.md` files for phases no longer referenced
+      // by any remaining pipeline. Stashed for the FS cleanup below.
+      const removeCmdIds = new Set<string>(
+        [...myPhaseIds].filter((pid) => !neededStepNames.has(pid)),
+      );
+      Object.assign(this, { _lastDeletePhaseIds: removeCmdIds });
     });
 
     const toRemove: Set<string> = (this as unknown as { _lastDeletePhaseIds?: Set<string> })
