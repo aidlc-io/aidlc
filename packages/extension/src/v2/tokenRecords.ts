@@ -5,7 +5,7 @@
  * targets, because the suggestion rules need that grain.
  *
  * Ports `iter_records` from
- * https://github.com/emtyty/claude-token-monitor/blob/main/monitor.py
+ * https://github.com/novapizza/claude-token-monitor/blob/main/monitor.py
  *
  * Multiple JSONL entries can share `message.id` when an assistant turn has
  * several content blocks; their `usage` block is the per-call total
