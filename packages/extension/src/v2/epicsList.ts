@@ -208,12 +208,28 @@ export function listEpics(workspaceRoot: string, doc: YamlDocument | null): Epic
         ? (doc!.slash_commands as Array<{ name?: unknown }>).map((c) => String(c.name ?? ''))
         : [],
     );
+    const allPipelineIds = Array.isArray(doc?.pipelines)
+      ? (doc!.pipelines as Array<{ id?: unknown }>)
+          .map((p) => (typeof p.id === 'string' ? p.id : ''))
+          .filter(Boolean)
+      : [];
     const slashForStep = (stepName: string | undefined): string | undefined => {
       if (!stepName) { return undefined; }
       const namespaced = pipelineId ? `/${pipelineId}-${stepName}` : '';
       if (namespaced && slashNames.has(namespaced)) { return namespaced; }
       const bare = `/${stepName}`;
       if (slashNames.has(bare)) { return bare; }
+      // A recipe-assembled epic runs on a per-epic pipeline (e.g. `SWIFT-142`),
+      // but the command files are only generated for the recipe's *source*
+      // pipeline (`/sdlc-parallel-full-implement`). The source command reads the
+      // epic id from its argument, so it works for the assembled epic too — find
+      // it by trying each known pipeline id + this exact step name (exact match
+      // avoids `plan` resolving to `test-plan`).
+      for (const pid of allPipelineIds) {
+        if (pid === pipelineId) { continue; }
+        const cand = `/${pid}-${stepName}`;
+        if (slashNames.has(cand)) { return cand; }
+      }
       // Prefer namespaced as the default when the pipeline id is known and the
       // table has neither (fresh build before re-apply); else fall back to bare.
       return namespaced || bare;

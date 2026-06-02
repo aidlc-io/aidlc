@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.1
+
+- fix(epic): a recipe-assembled epic now shows a **runnable** slash command. Its per-epic pipeline (e.g. `SWIFT-142`) has no command files of its own, so step commands now resolve to the recipe's source pipeline (`/sdlc-parallel-full-implement …`) — which reads the epic id from its argument. Previously the UI surfaced `/<epic>-<step>`, which Claude reported as an unknown command.
+
 ## 1.1.0
 
 ### Task-type recipes & smart Start Epic
