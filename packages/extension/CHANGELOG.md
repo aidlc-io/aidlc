@@ -1,5 +1,44 @@
 # Changelog
 
+## 1.1.0
+
+### Task-type recipes & smart Start Epic
+
+- feat(recipes): built-in recipes — `bugfix`, `small-feature`, `refactor`, `feature-parallel`, `large-feature`, `spike`. Start Epic suggests the right one from a one-line brief and assembles a pipeline from it.
+- feat(recipes): back-fill recipes into older workspaces automatically (extension, on load) or via `aidlc recipe init` (CLI), so projects scaffolded before recipes existed gain suggestion support.
+- feat(cli): `aidlc epic start <id> --brief "…"` classifies the task and assembles a pipeline; `--llm` for model-backed classification. New `recipe`, `classify`, and `generate` commands.
+
+### Pipelines
+
+- feat(pipeline): rename **and** duplicate pipelines.
+- feat(pipeline): namespaced slash commands & command files per pipeline — multiple pipelines no longer collide.
+- feat(pipeline): "Load AIDLC default" button in the Add-pipeline modal.
+- feat(pipeline): pick the step **name** first, then the agent; a "Runs after" dependency editor; duplicate agent ids are allowed.
+- fix(pipeline): deleting a pipeline also removes the agents & skills it owned (counts now drop too).
+- fix(pipeline): built-in agents sync with their real skills (no more bogus `<id>-skill`).
+
+### Start Epic
+
+- feat(epic): no-pipeline actions — "Load SDLC example" / "Create new pipeline".
+- feat(start-epic): fetch GitHub issues host-side via the `gh` CLI (~1s, no Claude loop); live seconds counter; clearer message when a project's connector isn't enabled; don't dismiss on backdrop click.
+- pipeline runs now display by **step name**, not agent name.
+
+### Sidebar & Builder
+
+- feat(sidebar): clickable Agents / Skills / Flows / Epics tiles open the matching view; Epics opens the top-level Epics view.
+- chore(sidebar): remove the "Pipeline runs" and "Slash commands" sections.
+
+### Built-in SDLC preset
+
+- feat: streamlined to **po · tech-lead · developer · qa** with `implement` + `unit-test` skills (developer gets both); QA keeps `test-plan` / `generate-test-cases` / `execute-test` (+ `test-report`).
+- refactor(core): single source of truth for the SDLC preset, templates, and global install moved into `@aidlc/core` — the extension and the `aidlc` CLI now share it.
+- feat(core): opt-in global install of `~/.claude/agents/aidlc-*.md` + matching skills.
+
+### Misc
+
+- chore(ast-graph): bundle the ast-graph CLI v0.3.0.
+- chore: update GitHub reference links to `novapizza/claude-token-monitor`.
+
 ## 1.0.1
 
 - feat(skill-templates): expand library to 45 templates across 9 categories

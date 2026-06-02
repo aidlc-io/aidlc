@@ -7,17 +7,34 @@ just got, how to run it, and how to customize it.
 
 ## 1. What's inside
 
-The built-in workflows ship with two pipelines:
+The built-in **SDLC Parallel Pipeline** (`sdlc-parallel-full`) is a DAG where QA
+runs in parallel with engineering. Six steps, four agents:
 
-| Pipeline | Shape | When to use |
-|----------|-------|-------------|
-| **SDLC Pipeline** (`sdlc-full`) | Sequential — one step at a time | Solo flow, small epics |
-| **SDLC Parallel Pipeline** (`sdlc-parallel-full`) ⭐ | DAG — QA runs in parallel with engineering | Team flow, larger epics |
+| Step | Agent | Skill(s) |
+|------|-------|----------|
+| `plan` | **po** | `prd` |
+| `design` | **tech-lead** | `tech-design` |
+| `test-plan` | **qa** | `test-plan` |
+| `implement` | **developer** | `implement` + `unit-test` |
+| `generate-test-cases` | **qa** | `generate-test-cases` |
+| `execute-test` | **qa** | `execute-test` + `test-report` |
 
-Both pipelines share the same agent + skill files (`plan`, `design`, `test-plan`,
-`implement`, `execute-test`, `release`, `doc-sync`). The Parallel pipeline adds
-`test-cases` and reshapes the dependencies so multiple steps can be in flight
-at once.
+`test-plan` / `generate-test-cases` run alongside engineering, so multiple steps
+can be in flight at once.
+
+### Task-type recipes
+
+The pipeline also ships **recipes** — named subsets of the steps for common task
+types. Start Epic uses them to suggest the right shape from a one-line brief:
+
+| Recipe | Steps |
+|--------|-------|
+| `bugfix` | implement → execute-test |
+| `small-feature` | plan → implement → execute-test |
+| `refactor` | design → implement → execute-test |
+| `feature-parallel` | plan → design → test-plan → implement → execute-test |
+| `large-feature` | the full pipeline |
+| `spike` | plan only |
 
 The Builder panel surfaces three tabs:
 
@@ -34,9 +51,14 @@ The Builder panel surfaces three tabs:
 
 Click **Start Epic** in the AIDLC sidebar.
 
-1. **Pick the pipeline** (e.g. `sdlc-parallel-full`).
-2. **Epic id** — pre-filled from the next sequential id; rename if you like.
-3. **Inputs** — fill in the capabilities the first step (Plan) needs:
+1. **Describe it (optional)** — type a one-line brief and AIDLC suggests a
+   recipe (e.g. *"fix the null crash on login"* → `bugfix`). Accept the
+   suggestion or pick a pipeline/recipe yourself.
+2. **Pick the pipeline or recipe** (e.g. `sdlc-parallel-full`). No pipeline in
+   the workspace yet? Use **Load SDLC example** or **Create new pipeline**
+   right from the modal.
+3. **Epic id** — pre-filled from the next sequential id; rename if you like.
+4. **Inputs** — fill in the capabilities the first step (Plan) needs:
    - `jira_ticket` — Jira issue key (e.g. `EPIC-2100`)
    - `figma_url` — design link
    - `files_glob` — codebase paths to scan
@@ -71,7 +93,7 @@ plain markdown file you can edit:
 |-------|----------|--------------|
 | Agent persona | `~/.claude/agents/aidlc-<id>.md` | The role description, tone, constraints |
 | Skill | `~/.claude/skills/aidlc-<id>.md` | Step-by-step instructions for the slash command |
-| Slash command | `.claude/commands/<id>.md` | The full prompt Claude sees when you run `/<id>` |
+| Slash command | `.claude/commands/<pipeline>-<step>.md` | The full prompt Claude sees when you run the step's slash command (namespaced per pipeline) |
 | Artifact template | `.aidlc/aidlc-templates/<pipeline>/<artifact>.md` | The scaffold dropped into each epic |
 
 Open any of these in your editor and the change takes effect on the next run.

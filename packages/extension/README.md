@@ -7,12 +7,13 @@ Drive Claude through any pipeline you declare in a single `workspace.yaml` — v
 ## Features
 
 - **Workspace Builder** — main-area panel with agent / skill / pipeline cards, reorder, on-failure toggle, inline skill editor
-- **Epics & runs** — bind a pipeline to a work item, then walk it step-by-step. **Approve** advances; **reject** cascades feedback to the producing step (auto-resets downstream); **rerun** with optional new context
-- **Sidebar webview** — live agent / skill / pipeline counts, active runs, and the slash commands declared in `workspace.yaml`
+- **Epics & runs** — bind a pipeline to a work item, then walk it step-by-step. **Approve** advances; **reject** cascades feedback to the producing step (auto-resets downstream); **rerun** with optional new context. Runs display by **step name**, not agent name
+- **Smart Start Epic** — describe the work in one line and AIDLC suggests a task-type **recipe** (`bugfix`, `small-feature`, `refactor`, `feature-parallel`, `large-feature`, `spike`) and assembles the pipeline. No pipeline yet? Load the SDLC example or create one inline. Older workspaces get recipes back-filled automatically
+- **Sidebar webview** — clickable **Agents / Skills / Flows / Epics** tiles that open the matching view, plus live counts and active runs
 - **Load Demo Project** — one click drops a full SDLC pipeline + 6 sample epics into `.aidlc/`, no YAML to write
 - **Add Skill wizard** — 4 sources: load template, paste markdown, upload a `.md` file, or open a blank file. Starter templates: hello-world, code-reviewer, test-converter, doc-writer, release-notes
 - **Add Agent wizard** — id, display name, skill picker, model picker (Sonnet 4.6 / Opus 4.7 / Haiku 4.5)
-- **Add Pipeline wizard** — chain agents with on-failure behavior (stop / continue)
+- **Add Pipeline wizard** — pick each step's name then its agent, set **"Runs after"** dependencies and on-failure behavior (stop / continue); **rename**, **duplicate**, or **Load AIDLC default**. Slash commands are namespaced per pipeline so multiple pipelines never collide
 - **Workspace templates** — save the whole workspace as a named preset and reapply it in any project. Built-ins: `code-review`, `release-notes`, `sdlc`
 - **Built-in Claude CLI terminal** — one-click zsh terminal in the bottom panel with the `claude` CLI auto-launched
 - **Workspace inspector** — dump the parsed, validated, env-resolved `workspace.yaml` to the output channel
