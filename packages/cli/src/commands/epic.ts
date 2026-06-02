@@ -220,7 +220,22 @@ export function registerEpic(program: Command): void {
         console.log(chalk.dim(`  Pipeline: ${pipelineCfg.id}`));
         console.log(chalk.dim(`  Steps:    ${steps}`));
         console.log(chalk.dim(`  Dir:      ${epicDir}`));
-        console.log(`\nRun ${chalk.cyan(`/${agents[0]} ${epicId}`)} in Claude to begin.`);
+
+        // Resolve the slash command Claude actually has for the first step.
+        // Commands are registered in workspace.yaml `slash_commands` and
+        // namespaced to the *source* pipeline (e.g. `/sdlc-parallel-full-implement`),
+        // not the per-epic pipeline — so we can't just print `/<agent>`. Match
+        // by the step's DAG name + agent, falling back to a bare `/<name>`.
+        const firstStep = (Array.isArray(pipelineCfg.steps) ? pipelineCfg.steps[0] : undefined) as
+          { name?: string; agent?: string } | undefined;
+        const firstName = firstStep?.name ?? firstStep?.agent ?? agents[0];
+        const slashCmds = (Array.isArray(doc.slash_commands) ? doc.slash_commands : []) as
+          Array<{ name?: string; agent?: string }>;
+        const match = slashCmds.find(
+          (c) => typeof c.name === 'string' && c.name.endsWith(`-${firstName}`) && c.agent === agents[0],
+        ) ?? slashCmds.find((c) => typeof c.name === 'string' && c.name.endsWith(`-${firstName}`));
+        const runCmd = match?.name ?? `/${firstName}`;
+        console.log(`\nRun ${chalk.cyan(`${runCmd} ${epicId}`)} in Claude to begin.`);
       } catch (err) {
         if (err instanceof EpicScaffoldError) {
           console.error(chalk.red(err.message));
