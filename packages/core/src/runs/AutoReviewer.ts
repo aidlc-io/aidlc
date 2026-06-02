@@ -35,6 +35,9 @@ import type { PipelineConfig } from '../schema/WorkspaceSchema';
 import { normalizeStep } from '../schema/WorkspaceSchema';
 import type { RunState, AutoReviewVerdict, StepRecord } from './RunState';
 
+/** Default ceiling on validator runtime when a step omits `auto_review_timeout_ms`. */
+export const DEFAULT_AUTO_REVIEW_TIMEOUT_MS = 120_000;
+
 export class AutoReviewerError extends Error {
   constructor(message: string, public readonly cause?: unknown) {
     super(message);
@@ -138,9 +141,28 @@ export async function runAutoReview(args: {
   const at = new Date().toISOString();
   const runner = scriptPath;
 
+  // Bound the validator's runtime. A hang (infinite loop, network stall)
+  // would otherwise wedge the run forever — convert it to a `reject`, the
+  // same way a thrown error is handled below, so the run can proceed.
+  const timeoutMs = norm.auto_review_timeout_ms ?? DEFAULT_AUTO_REVIEW_TIMEOUT_MS;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const TIMED_OUT = Symbol('auto-review-timeout');
+
   let raw: { decision: 'pass' | 'reject'; reason: string };
   try {
-    raw = await Promise.resolve(fn(ctx));
+    const timeout = new Promise<typeof TIMED_OUT>((resolve) => {
+      timer = setTimeout(() => resolve(TIMED_OUT), timeoutMs);
+    });
+    const result = await Promise.race([Promise.resolve(fn(ctx)), timeout]);
+    if (result === TIMED_OUT) {
+      return {
+        decision: 'reject',
+        reason: `Auto-reviewer timed out after ${timeoutMs}ms.`,
+        at,
+        runner,
+      };
+    }
+    raw = result;
   } catch (err) {
     return {
       decision: 'reject',
@@ -148,6 +170,8 @@ export async function runAutoReview(args: {
       at,
       runner,
     };
+  } finally {
+    if (timer) { clearTimeout(timer); }
   }
 
   if (!raw || (raw.decision !== 'pass' && raw.decision !== 'reject') || typeof raw.reason !== 'string') {

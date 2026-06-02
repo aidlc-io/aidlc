@@ -447,4 +447,38 @@ describe('AutoReviewer — runAutoReview script invocation', () => {
     s = markStepDone({ state: s, pipeline, workspaceRoot: root });
     await expect(runAutoReview({ workspaceRoot: root, state: s, pipeline })).rejects.toThrow(/default function/);
   });
+
+  it('rejects (not hangs) when the validator never resolves, honoring auto_review_timeout_ms', async () => {
+    const scriptRel = '.aidlc/scripts/hangs.mjs';
+    writeScript(
+      scriptRel,
+      `export default function () {
+        // Never resolves — simulates an infinite loop / network hang.
+        return new Promise(() => {});
+      }`,
+    );
+    const pipeline: PipelineConfig = {
+      id: 'p',
+      on_failure: 'stop',
+      steps: [
+        {
+          agent: 'tech-lead',
+          requires: [],
+          produces: ['DESIGN.md'],
+          human_review: false,
+          auto_review: true,
+          auto_review_runner: scriptRel,
+          auto_review_timeout_ms: 50,
+          enabled: true,
+        },
+      ],
+    };
+    let s = startRun({ runId: 'R-AR4', pipeline, context: {} });
+    touch(root, 'DESIGN.md');
+    s = markStepDone({ state: s, pipeline, workspaceRoot: root });
+
+    const verdict = await runAutoReview({ workspaceRoot: root, state: s, pipeline });
+    expect(verdict.decision).toBe('reject');
+    expect(verdict.reason).toMatch(/timed out/i);
+  });
 });

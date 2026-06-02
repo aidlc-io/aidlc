@@ -149,6 +149,12 @@ const PipelineStepObjectSchema = z
      * reason: string }`. Required when `auto_review: true`.
      */
     auto_review_runner: z.string().optional(),
+    /**
+     * Max time (ms) the `auto_review_runner` may run before the runner aborts
+     * it and records a `reject` verdict. Guards against a validator that hangs
+     * (infinite loop, network stall). Defaults to 120_000 when omitted.
+     */
+    auto_review_timeout_ms: z.number().int().positive().optional(),
     /** When true, the runner pauses for human approval before advancing. */
     human_review: z.boolean().default(false),
   })
@@ -215,6 +221,7 @@ export interface NormalizedStep {
   depends_on: string[];
   auto_review: boolean;
   auto_review_runner?: string;
+  auto_review_timeout_ms?: number;
   human_review: boolean;
 }
 
@@ -260,6 +267,10 @@ export function normalizeStep(step: PipelineStepConfig | { agent?: string; [k: s
     depends_on,
     auto_review: obj.auto_review === true,
     auto_review_runner: typeof obj.auto_review_runner === 'string' ? obj.auto_review_runner : undefined,
+    auto_review_timeout_ms:
+      typeof obj.auto_review_timeout_ms === 'number' && obj.auto_review_timeout_ms > 0
+        ? obj.auto_review_timeout_ms
+        : undefined,
     human_review: obj.human_review === true,
   };
 }
