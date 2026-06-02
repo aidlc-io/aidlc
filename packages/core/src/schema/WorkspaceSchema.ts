@@ -122,6 +122,14 @@ const PipelineStepObjectSchema = z
     /** Artifact paths the step is expected to produce. Checked after work. */
     produces: z.array(z.string().min(1)).default([]),
     /**
+     * Optional content markers asserted against the `produces` files after
+     * they pass the existence check. Each marker must appear (plain substring)
+     * in at least one produced file, else the step is blocked — catches
+     * "file created but empty / missing a required section" without writing a
+     * JS auto_review validator. Empty / omitted = existence check only.
+     */
+    produces_contains: z.array(z.string().min(1)).default([]),
+    /**
      * Skills this step makes available to the agent. Multiple ids
      * allowed — Claude picks which one(s) to invoke for this step,
      * scoped to this list. Empty / omitted = inherit the agent's
@@ -216,6 +224,7 @@ export interface NormalizedStep {
   skills?: string[];
   enabled: boolean;
   produces: string[];
+  produces_contains: string[];
   requires: string[];
   /** Agent ids this step waits for before opening — see schema for semantics. */
   depends_on: string[];
@@ -240,6 +249,7 @@ export function normalizeStep(step: PipelineStepConfig | { agent?: string; [k: s
       agent: step,
       enabled: true,
       produces: [],
+      produces_contains: [],
       requires: [],
       depends_on: [],
       auto_review: false,
@@ -249,6 +259,7 @@ export function normalizeStep(step: PipelineStepConfig | { agent?: string; [k: s
   const obj = step as Record<string, unknown>;
   const requires = Array.isArray(obj.requires) ? (obj.requires as string[]) : [];
   const produces = Array.isArray(obj.produces) ? (obj.produces as string[]) : [];
+  const produces_contains = Array.isArray(obj.produces_contains) ? (obj.produces_contains as string[]) : [];
   const depends_on = Array.isArray(obj.depends_on) ? (obj.depends_on as string[]) : [];
   // Coerce legacy singular `skill: <id>` into the new array form so old
   // workspace.yaml files keep working without a hand migration.
@@ -263,6 +274,7 @@ export function normalizeStep(step: PipelineStepConfig | { agent?: string; [k: s
     skills,
     enabled: typeof obj.enabled === 'boolean' ? obj.enabled : true,
     produces,
+    produces_contains,
     requires,
     depends_on,
     auto_review: obj.auto_review === true,

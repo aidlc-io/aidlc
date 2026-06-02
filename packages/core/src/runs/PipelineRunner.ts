@@ -195,6 +195,28 @@ export function markStepDone(args: {
     );
   }
 
+  // Content assertions — each marker must appear in at least one produced file.
+  // Catches "file exists but empty / missing a required section" without a JS validator.
+  if (norm.produces_contains.length > 0) {
+    const haystack = resolvedProduces
+      .map((rel) => {
+        const abs = path.isAbsolute(rel) ? rel : path.join(workspaceRoot, rel);
+        try {
+          return fs.readFileSync(abs, 'utf8');
+        } catch {
+          return '';
+        }
+      })
+      .join('\n');
+    const missingMarkers = norm.produces_contains.filter((marker) => !haystack.includes(marker));
+    if (missingMarkers.length > 0) {
+      throw new PipelineRunError(
+        `Step "${step.agent}" produced its files but they are missing required content.`,
+        missingMarkers,
+      );
+    }
+  }
+
   const next = clone(state);
   const nextStep = next.steps[idx];
   nextStep.artifactsProduced = resolvedProduces;

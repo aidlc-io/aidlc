@@ -72,6 +72,56 @@ describe('PipelineRunner — state machine', () => {
     expect(() => markStepDone({ state: s, pipeline: PIPELINE_HUMAN, workspaceRoot: root })).toThrow(PipelineRunError);
   });
 
+  it('produces_contains: blocks when a required marker is absent, listing the marker', () => {
+    const pipeline: PipelineConfig = {
+      id: 'pc',
+      on_failure: 'stop',
+      steps: [
+        {
+          agent: 'po',
+          requires: [],
+          produces: ['PRD.md'],
+          produces_contains: ['## Acceptance Criteria', '## Scope'],
+          human_review: true,
+          auto_review: false,
+          enabled: true,
+        },
+      ],
+    };
+    const s = startRun({ runId: 'R-PC1', pipeline, context: {} });
+    touch(root, 'PRD.md', '# PRD\n\n## Scope\nsome scope'); // missing Acceptance Criteria
+    try {
+      markStepDone({ state: s, pipeline, workspaceRoot: root });
+      throw new Error('expected markStepDone to throw');
+    } catch (err) {
+      expect(err).toBeInstanceOf(PipelineRunError);
+      expect((err as PipelineRunError).missing).toContain('## Acceptance Criteria');
+      expect((err as PipelineRunError).missing).not.toContain('## Scope');
+    }
+  });
+
+  it('produces_contains: advances when all markers present', () => {
+    const pipeline: PipelineConfig = {
+      id: 'pc',
+      on_failure: 'stop',
+      steps: [
+        {
+          agent: 'po',
+          requires: [],
+          produces: ['PRD.md'],
+          produces_contains: ['## Acceptance Criteria', '## Scope'],
+          human_review: true,
+          auto_review: false,
+          enabled: true,
+        },
+      ],
+    };
+    let s = startRun({ runId: 'R-PC2', pipeline, context: {} });
+    touch(root, 'PRD.md', '# PRD\n\n## Scope\nx\n\n## Acceptance Criteria\ny');
+    s = markStepDone({ state: s, pipeline, workspaceRoot: root });
+    expect(s.steps[0].status).toBe('awaiting_review');
+  });
+
   it('markStepDone hard-blocks when requires missing on step 2 path', () => {
     const s = startRun({ runId: 'R-3', pipeline: PIPELINE_HUMAN, context: {} });
     // Move to step 1 by passing step 0
