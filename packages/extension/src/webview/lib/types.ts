@@ -227,12 +227,16 @@ export interface PipelineStepSummary {
   skills?: string[];
   enabled: boolean;
   produces: string[];
+  /** Content markers asserted against the produced files (E1). */
+  produces_contains?: string[];
   requires: string[];
   /** Agent ids this step waits for. Non-empty turns the workflow into a DAG. */
   depends_on?: string[];
   human_review: boolean;
   auto_review: boolean;
   auto_review_runner?: string;
+  /** Max ms the auto_review validator may run before it's aborted (C2). */
+  auto_review_timeout_ms?: number;
 }
 
 export interface PipelineSummary {

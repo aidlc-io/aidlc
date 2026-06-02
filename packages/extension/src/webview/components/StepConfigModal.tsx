@@ -7,6 +7,8 @@ export interface StepConfigDraft {
   enabled: boolean;
   requires: string[];
   produces: string[];
+  /** Content markers each produced file is asserted to contain (E1). */
+  produces_contains: string[];
   /** Subset of the agent's `skills:` array — which skills this step makes
    *  available to the persona. Omitted when no skills are picked. */
   skills: string[];
@@ -15,6 +17,8 @@ export interface StepConfigDraft {
   human_review: boolean;
   auto_review: boolean;
   auto_review_runner?: string;
+  /** Max ms the auto_review validator may run before it's aborted (C2). */
+  auto_review_timeout_ms?: number;
 }
 
 interface Props {
@@ -35,9 +39,13 @@ export function StepConfigModal({ pipelineId, idx, step, agents, siblingNodeIds 
   const [enabled, setEnabled] = useState(step.enabled);
   const [requires, setRequires] = useState((step.requires ?? []).join('\n'));
   const [produces, setProduces] = useState((step.produces ?? []).join('\n'));
+  const [producesContains, setProducesContains] = useState((step.produces_contains ?? []).join('\n'));
   const [humanReview, setHumanReview] = useState(step.human_review);
   const [autoReview, setAutoReview] = useState(step.auto_review);
   const [runner, setRunner] = useState(step.auto_review_runner ?? '');
+  const [timeoutMs, setTimeoutMs] = useState(
+    step.auto_review_timeout_ms != null ? String(step.auto_review_timeout_ms) : '',
+  );
   const [pickedSkills, setPickedSkills] = useState<string[]>(step.skills ?? []);
   // Drop any stale deps that no longer match a sibling node id.
   const [pickedDeps, setPickedDeps] = useState<string[]>(
@@ -71,19 +79,29 @@ export function StepConfigModal({ pipelineId, idx, step, agents, siblingNodeIds 
 
   const runnerError =
     autoReview && !runner.trim() ? 'Required when auto_review is on' : null;
-  const canSubmit = !runnerError;
+  const timeoutError =
+    timeoutMs.trim() && !/^\d+$/.test(timeoutMs.trim())
+      ? 'Must be a positive whole number of milliseconds'
+      : null;
+  const canSubmit = !runnerError && !timeoutError;
 
   const submit = () => {
     if (!canSubmit) { return; }
+    const parsedTimeout =
+      autoReview && /^\d+$/.test(timeoutMs.trim()) && Number(timeoutMs.trim()) > 0
+        ? Number(timeoutMs.trim())
+        : undefined;
     onSubmit({
       enabled,
       requires: splitLines(requires),
       produces: splitLines(produces),
+      produces_contains: splitLines(producesContains),
       skills: pickedSkills,
       depends_on: pickedDeps,
       human_review: humanReview,
       auto_review: autoReview,
       auto_review_runner: autoReview ? runner.trim() : undefined,
+      auto_review_timeout_ms: parsedTimeout,
     });
     onClose();
   };
@@ -142,6 +160,23 @@ export function StepConfigModal({ pipelineId, idx, step, agents, siblingNodeIds 
           />
           <p className="mt-1 text-[10px] italic text-muted-foreground">
             Output artifacts the step writes. Existence is validated when the user marks the step done.
+          </p>
+        </div>
+
+        <div>
+          <label className="mb-1 block text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">
+            Produces contains <span className="font-normal normal-case tracking-normal">(one marker per line, or comma-separated)</span>
+          </label>
+          <textarea
+            value={producesContains}
+            onChange={(e) => setProducesContains(e.target.value)}
+            placeholder="e.g. ## Acceptance Criteria"
+            rows={2}
+            spellCheck={false}
+            className="w-full resize-none rounded-md border border-border bg-input/50 px-2.5 py-2 font-mono text-[11.5px] text-foreground placeholder:text-muted-foreground/70 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/40"
+          />
+          <p className="mt-1 text-[10px] italic text-muted-foreground">
+            Optional. Each marker must appear in at least one produced file, else the step is blocked at mark-done. Leave empty for an existence-only check.
           </p>
         </div>
 
@@ -258,6 +293,25 @@ export function StepConfigModal({ pipelineId, idx, step, agents, siblingNodeIds 
             />
             {runnerError && (
               <div className="mt-1 text-[10.5px] text-destructive">{runnerError}</div>
+            )}
+            <label className="mb-1 mt-3 block text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">
+              Timeout (ms) <span className="font-normal normal-case tracking-normal">(optional)</span>
+            </label>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={timeoutMs}
+              onChange={(e) => setTimeoutMs(e.target.value)}
+              placeholder="120000"
+              spellCheck={false}
+              className="w-full rounded-md border border-border bg-input/50 px-2.5 py-2 font-mono text-[11.5px] text-foreground placeholder:text-muted-foreground/70 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/40"
+            />
+            {timeoutError ? (
+              <div className="mt-1 text-[10.5px] text-destructive">{timeoutError}</div>
+            ) : (
+              <p className="mt-1 text-[10px] italic text-muted-foreground">
+                Max time the validator may run before it's aborted and the step is rejected. Default 120000.
+              </p>
             )}
           </div>
         )}
