@@ -20,6 +20,7 @@ export type {
   SkillConfig,
   SlashCommandConfig,
   PipelineConfig,
+  PipelineBudget,
   PipelineStepConfig,
   RecipeConfig,
   NormalizedStep,
@@ -123,6 +124,8 @@ export {
   submitAutoReviewVerdict,
   PipelineRunError,
 } from './runs/PipelineRunner';
+export { checkBudget } from './runs/budget';
+export type { BudgetCheckArgs, BudgetVerdict } from './runs/budget';
 export { runAutoReview, AutoReviewerError } from './runs/AutoReviewer';
 export type { AutoReviewerContext, AutoReviewerFn } from './runs/AutoReviewer';
 export { resolvePath } from './runs/RunState';

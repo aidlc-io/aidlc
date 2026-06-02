@@ -50,6 +50,12 @@ export interface RunnerResult {
   success: boolean;
   /** Final assembled output. May be empty if the runner streamed only. */
   output: string;
+  /**
+   * Total LLM cost of this invocation in USD, when the runner can report it
+   * (the default runner reads claude's `total_cost_usd`). Undefined when the
+   * runner doesn't track cost — budget accumulation treats that as 0.
+   */
+  costUsd?: number;
   /** Optional structured payload (parsed JSON, file paths produced, etc.). */
   data?: unknown;
 }

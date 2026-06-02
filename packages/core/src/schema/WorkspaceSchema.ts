@@ -176,10 +176,26 @@ const PipelineStepSchema = z.union([
   PipelineStepObjectSchema,
 ]);
 
+/**
+ * Optional cost ceiling for the autopilot runner (`aidlc run exec`). When set,
+ * the runner accumulates each step's LLM cost (reported by the runner as
+ * `costUsd`) and stops once a ceiling is crossed. Only enforced by the
+ * self-driving `run exec` loop — manual `mark-done` is never gated.
+ */
+const PipelineBudgetSchema = z.object({
+  /** Hard ceiling on total accumulated cost across the whole run, in USD. */
+  max_usd: z.number().positive(),
+  /** Optional per-step ceiling, in USD. A single step exceeding this trips the guard. */
+  max_usd_per_step: z.number().positive().optional(),
+  /** What to do when a ceiling is crossed: pause the loop (default) or exit non-zero. */
+  on_exceed: z.enum(['pause', 'fail']).default('pause'),
+});
+
 const PipelineSchema = z.object({
   id: z.string().min(1),
   steps: z.array(PipelineStepSchema).min(1),
   on_failure: z.enum(['stop', 'continue']).default('stop'),
+  budget: PipelineBudgetSchema.optional(),
 });
 
 // ── Recipes ────────────────────────────────────────────────────────
@@ -503,6 +519,7 @@ export type AgentConfig = z.infer<typeof AgentSchema>;
 export type SkillConfig = z.infer<typeof SkillSchema>;
 export type SlashCommandConfig = z.infer<typeof SlashCommandSchema>;
 export type PipelineConfig = z.infer<typeof PipelineSchema>;
+export type PipelineBudget = z.infer<typeof PipelineBudgetSchema>;
 export type RecipeConfig = z.infer<typeof RecipeSchema>;
 export type StateConfig = z.infer<typeof StateSchema>;
 export type SidebarConfig = z.infer<typeof SidebarSchema>;

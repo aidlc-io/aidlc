@@ -52,6 +52,11 @@ export interface StepRecord {
    * Filled in when the step transitions to awaiting_review or approved.
    */
   artifactsProduced: string[];
+  /**
+   * LLM cost (USD) of the most recent runner execution for this step, when the
+   * runner reported it. Summed across steps by the `run exec` budget guard.
+   */
+  costUsd?: number;
   /** Optional human feedback supplied at rerun time. Carried forward. */
   feedback?: string;
   /** Reason supplied with the most recent rejection. Cleared on rerun. */

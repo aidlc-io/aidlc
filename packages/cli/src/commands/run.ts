@@ -8,6 +8,7 @@ import {
   approveStep,
   rejectStep,
   rerunStep,
+  checkBudget,
   PipelineRunError,
   RUN_ID_PATTERN,
   type RunState,
@@ -257,6 +258,10 @@ async function execLoop(
     ? requireStepIdx(initialState, opts.until)
     : -1;
 
+  // Resolve the pipeline's optional cost ceiling once — only the autopilot
+  // loop enforces it (manual mark-done is never gated).
+  const budget = requirePipelineForRun(root, initialState).budget;
+
   while (true) {
     // Reload fresh state each iteration so concurrent edits (extension, other CLI) are picked up.
     const state = RunStateStore.load(root, runId);
@@ -303,6 +308,27 @@ async function execLoop(
     // Execute the current step
     const success = await execStep(root, state, runId, opts);
     if (!success) { process.exit(1); }
+
+    // Budget guard — sum per-step cost from the just-saved state and stop if
+    // a ceiling is crossed. `state.currentStepIdx` is the step that just ran.
+    if (budget) {
+      const after = RunStateStore.load(root, runId);
+      const stepCosts = after ? after.steps.map((s) => s.costUsd) : [];
+      const lastStepCost = after?.steps[state.currentStepIdx]?.costUsd;
+      const verdict = checkBudget({ stepCosts, budget, lastStepCost });
+      if (!verdict.ok) {
+        const scope = verdict.exceeded === 'step' ? 'per-step' : 'total';
+        console.log(
+          chalk.yellow(`\n⚠  Budget exceeded (${scope}): spent $${verdict.spent.toFixed(4)}, limit $${verdict.limit.toFixed(2)}.`),
+        );
+        if (budget.on_exceed === 'fail') {
+          process.exit(1);
+        }
+        console.log(chalk.dim(`  Paused. Raise the budget in workspace.yaml or resume: aidlc run exec ${runId}`));
+        break;
+      }
+      console.log(chalk.dim(`  budget: $${verdict.spent.toFixed(4)} / $${budget.max_usd.toFixed(2)}`));
+    }
 
     // Check --until boundary
     if (untilIdx >= 0 && state.currentStepIdx >= untilIdx) {
@@ -405,6 +431,12 @@ async function execStep(
   let next: RunState;
   try {
     const freshState = RunStateStore.load(root, runId)!;
+    // Record this step's LLM cost (when the runner reported it) before the
+    // transition, so the budget guard in execLoop can sum across steps and it
+    // survives the reload-each-iteration loop.
+    if (typeof result.costUsd === 'number') {
+      freshState.steps[stepIdx].costUsd = result.costUsd;
+    }
     next = markStepDone({ state: freshState, pipeline, workspaceRoot: root });
   } catch (err) {
     if (err instanceof PipelineRunError && err.missing?.length) {
@@ -424,6 +456,9 @@ async function execStep(
     console.log(chalk.cyan(`\n✔  Step "${agentId}" done — awaiting review.`));
   } else {
     console.log(chalk.green(`\n✔  Step "${agentId}" approved.`));
+  }
+  if (typeof result.costUsd === 'number') {
+    console.log(chalk.dim(`   cost: $${result.costUsd.toFixed(4)}`));
   }
 
   return true;

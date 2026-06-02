@@ -131,6 +131,39 @@ describe('WorkspaceSchema', () => {
     expect(step.enabled).toBe(true); // default
   });
 
+  it('parses a pipeline budget and defaults on_exceed to pause', () => {
+    const config = validateWorkspace(
+      {
+        version: '1.0',
+        name: 'Budgeted',
+        pipelines: [
+          {
+            id: 'p',
+            steps: [{ agent: 'po', produces: ['PRD.md'] }],
+            budget: { max_usd: 5, max_usd_per_step: 1.5 },
+          },
+        ],
+      },
+      'memory:test',
+    );
+    expect(config.pipelines[0].budget).toEqual({ max_usd: 5, max_usd_per_step: 1.5, on_exceed: 'pause' });
+  });
+
+  it('rejects a non-positive budget.max_usd', () => {
+    expect(() =>
+      validateWorkspace(
+        {
+          version: '1.0',
+          name: 'Bad budget',
+          pipelines: [
+            { id: 'p', steps: [{ agent: 'po' }], budget: { max_usd: 0 } },
+          ],
+        },
+        'memory:test',
+      ),
+    ).toThrow(WorkspaceValidationError);
+  });
+
   it('rejects pipeline step with auto_review: true but no runner path', () => {
     expect(() =>
       validateWorkspace(

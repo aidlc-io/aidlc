@@ -34,8 +34,13 @@ export class DefaultRunner implements AidlcRunner {
 
     // --print: non-interactive, dump response and exit (no REPL)
     // --append-system-prompt: stack our skill on top of claude's defaults
+    // --output-format stream-json --verbose: emit NDJSON events as they happen
+    //   so we keep streaming text live AND get a final `result` event carrying
+    //   `total_cost_usd` (claude's own accurate cost) for the budget guard.
     const args = [
       '--print',
+      '--output-format', 'stream-json',
+      '--verbose',
       '--append-system-prompt', ctx.skill,
       ...(this.opts.extraArgs ?? []),
       userMessage,
@@ -47,11 +52,43 @@ export class DefaultRunner implements AidlcRunner {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
-    let collected = '';
+    // NDJSON is line-delimited — buffer partial lines across data chunks.
+    let buf = '';
+    let finalText = '';
+    let costUsd: number | undefined;
+
+    const handleEvent = (evt: StreamEvent): void => {
+      if (evt.type === 'assistant' && evt.message?.content) {
+        // Stream each text block of the assistant turn live.
+        for (const block of evt.message.content) {
+          if (block.type === 'text' && typeof block.text === 'string') {
+            ctx.onOutput(block.text);
+          }
+        }
+      } else if (evt.type === 'result') {
+        if (typeof evt.total_cost_usd === 'number') { costUsd = evt.total_cost_usd; }
+        if (typeof evt.result === 'string') { finalText = evt.result; }
+      }
+    };
+
+    const consume = (line: string): void => {
+      const trimmed = line.trim();
+      if (!trimmed) { return; }
+      try {
+        handleEvent(JSON.parse(trimmed) as StreamEvent);
+      } catch {
+        // Not JSON (e.g. a stray log line) — surface it raw rather than drop it.
+        ctx.onOutput(line);
+      }
+    };
+
     proc.stdout.on('data', (d: Buffer) => {
-      const chunk = d.toString('utf8');
-      collected += chunk;
-      ctx.onOutput(chunk);
+      buf += d.toString('utf8');
+      let nl: number;
+      while ((nl = buf.indexOf('\n')) >= 0) {
+        consume(buf.slice(0, nl));
+        buf = buf.slice(nl + 1);
+      }
     });
     proc.stderr.on('data', (d: Buffer) => {
       ctx.onError(d.toString('utf8'));
@@ -60,11 +97,20 @@ export class DefaultRunner implements AidlcRunner {
     return new Promise<RunnerResult>((resolve) => {
       proc.on('error', (err) => {
         ctx.onError(`Failed to spawn ${bin}: ${err.message}\n`);
-        resolve({ success: false, output: collected });
+        resolve({ success: false, output: finalText, costUsd });
       });
       proc.on('close', (code) => {
-        resolve({ success: code === 0, output: collected });
+        if (buf.length) { consume(buf); } // flush any trailing partial line
+        resolve({ success: code === 0, output: finalText, costUsd });
       });
     });
   }
+}
+
+/** Shape of the claude `--output-format stream-json` NDJSON events we read. */
+interface StreamEvent {
+  type: string;
+  message?: { content?: Array<{ type: string; text?: string }> };
+  total_cost_usd?: number;
+  result?: string;
 }

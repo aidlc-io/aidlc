@@ -188,6 +188,28 @@ pipeline end-to-end.
 
 `run start` defaults `runId` to `<pipelineId>-<timestamp>` if `--id` is omitted.
 
+#### Cost guard (`budget`)
+
+Because `run exec --auto-approve` can drive a whole pipeline unattended (and a
+self-fixing agent loop can quietly escalate spend), a pipeline may declare an
+optional cost ceiling. After each step the autopilot sums the per-step LLM cost
+(claude's reported `total_cost_usd`) and stops once a ceiling is crossed. Manual
+`mark-done` is never gated.
+
+```yaml
+pipelines:
+  - id: my-pipeline
+    budget:
+      max_usd: 5.00           # hard ceiling on cumulative cost for the run
+      max_usd_per_step: 1.50  # optional — a single pricey step trips it too
+      on_exceed: pause        # pause (default) → stop the loop; fail → exit non-zero
+    steps: [...]
+```
+
+`run exec` prints a running `budget: $spent / $max` line per step; on `pause` it
+stops and you can raise the budget or resume, on `fail` it exits non-zero (handy
+in CI).
+
 ### `step` — direct step control
 
 The `run` commands operate on the current step. `step` operates on **any**
