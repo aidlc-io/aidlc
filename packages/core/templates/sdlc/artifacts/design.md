@@ -30,7 +30,18 @@
 |-----------|---------------|-------|
 |           |               |       |
 
-## 3. API Contract
+## 3. Affected Areas / Blast Radius
+
+> *Subsystems, modules, services, and integration points this change touches —
+> higher-level than the file list in §7. Include downstream consumers that
+> aren't modified but could regress, so review and regression testing can be
+> scoped. If the project has an ast-graph, cross-check with `blast-radius`.*
+
+| Area / Module | Kind (module / service / API / data / job / integration) | Impact (new / modified / deprecated) | Downstream consumers | Regression risk (low / med / high) |
+|---------------|-----------------------------------------------------------|--------------------------------------|----------------------|------------------------------------|
+|               |                                                           |                                      |                      |                                    |
+
+## 4. API Contract
 
 ### Endpoint: `POST /api/v1/example`
 
@@ -51,7 +62,7 @@
 
 **Error codes:** 400 Bad Request, 401 Unauthorized, 500 Internal Server Error
 
-## 4. Data Model
+## 5. Data Model
 
 ### New / Modified Tables / Collections
 
@@ -63,13 +74,13 @@ CREATE TABLE example (
 );
 ```
 
-## 5. Dependency Injection Plan
+## 6. Dependency Injection Plan
 
 | Interface | Existing impl | New impl | Notes |
 |-----------|--------------|----------|-------|
 |           |              |          |       |
 
-## 6. File Impact List
+## 7. File Impact List
 
 | File | Change type | Reason |
 |------|-------------|--------|
@@ -77,23 +88,23 @@ CREATE TABLE example (
 | `src/...` | Modify | Extend existing |
 | `src/...` | Delete | Superseded by … |
 
-## 7. Security Considerations
+## 8. Security Considerations
 
 - Input validation: …
 - Auth / authz: …
 - Data at rest / in transit: …
 
-## 8. Performance Considerations
+## 9. Performance Considerations
 
 - Expected call volume: …
 - Caching strategy: …
 - DB index plan: …
 
-## 9. Migration Plan
+## 10. Migration Plan
 
 > *Steps to deploy without downtime. Include rollback steps.*
 
-## 10. Open Questions / Risks
+## 11. Open Questions / Risks
 
 | # | Question / Risk | Owner | Status |
 |---|----------------|-------|--------|

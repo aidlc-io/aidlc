@@ -22,13 +22,23 @@
 - Out of scope: …
 - Will not address: …
 
-## 4. User Stories
+## 4. Affected Areas
+
+> *Existing product surfaces, modules, user segments, or flows this epic
+> touches — including the ones it does NOT change but could regress. Helps
+> reviewers and QA gauge blast radius before any code is written.*
+
+| Area / Surface | Kind (screen / flow / service / data / integration) | Impact (new / modified / deprecated) | Notes |
+|----------------|------------------------------------------------------|--------------------------------------|-------|
+|                |                                                      |                                      |       |
+
+## 5. User Stories
 
 | As a… | I want to… | So that… |
 |--------|------------|----------|
 | user   |            |          |
 
-## 5. Functional Requirements
+## 6. Functional Requirements
 
 ### FR-01: [Feature name]
 
@@ -43,7 +53,7 @@
 **Acceptance Criteria:**
 - [ ] AC-01: …
 
-## 6. Non-Functional Requirements
+## 7. Non-Functional Requirements
 
 | Category       | Requirement                        |
 |----------------|------------------------------------|
@@ -52,25 +62,25 @@
 | Security       | No PII logged                      |
 | Compatibility  | iOS 16+, Android 12+               |
 
-## 7. Design & References
+## 8. Design & References
 
 - Figma: *(link)*
 - Jira: *(ticket)*
 - Related docs: *(links)*
 
-## 8. Metrics / Success Criteria
+## 9. Metrics / Success Criteria
 
 | Metric           | Baseline | Target |
 |------------------|----------|--------|
 | Conversion rate  | —        | —      |
 | Error rate       | —        | < 1%   |
 
-## 9. Open Questions
+## 10. Open Questions
 
 - [ ] Q1: …
 - [ ] Q2: …
 
-## 10. Revision History
+## 11. Revision History
 
 | Date | Author | Change |
 |------|--------|--------|

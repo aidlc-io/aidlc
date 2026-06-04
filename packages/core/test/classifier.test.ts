@@ -4,6 +4,7 @@ import {
   heuristicClassify,
   buildClassificationPrompt,
   parseClassificationVerdict,
+  getBuiltinRecipeSummaries,
   type RecipeConfig,
 } from '../src';
 
@@ -76,6 +77,41 @@ describe('heuristicClassify', () => {
 
   it('throws when there are no recipes', () => {
     expect(() => heuristicClassify('anything', [])).toThrow(/no recipes/);
+  });
+});
+
+// The Start Epic modal classifies against the built-in recipes when a project
+// has no workspace.yaml yet (workspaceWebview.classifyBriefForWebview falls back
+// to getBuiltinRecipeSummaries()). If the built-ins weren't a usable classifier
+// input, the Auto row would spin on "analyzing" forever. These pin that contract.
+describe('built-in recipes as a classification target (no-workspace fallback)', () => {
+  const builtins = getBuiltinRecipeSummaries() as unknown as RecipeConfig[];
+
+  it('ships at least one built-in recipe to classify against', () => {
+    expect(builtins.length).toBeGreaterThan(0);
+  });
+
+  it('heuristicClassify always returns a recipe id that exists in the built-ins', () => {
+    const ids = new Set(builtins.map((r) => r.id));
+    for (const brief of [
+      'Fix crash when exporting billing report to CSV',
+      'Add a dark-mode toggle to settings',
+      'Refactor the auth module to remove tech debt',
+      'Investigate feasibility of offline sync',
+      'xyzzy plugh',
+    ]) {
+      const v = heuristicClassify(brief, builtins);
+      expect(ids.has(v.recipeId)).toBe(true);
+    }
+  });
+
+  it('an LLM verdict picking a built-in recipe parses cleanly', () => {
+    const id = builtins[0].id;
+    const v = parseClassificationVerdict(
+      `{"recipeId":"${id}","confidence":"high","reasoning":"x"}`,
+      builtins,
+    );
+    expect(v.recipeId).toBe(id);
   });
 });
 

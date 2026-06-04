@@ -49,6 +49,8 @@ import {
   rejectStepCommand,
   rerunStepCommand,
   runAutoReviewCommand,
+  verifyRunCommand,
+  runReportCommand,
   openRunStateCommand,
   deleteRunCommand,
 } from './runCommands';
@@ -443,6 +445,14 @@ export function registerV2WorkspaceCommands(
     (runId?: unknown, stepIdx?: unknown) =>
       runAutoReviewCommand(typeof runId === 'string' ? runId : undefined, toStepIdx(stepIdx)),
   );
+  const verifyRunCmd = vscode.commands.registerCommand(
+    'aidlc.verifyRun',
+    (runId?: unknown) => verifyRunCommand(typeof runId === 'string' ? runId : undefined),
+  );
+  const runReportCmd = vscode.commands.registerCommand(
+    'aidlc.runReport',
+    (runId?: unknown) => runReportCommand(typeof runId === 'string' ? runId : undefined),
+  );
   const openRunStateCmd = vscode.commands.registerCommand(
     'aidlc.openRunState',
     (runId?: unknown) => openRunStateCommand(typeof runId === 'string' ? runId : undefined),
@@ -485,6 +495,8 @@ export function registerV2WorkspaceCommands(
       rejectStepCmd,
       rerunStepCmd,
       runAutoReviewCmd,
+      verifyRunCmd,
+      runReportCmd,
       openRunStateCmd,
       deleteRunCmd,
     ],

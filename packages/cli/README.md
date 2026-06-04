@@ -178,7 +178,19 @@ aidlc run rerun     <runId> [--feedback "…"]
 aidlc run delete    <runId> [--force]
 aidlc run open      <runId> [--path]    # prints state.json content (or just file path)
 aidlc run exec      <runId> [--until <step>] [--auto-approve] [--message "…"] [--dry-run]
+aidlc run verify    <runId>             # re-checks recorded artifacts still exist + pass produces_contains
+aidlc run report    <runId> [--format md|json] [--output <file>]  # shareable run history (Markdown/JSON)
 ```
+
+**`run verify`** is a read-only post-run drift check: a `completed` run still
+claims its artifacts exist, but someone may have since deleted or gutted one.
+It re-validates every step's recorded `artifactsProduced` (existence + the same
+`produces_contains` markers the gate applied) and exits non-zero when any step
+has drifted — handy as a CI post-check.
+
+**`run report`** renders the run history (steps, revisions, durations, reject
+reasons, approve comments, cost when reported) as Markdown to paste into a PR
+description or status update. `--format json` dumps the raw state instead.
 
 **`run exec`** is the unique unlock: it spawns `claude` for the current step,
 streams stdout to your terminal, validates the produced artifacts, and advances

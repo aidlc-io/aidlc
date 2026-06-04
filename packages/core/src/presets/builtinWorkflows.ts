@@ -25,6 +25,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { renderTemplate } from './templateRenderer';
+
 /**
  * A composed preset: the workspace.yaml content + per-skill markdown. Kept
  * structurally loose here (`workspace: Record<string, unknown>`) so core has
@@ -785,27 +787,114 @@ export function phaseArtifactFileName(phase: PhaseDef): string {
 }
 
 /**
+ * Tech-stack priority for resolving a *single* base template when a project
+ * spans several stacks (e.g. a fullstack web+backend app). The user-facing
+ * surface wins: a feature in a fullstack app is "thought of" from the UI side,
+ * so the UI template is the better skeleton. backend / cli only win when
+ * they're the sole stack (a headless service / CLI tool).
+ *
+ *     mobile > desktop > web > backend > cli
+ */
+const STACK_PRIORITY: readonly string[] = ['mobile', 'desktop', 'web', 'backend', 'cli'];
+
+/**
+ * Pick the single "primary" stack from a detected set, per STACK_PRIORITY.
+ * Returns `null` for an empty / null set (caller falls back to the generic
+ * template). A detected value outside the priority list is returned as-is
+ * (first one) so unknown-but-present stacks still select something.
+ */
+export function resolvePrimaryStack(stacks: readonly string[] | null | undefined): string | null {
+  if (!stacks || stacks.length === 0) { return null; }
+  const set = new Set(stacks);
+  for (const s of STACK_PRIORITY) {
+    if (set.has(s)) { return s; }
+  }
+  return stacks[0] ?? null;
+}
+
+export interface ArtifactTemplateOptions {
+  /**
+   * Full detected stack set. Used to render `{{#if <stack>}}` blocks inside
+   * the chosen template — so secondary stacks (the backend half of a web app)
+   * still contribute their conditional sections even though the *base* file is
+   * picked by the primary stack alone. `null` → no `{{#if}}` stripping (every
+   * block kept), preserving the pre-stack behavior.
+   */
+  stacks?: readonly string[] | null;
+  /**
+   * Ordered, most-specific-first file-suffix keys to try before the generic
+   * `<phase>.md`. e.g. `['web-react', 'web']` looks for `implement.web-react.md`
+   * then `implement.web.md` then `implement.md`. When omitted, derived from
+   * `stacks` via {@link resolvePrimaryStack} (single coarse bucket).
+   */
+  lookupKeys?: readonly string[] | null;
+}
+
+/**
  * Read the bundled artifact templates for a built-in workflow from
  * `templates/<workflow.dir>/artifacts/`. Returns a map of
- * `<outputFileName>` → template content. Falls back gracefully if a
- * template file is missing.
+ * `<outputFileName>` → template content.
+ *
+ * Per phase, the template is resolved by a most-specific-first lookup —
+ * `<phase>.<key>.md` for each `lookupKeys` entry, then the generic
+ * `<phase>.md` — and the chosen body is rendered through the tech-stack
+ * template renderer so `{{#if}}` blocks resolve against `stacks`. Falls back
+ * to a placeholder when no file exists.
+ *
+ * Called with no options (CLI / legacy paths) it reads the generic file and
+ * renders with `null` stacks — i.e. byte-identical to the pre-stack behavior.
  */
-export function getBuiltinArtifactTemplates(extensionPath: string, workflow: BuiltinWorkflow): Record<string, string> {
+export function getBuiltinArtifactTemplates(
+  extensionPath: string,
+  workflow: BuiltinWorkflow,
+  options: ArtifactTemplateOptions = {},
+): Record<string, string> {
   const artifactsDir = path.join(extensionPath, 'templates', workflow.templatesDir, 'artifacts');
+  const stacks = options.stacks ?? null;
+  const lookupKeys = options.lookupKeys ?? deriveLookupKeys(stacks);
+
   const result: Record<string, string> = {};
   for (const phase of workflow.phases) {
-    const templatePath = path.join(artifactsDir, `${phase.id}.md`);
     const outFile = phaseArtifactFileName(phase);
-    result[outFile] = fs.existsSync(templatePath)
-      ? fs.readFileSync(templatePath, 'utf8')
-      : `# ${phase.name} Artifact\n\n*(template missing — fill in your output here)*\n`;
+    const raw = readPhaseTemplate(artifactsDir, phase.id, lookupKeys);
+    result[outFile] = raw === null
+      ? `# ${phase.name} Artifact\n\n*(template missing — fill in your output here)*\n`
+      : renderTemplate(raw, stacks);
   }
   return result;
 }
 
+/** Default lookup keys: the single primary coarse bucket (or none). */
+function deriveLookupKeys(stacks: readonly string[] | null): string[] {
+  const primary = resolvePrimaryStack(stacks);
+  return primary ? [primary] : [];
+}
+
+/**
+ * Try `<phaseId>.<key>.md` for each key (most-specific first), then the
+ * generic `<phaseId>.md`. Returns the file body, or `null` when nothing on
+ * disk matches. Unreadable matches fall through to the next candidate.
+ */
+function readPhaseTemplate(dir: string, phaseId: string, lookupKeys: readonly string[]): string | null {
+  for (const key of lookupKeys) {
+    const p = path.join(dir, `${phaseId}.${key}.md`);
+    if (fs.existsSync(p)) {
+      try { return fs.readFileSync(p, 'utf8'); } catch { /* try next candidate */ }
+    }
+  }
+  const generic = path.join(dir, `${phaseId}.md`);
+  if (fs.existsSync(generic)) {
+    try { return fs.readFileSync(generic, 'utf8'); } catch { return null; }
+  }
+  return null;
+}
+
 /** Back-compat — read SDLC artifact templates specifically. */
-export function getSdlcArtifactTemplates(extensionPath: string): Record<string, string> {
-  return getBuiltinArtifactTemplates(extensionPath, BUILTIN_WORKFLOWS[0]);
+export function getSdlcArtifactTemplates(
+  extensionPath: string,
+  options: ArtifactTemplateOptions = {},
+): Record<string, string> {
+  return getBuiltinArtifactTemplates(extensionPath, BUILTIN_WORKFLOWS[0], options);
 }
 
 /**

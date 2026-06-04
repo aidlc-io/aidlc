@@ -102,6 +102,8 @@ aidlc run rerun    <runId> [--feedback …]
 aidlc run delete   <runId> [--force]
 aidlc run open     <runId> [--path]
 aidlc run exec     <runId> [--until …] [--auto-approve] [--dry-run]
+aidlc run verify   <runId>                       # re-check recorded artifacts still exist (drift check)
+aidlc run report   <runId> [--format md|json] [--output <file>]
 ```
 
 ### Step control (jump to any step, any order — bypasses sequential gate)

@@ -35,6 +35,8 @@ import {
   requestStepUpdate,
   submitAutoReviewVerdict,
   runAutoReview,
+  verifyRun,
+  renderRunReport,
   PipelineRunError,
   AutoReviewerError,
 } from '@aidlc/core';
@@ -644,6 +646,79 @@ export async function deleteRunCommand(
   }
   RunStateStore.delete(root, runId);
   void vscode.window.showInformationMessage(`Deleted run "${runId}".`);
+}
+
+// ── verifyRun ────────────────────────────────────────────────────────────
+
+/**
+ * Read-only drift check: re-validate every step's recorded `artifactsProduced`
+ * against the current filesystem (existence + the same `produces_contains`
+ * markers the gate applied). Surfaces drift as a warning toast listing the
+ * affected steps; reports a clean bill of health otherwise.
+ */
+export async function verifyRunCommand(runIdArg?: string): Promise<void> {
+  const root = requireRoot('Verify Run');
+  if (!root) { return; }
+  const runId = await resolveRunId(root, runIdArg);
+  if (!runId) { return; }
+
+  const state = RunStateStore.load(root, runId);
+  if (!state) { void vscode.window.showWarningMessage(`Run "${runId}" not found.`); return; }
+  const pipeline = loadPipeline(root, state.pipelineId);
+  if (!pipeline) {
+    void vscode.window.showErrorMessage(
+      `Run "${runId}" references pipeline "${state.pipelineId}" which is no longer in workspace.yaml.`,
+    );
+    return;
+  }
+
+  const report = verifyRun({ state, pipeline, workspaceRoot: root });
+  if (report.ok) {
+    void vscode.window.showInformationMessage(
+      `✅ No drift — ${report.checked} step(s) with artifacts verified for run "${runId}".`,
+    );
+    return;
+  }
+
+  const lines = report.drift.map((d) => {
+    const parts: string[] = [];
+    if (d.missing.length > 0) { parts.push(`missing: ${d.missing.join(', ')}`); }
+    if (d.missingMarkers.length > 0) { parts.push(`content: ${d.missingMarkers.join(', ')}`); }
+    return `• step ${d.stepIdx} (${d.agent}) — ${parts.join('; ')}`;
+  });
+  void vscode.window.showWarningMessage(
+    `⚠ Drift in ${report.drift.length} of ${report.checked} step(s) for run "${runId}".`,
+    { modal: true, detail: lines.join('\n') },
+  );
+}
+
+// ── runReport ────────────────────────────────────────────────────────────
+
+/**
+ * Render the run history as Markdown and open it in a new editor tab (with a
+ * side-by-side preview when the Markdown preview command is available). A PO
+ * can copy it straight into a PR description or status update.
+ */
+export async function runReportCommand(runIdArg?: string): Promise<void> {
+  const root = requireRoot('Run Report');
+  if (!root) { return; }
+  const runId = await resolveRunId(root, runIdArg);
+  if (!runId) { return; }
+
+  const state = RunStateStore.load(root, runId);
+  if (!state) { void vscode.window.showWarningMessage(`Run "${runId}" not found.`); return; }
+  const pipeline = loadPipeline(root, state.pipelineId);
+
+  const md = renderRunReport({ state, pipeline: pipeline ?? undefined });
+  const doc = await vscode.workspace.openTextDocument({ content: md, language: 'markdown' });
+  await vscode.window.showTextDocument(doc, { preview: false });
+  // Best-effort: open the rendered preview beside the source. Ignored when the
+  // built-in markdown preview extension isn't present.
+  try {
+    await vscode.commands.executeCommand('markdown.showPreviewToSide', doc.uri);
+  } catch {
+    // no-op — the raw markdown editor is enough on its own.
+  }
 }
 
 // ── shared helpers ───────────────────────────────────────────────────────

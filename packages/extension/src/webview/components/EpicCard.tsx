@@ -18,6 +18,8 @@ import {
   RefreshCw,
   Zap,
   AlertTriangle,
+  ShieldCheck,
+  ClipboardList,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type {
@@ -182,6 +184,28 @@ export function EpicCard({ epic, agentMeta, slashCommandsByAgent }: Props) {
                 · Started{' '}
                 <strong className="text-foreground">{epic.createdAt.slice(0, 10)}</strong>
               </span>
+            )}
+            {epic.runId && (
+              <div className="ml-auto flex items-center gap-1.5">
+                <button
+                  type="button"
+                  title="Re-check this run's produced artifacts still exist and pass content assertions"
+                  onClick={() => postMessage({ type: 'verifyRun', runId: epic.runId! })}
+                  className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-2 py-1 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground"
+                >
+                  <ShieldCheck className="h-3 w-3" />
+                  Verify
+                </button>
+                <button
+                  type="button"
+                  title="Render this run's history as a shareable Markdown report"
+                  onClick={() => postMessage({ type: 'runReport', runId: epic.runId! })}
+                  className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-2 py-1 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground"
+                >
+                  <ClipboardList className="h-3 w-3" />
+                  Report
+                </button>
+              </div>
             )}
           </div>
 

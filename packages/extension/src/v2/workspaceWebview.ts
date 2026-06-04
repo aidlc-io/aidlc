@@ -192,11 +192,14 @@ import {
   getBuiltinWorkflowByPipelineId,
   getAllBuiltinPipelineSummaries,
   getBuiltinRecipeSummaries,
+  resolvePrimaryStack,
   builtinClaudeCommand,
   pipelineCommandId,
   writeBuiltinAutoReviewValidators,
   BUILTIN_WORKFLOWS,
 } from './builtinPresets';
+import { resolveTechStackForRoot } from './techStackResolver';
+import { artifactLookupKeys } from './techStackDetector';
 import { uninstallWorkflowGlobalsByIds, installWorkflowGlobalsByIds } from './globalDefaultsInstaller';
 import { PresetStore } from './presetStore';
 import type {
@@ -1332,6 +1335,8 @@ export class WorkspaceWebview {
       case 'approveStep':
       case 'rejectStep':
       case 'rerunStep':
+      case 'verifyRun':
+      case 'runReport':
       case 'openRunState': {
         const runId = String(msg.runId ?? '');
         const cmd = `aidlc.${msg.type}`;
@@ -2240,13 +2245,19 @@ export class WorkspaceWebview {
     // on subsequent panel refreshes.
     const doc = readYaml(root);
     if (!doc) { return; }
+    // Resolve the project's tech stack once: `stacks` drives `{{#if}}` block
+    // rendering (secondary stacks survive), `lookupKeys` picks the most
+    // specific base template (e.g. implement.web-react.md → implement.web.md →
+    // implement.md). Pure file reads + string ops — safe on this refresh path.
+    const stacks = resolveTechStackForRoot(root);
+    const lookupKeys = artifactLookupKeys(root, resolvePrimaryStack(stacks));
     for (const p of doc.pipelines) {
       const pId = String(p.id);
       const workflow = getBuiltinWorkflowByPipelineId(pId);
       if (!workflow) { continue; }
       const dir = path.join(root, WORKSPACE_DIR, 'aidlc-templates', pId);
       fs.mkdirSync(dir, { recursive: true });
-      const templates = getBuiltinArtifactTemplates(this.extensionUri.fsPath, workflow);
+      const templates = getBuiltinArtifactTemplates(this.extensionUri.fsPath, workflow, { stacks, lookupKeys });
       for (const [fileName, content] of Object.entries(templates)) {
         const dest = path.join(dir, fileName);
         if (!fs.existsSync(dest)) { fs.writeFileSync(dest, content, 'utf8'); }
@@ -2332,11 +2343,19 @@ export class WorkspaceWebview {
   private async classifyBriefForWebview(brief: string): Promise<void> {
     const root = this.getRootOrWarn();
     if (!root || !brief.trim()) { return; }
+    // Recipes to classify against. Prefer the workspace's own recipes, but fall
+    // back to the built-ins when there's no workspace.yaml yet (or it predates
+    // recipes). The Start Epic modal already offers the built-in recipes in this
+    // case (getStateForWebview), so without this fallback the Auto row would
+    // spin on "analyzing" forever — classifyBrief is fired but no recipeSuggestion
+    // ever comes back. The built-ins are materialized into the workspace at Start.
     const doc = readYaml(root);
-    if (!doc) { return; }
-    let config;
-    try { config = validateWorkspace(doc, '.aidlc/workspace.yaml'); } catch { return; }
-    if (config.recipes.length === 0) { return; }
+    let config: ReturnType<typeof validateWorkspace> | undefined;
+    if (doc) { try { config = validateWorkspace(doc, '.aidlc/workspace.yaml'); } catch { /* fall back */ } }
+    const recipes: RecipeConfig[] = config && config.recipes.length > 0
+      ? config.recipes
+      : getBuiltinRecipeSummaries();
+    if (recipes.length === 0) { return; }
 
     const post = (
       v: { recipeId: string; confidence: string; reasoning: string; title?: string; epicId?: string },
@@ -2357,21 +2376,21 @@ export class WorkspaceWebview {
     // 1) Instant heuristic so a recipe shows up immediately (no dead wait while
     //    the LLM thinks). The keyword classify is local + synchronous.
     try {
-      post(heuristicClassify(brief, config.recipes), 'heuristic');
+      post(heuristicClassify(brief, recipes), 'heuristic');
     } catch { /* no-op — fall through to the LLM attempt */ }
 
     // 2) LLM refine: analyze the requirement → recipe + suggested title + epic
     //    id, and overwrite the provisional pick when it lands. Same
     //    prompt/parser the CLI uses (core) so both pick consistently.
     try {
-      const system = buildClassificationPrompt(config.recipes);
+      const system = buildClassificationPrompt(recipes);
       // Neutral cwd: classification needs no MCP at all, so don't pay the
       // project MCP boot cost (npx sdlc / ast-graph) for it.
       const stdout = await runClaude(
         ['--print', '--append-system-prompt', system, brief],
         { cwd: os.tmpdir(), timeoutMs: 60_000 },
       );
-      const verdict = parseClassificationVerdict(stdout, config.recipes);
+      const verdict = parseClassificationVerdict(stdout, recipes);
       post({
         recipeId: verdict.recipeId,
         confidence: verdict.confidence,
@@ -2396,8 +2415,12 @@ export class WorkspaceWebview {
   private async loadRequirementForWebview(source: string, ref: string): Promise<void> {
     const root = this.getRootOrWarn();
     if (!root || !ref.trim()) { return; }
-    const doc = readYaml(root);
-    if (!doc) { return; }
+    // NOTE: do NOT gate on workspace.yaml here. Fetching a requirement (Jira /
+    // GitHub / Drive / URL) only needs `root` as the claude cwd + `ref` — it
+    // never reads the workspace doc. A no-workspace project is exactly when the
+    // user loads a requirement to scaffold one, so an early `if (!doc) return`
+    // left the modal spinning on "Fetching…" until the 110s watchdog (the doc
+    // was never used past the guard anyway).
 
     // GitHub: fetch directly with `gh` (host-side, ~1s) — there's no GitHub
     // connector, so the agentic path would wander for a minute+. Drop the raw
@@ -2432,8 +2455,12 @@ export class WorkspaceWebview {
       `You fetch and summarize software requirements. ${action}\n\n` +
       `Write a concise plain-text summary of the requirement (2-5 sentences, ` +
       `the key intent + scope). Output ONLY the summary prose — no JSON, no ` +
-      `markdown headers, no preamble like "Here is". If the source has no ` +
-      `usable content, output exactly: NO_CONTENT`;
+      `markdown headers, no preamble like "Here is". ` +
+      `If you cannot read the source for ANY reason — the tool / connector / MCP ` +
+      `is unavailable or not authenticated, access is denied, or the item has no ` +
+      `usable content — output EXACTLY the single token NO_CONTENT and nothing ` +
+      `else. Do NOT apologize, do NOT explain why, do NOT ask the user to paste ` +
+      `a URL or the text, do NOT ask any question. Just NO_CONTENT.`;
 
     // Tell the webview to clear the field and start streaming into it.
     void this.panel.webview.postMessage({ type: 'requirementLoadStart', source, ref });
@@ -2459,18 +2486,40 @@ export class WorkspaceWebview {
       const lower = raw.toLowerCase();
       // The summary sources are claude.ai *connectors* (Atlassian/GitHub/Drive),
       // authenticated interactively in the user's Claude session — a freshly
-      // spawned headless `claude` often can't reach them. Detect that (and the
-      // NO_CONTENT sentinel, anywhere in the output) and fail fast + clearly
-      // instead of streaming the apology text in as if it were the requirement.
-      const connectorIssue = /not connected|cannot authenticate|can'?t authenticate|isn'?t connected|not authenticated|no access to (jira|github|drive)/.test(lower)
-        || (/\bmcp\b/.test(lower) && /(not|isn'?t|un)\s*(connected|available|able|authenticat)/.test(lower));
+      // spawned headless `claude` often can't reach them. Despite the NO_CONTENT
+      // instruction, it sometimes apologizes + asks the user to paste instead.
+      // Catch the common refusal shapes (anywhere in the output) and fail fast +
+      // clearly instead of streaming the apology in as if it were the requirement.
+      // High-precision phrases only — a real 2-5 sentence requirement summary
+      // shouldn't contain these (e.g. "provide the export button" won't match the
+      // paste-the-<source> pattern, which requires jira/issue/url/ticket nearby).
+      const refusalSignals: RegExp[] = [
+        /\bno access to (jira|github|drive|the (jira|atlassian|github|drive|connector))/,
+        /\bnot connected\b/, /\bisn'?t connected\b/,
+        /\bcannot authenticate\b/, /\bcan'?t authenticate\b/, /\bnot authenticated\b/,
+        // First-person inability: "I don't have access to…", "I can't reach…", "I'm unable to fetch…"
+        /\bi(?:'m| am)?\s+(can'?t|cannot|could ?n'?t|do(?:n'?t| not)\s+have|am unable to|was unable to|unable to)\b.{0,40}\b(access|fetch|retrieve|reach|read|load|get|connect|tool|connector|mcp|jira|issue|ticket)/,
+        /\bunable to (access|fetch|retrieve|reach|read|load|connect)/,
+        // "the tool/connector/server/integration … (aren't|isn't|not) (currently) available/connected/authenticated"
+        /\b(tool|connector|server|integration|mcp)s?\b.{0,40}\b(aren'?t|isn'?t|is ?not|are ?not|not|un)\s*(currently\s+)?(available|connected|accessible|authenticated|reachable|enabled)/,
+        // "may need authentication", "needs to be authenticated"
+        /\b(may |might |it |that )?needs?\s+(to be )?(authenticat|to authenticat|sign|log)/,
+        // The assistant asking the user to help it fetch
+        /\bcould you (either|please)\b/,
+        /\b(paste|copy[- ]?paste|share|provide)\b.{0,20}\b(jira|issue|url|link|ticket|requirement|summary|description)\b/,
+      ];
+      const connectorIssue = refusalSignals.some((re) => re.test(lower));
       const hitMaxTurns = /reached max turns|max turns/.test(lower);
       const noContent = !raw || /\bno_content\b/i.test(raw);
       if (connectorIssue || hitMaxTurns || noContent || /^error[:\s]/i.test(raw)) {
         const label = SOURCE_LABEL[source] ?? 'source';
-        const enableHint = `Claude's ${label} connector isn't enabled for this project yet. `
-          + `Open this folder once in Claude Code (run \`claude\` here and accept the trust prompt) to enable its connectors — `
-          + `or just paste the requirement text into the description.`;
+        // The auto-fetch runs a headless `claude`, which only loads MCP servers
+        // from the CLI config (user/project scope) — NOT the claude.ai *app*
+        // connectors (those are interactive-only). So a working connector in the
+        // chat doesn't mean the headless fetch can see it. The fix is to add an
+        // CLI-scoped, OAuth-authenticated MCP server (no API token needed).
+        const enableHint = `Couldn't reach ${label}: the auto-fetch runs a headless \`claude\`, which only uses MCP servers in your CLI config — not the claude.ai app connectors. `
+          + `Add + authenticate a CLI-scoped ${label} MCP server once (run \`claude\` here → \`/mcp\` → authenticate; OAuth, no API token), then retry — or just paste the requirement text below.`;
         throw new Error(
           connectorIssue || noContent
             ? enableHint

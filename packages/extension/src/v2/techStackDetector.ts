@@ -130,3 +130,61 @@ function anyChildMatches(dir: string, pattern: RegExp): boolean {
 function anyFileMatches(dir: string, pattern: RegExp): boolean {
   return anyChildMatches(dir, pattern);
 }
+
+/**
+ * Detect a finer-grained framework key for a given primary stack, used to
+ * select a framework-specialized artifact template (`implement.web-react.md`)
+ * ahead of the coarse bucket (`implement.web.md`).
+ *
+ * Deliberately narrow — only the few "hot" frameworks that ship a specialized
+ * template today. Returns `null` when nothing more specific than the bucket is
+ * recognized (caller falls back to the coarse template). Add a case here only
+ * alongside a matching `<phase>.<primary>-<framework>.md` template.
+ */
+export function detectPrimaryFramework(root: string, primary: string | null): string | null {
+  if (!root || !primary || !fs.existsSync(root)) { return null; }
+
+  let deps: Record<string, string> = {};
+  try {
+    const pkgPath = path.join(root, 'package.json');
+    if (fs.existsSync(pkgPath)) {
+      const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8')) as Record<string, unknown>;
+      deps = {
+        ...(pkg.dependencies as Record<string, string> | undefined),
+        ...(pkg.devDependencies as Record<string, string> | undefined),
+        ...(pkg.peerDependencies as Record<string, string> | undefined),
+      };
+    }
+  } catch {
+    return null;
+  }
+  const has = (id: string): boolean => Object.prototype.hasOwnProperty.call(deps, id);
+
+  switch (primary) {
+    case 'web':
+      // React family (incl. Next.js / Remix) → the react template.
+      if (has('react') || has('next') || has('@remix-run/react')) { return 'react'; }
+      return null;
+    case 'backend':
+      // JS/TS HTTP frameworks → the node template.
+      if (
+        has('express') || has('fastify') || has('koa') || has('@nestjs/core') ||
+        has('hapi') || has('@hapi/hapi') || has('hono') || has('h3') || has('elysia')
+      ) { return 'node'; }
+      return null;
+    default:
+      return null;
+  }
+}
+
+/**
+ * Build the ordered, most-specific-first artifact-template lookup keys for a
+ * project: `['web-react', 'web']` when a React web app, `['web']` for a
+ * non-React web app, `[]` when no stack is known. The matching `core`
+ * `getBuiltinArtifactTemplates` tries each in turn, then the generic file.
+ */
+export function artifactLookupKeys(root: string, primary: string | null): string[] {
+  if (!primary) { return []; }
+  const fw = detectPrimaryFramework(root, primary);
+  return fw ? [`${primary}-${fw}`, primary] : [primary];
+}

@@ -1,3 +1,4 @@
+import * as fs from 'fs';
 import { Command } from 'commander';
 import chalk from 'chalk';
 import {
@@ -9,6 +10,8 @@ import {
   rejectStep,
   rerunStep,
   checkBudget,
+  verifyRun,
+  renderRunReport,
   PipelineRunError,
   RUN_ID_PATTERN,
   type RunState,
@@ -242,6 +245,62 @@ export function registerRun(program: Command): void {
     }, actionCmd: Command) => {
       const root = resolveWorkspaceRoot(actionCmd);
       await execLoop(root, runId, opts);
+    });
+
+  // ── verify ─────────────────────────────────────────────────────────────────
+  cmd
+    .command('verify <runId>')
+    .description('Re-check each step\'s recorded artifacts still exist (and pass produces_contains). Read-only drift check.')
+    .action((runId: string, _opts: unknown, actionCmd: Command) => {
+      const root     = resolveWorkspaceRoot(actionCmd);
+      const state    = requireRun(root, runId);
+      const pipeline = requirePipelineForRun(root, state);
+
+      const report = verifyRun({ state, pipeline, workspaceRoot: root });
+
+      if (report.ok) {
+        console.log(chalk.green('✔') + ` No drift — ${report.checked} step(s) with artifacts verified.`);
+        return;
+      }
+
+      console.error(chalk.red('✘') + ` Drift detected in ${report.drift.length} of ${report.checked} step(s):`);
+      for (const d of report.drift) {
+        console.error(chalk.yellow(`\n  Step ${d.stepIdx} (${d.agent}) — ${d.status}`));
+        for (const m of d.missing)        { console.error(chalk.dim(`    ✘ missing file:   ${m}`)); }
+        for (const m of d.missingMarkers) { console.error(chalk.dim(`    ✘ missing content: ${m}`)); }
+      }
+      process.exit(1);
+    });
+
+  // ── report ─────────────────────────────────────────────────────────────────
+  cmd
+    .command('report <runId>')
+    .description('Render the run history as Markdown (steps, revisions, durations, reject reasons, cost).')
+    .option('--format <fmt>', 'Output format: md (default) | json', 'md')
+    .option('--output <file>', 'Write to a file instead of stdout')
+    .action((runId: string, opts: { format?: string; output?: string }, actionCmd: Command) => {
+      const root     = resolveWorkspaceRoot(actionCmd);
+      const state    = requireRun(root, runId);
+      const pipeline = requirePipelineForRun(root, state);
+
+      const fmt = (opts.format ?? 'md').toLowerCase();
+      let out: string;
+      if (fmt === 'json') {
+        out = JSON.stringify(state, null, 2);
+      } else if (fmt === 'md' || fmt === 'markdown') {
+        out = renderRunReport({ state, pipeline });
+      } else {
+        console.error(chalk.red(`Unknown --format "${opts.format}". Use "md" or "json".`));
+        process.exit(1);
+        return;
+      }
+
+      if (opts.output) {
+        fs.writeFileSync(opts.output, out, 'utf8');
+        console.log(chalk.green('✔') + ` Wrote report to ${opts.output}`);
+      } else {
+        console.log(out);
+      }
     });
 }
 

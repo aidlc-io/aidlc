@@ -29,6 +29,7 @@ export {
   phaseArtifactFileName,
   getBuiltinArtifactTemplates,
   getSdlcArtifactTemplates,
+  resolvePrimaryStack,
   writeBuiltinAutoReviewValidators,
   BUILTIN_PRESET_IDS,
   isBuiltinPreset,

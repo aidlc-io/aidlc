@@ -126,6 +126,9 @@ export {
 } from './runs/PipelineRunner';
 export { checkBudget } from './runs/budget';
 export type { BudgetCheckArgs, BudgetVerdict } from './runs/budget';
+export { verifyRun } from './runs/verifyRun';
+export type { VerifyReport, StepDrift } from './runs/verifyRun';
+export { renderRunReport } from './runs/runReport';
 export { runAutoReview, AutoReviewerError } from './runs/AutoReviewer';
 export type { AutoReviewerContext, AutoReviewerFn } from './runs/AutoReviewer';
 export { resolvePath } from './runs/RunState';
@@ -159,11 +162,12 @@ export {
   phaseArtifactFileName,
   getBuiltinArtifactTemplates,
   getSdlcArtifactTemplates,
+  resolvePrimaryStack,
   writeBuiltinAutoReviewValidators,
   BUILTIN_PRESET_IDS,
   isBuiltinPreset,
 } from './presets/builtinWorkflows';
-export type { BuiltinWorkflow, WorkspacePreset as BuiltinWorkspacePreset, WorkspaceRecipe } from './presets/builtinWorkflows';
+export type { BuiltinWorkflow, WorkspacePreset as BuiltinWorkspacePreset, WorkspaceRecipe, ArtifactTemplateOptions } from './presets/builtinWorkflows';
 
 // Global ~/.claude install of built-in agent/skill files (shared by ext + CLI).
 export {
