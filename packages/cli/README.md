@@ -297,6 +297,25 @@ aidlc dashboard --host 0.0.0.0            # expose on LAN (use with care)
 Endpoints (handy for scripts): `GET /api/runs`, `GET /api/runs/:id`,
 `POST /api/action`, `GET /events` (SSE).
 
+### `monitor` — agent observability via agents-observe
+
+Checks the [agents-observe](https://github.com/simple10/agents-observe) plugin
+install, pins a stable data dir in `~/.claude/settings.json` (so the DB survives
+plugin upgrades), and prints live server status.
+
+```
+aidlc monitor                             # status check + pin data dir
+aidlc monitor --start                     # also launch the server if it's down
+aidlc monitor --open                      # open the dashboard in your browser
+aidlc monitor --json                      # machine-readable status (no writes)
+aidlc monitor --dry-run                   # show the settings.json change, don't write
+```
+
+`--start` uses Docker when available, otherwise falls back to the plugin's
+**local** runtime (no Docker required) — in local mode the terminal becomes the
+server's log window. The extension's **Start Monitor** button runs
+`aidlc monitor --start`.
+
 ## Recipes
 
 ### Drive a complete SDLC pipeline end-to-end

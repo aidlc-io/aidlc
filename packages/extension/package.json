@@ -1,8 +1,8 @@
 {
   "name": "aidlc",
   "displayName": "AIDLC",
-  "description": "Drive Claude through any pipeline declared in workspace.yaml — agents, skills, pipelines, and epics with sequential approve/reject/rerun runs, all from VS Code.",
-  "version": "1.2.0",
+  "description": "Drive Claude through any pipeline declared in workspace.yaml — agents, skills, pipelines, and epics with sequential approve/reject/rerun runs, plus a live Monitor for token usage and agent activity, all from VS Code.",
+  "version": "1.3.0",
   "publisher": "hueanmy",
   "license": "MIT",
   "repository": {
@@ -174,6 +174,12 @@
         "category": "AIDLC"
       },
       {
+        "command": "aidlc.openMonitor",
+        "title": "Open AIDLC Monitor (Token Usage + Agents)",
+        "icon": "$(pulse)",
+        "category": "AIDLC"
+      },
+      {
         "command": "aidlc.astGraph.openReport",
         "title": "Open AST Graph Report",
         "icon": "$(type-hierarchy)",
@@ -212,6 +218,18 @@
           "minimum": 1,
           "description": "Window the cost-suggestion engine scans (in days). Older logs are skipped — they don't reflect current habits."
         },
+        "aidlc.monitor.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show a status bar item that polls the agents-observe server and opens the unified Monitor panel (Token Usage + Agents). Has no effect when agents-observe isn't running."
+        },
+        "aidlc.monitor.pollIntervalSeconds": {
+          "type": "number",
+          "default": 10,
+          "minimum": 5,
+          "maximum": 300,
+          "description": "How often to poll the agents-observe server (GET /api/status) for the status bar and Monitor panel (seconds). Polling pauses while the window is unfocused."
+        },
         "aidlc.astGraph.enabled": {
           "type": "boolean",
           "default": true,
@@ -246,6 +264,11 @@
           "command": "aidlc.astGraph.openReport",
           "when": "view == aidlcSidebar",
           "group": "navigation@3"
+        },
+        {
+          "command": "aidlc.openMonitor",
+          "when": "view == aidlcSidebar",
+          "group": "navigation@4"
         }
       ]
     },

@@ -25,6 +25,7 @@ export default defineConfig({
         sidebar: resolve(__dirname, 'src/webview/sidebar/main.tsx'),
         workspace: resolve(__dirname, 'src/webview/workspace/main.tsx'),
         tokenReport: resolve(__dirname, 'src/webview/report/main.tsx'),
+        monitor: resolve(__dirname, 'src/webview/monitor/main.tsx'),
       },
       output: {
         format: 'es',
