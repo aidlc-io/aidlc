@@ -167,6 +167,31 @@ export interface TokenReportPanelState {
   windowDays: number;
 }
 
+/** Live snapshot of the agents-observe server, pushed to the Monitor panel. */
+export interface AgentObserveStatus {
+  serverUp: boolean;
+  version: string | null;
+  runtime: string | null;
+  /** Live consumers — Claude Code sessions currently reporting events. */
+  activeConsumers: number | null;
+  /** Dashboard browser tabs currently connected. */
+  activeClients: number | null;
+  /** Total sessions recorded in the db. */
+  sessionCount: number | null;
+  /** Total events recorded in the db. */
+  eventCount: number | null;
+  error?: string;
+}
+
+/** State for the "Agents" tab of the unified Monitor panel. */
+export interface MonitorAgentsState {
+  status: AgentObserveStatus;
+  dashboardUrl: string;
+  dataDir: string;
+}
+
+export type MonitorTab = 'tokens' | 'agents';
+
 export interface SidebarState {
   hasFolder: boolean;
   workspaceName: string;
@@ -431,6 +456,7 @@ declare global {
   interface Window {
     __AIDLC_INITIAL_STATE__?: SidebarState | WorkspaceState;
     __AIDLC_INITIAL_THEME__?: ThemeMode;
+    __AIDLC_MONITOR_TAB__?: MonitorTab;
     BRAND_ICON_URI?: string;
     EXTENSION_VERSION?: string;
     acquireVsCodeApi?: () => VsCodeApi;

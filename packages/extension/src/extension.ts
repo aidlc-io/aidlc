@@ -21,6 +21,7 @@ import { registerV2WorkspaceCommands } from './v2/workspaceCommands';
 import { SidebarWebviewProvider } from './v2/sidebarWebview';
 import { themeManager } from './v2/themeManager';
 import { registerTokenMonitor } from './v2/tokenMonitor';
+import { registerAidlcMonitor } from './v2/aidlcMonitor';
 import { registerAstGraph } from './v2/astGraph';
 import { WORKSPACE_DIR, WORKSPACE_FILENAME } from '@aidlc/core';
 
@@ -137,6 +138,11 @@ export function activate(context: vscode.ExtensionContext): void {
   // Token monitor — reads ~/.claude/projects/*.jsonl and shows today/month spend.
   // Ported from claude-token-monitor (https://github.com/novapizza/claude-token-monitor).
   registerTokenMonitor(context, output, context.extensionUri);
+
+  // AIDLC Monitor — optional agent observability via agents-observe. Adds a
+  // status bar item that polls the observe server and a unified Monitor panel
+  // (Token Usage / Agents tabs). No-op surface when the server isn't running.
+  registerAidlcMonitor(context, output, context.extensionUri);
 
   // AST graph — auto-downloads ast-graph CLI, scans workspace in the
   // background, registers it as a Claude MCP server so Claude can read

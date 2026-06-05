@@ -9,6 +9,7 @@ Drive Claude through any pipeline you declare in a single `workspace.yaml` — v
 - **Workspace Builder** — main-area panel with agent / skill / pipeline cards, reorder, on-failure toggle, inline skill editor
 - **Epics & runs** — bind a pipeline to a work item, then walk it step-by-step. **Approve** advances; **reject** cascades feedback to the producing step (auto-resets downstream); **rerun** with optional new context. Runs display by **step name**, not agent name
 - **Smart Start Epic** — describe the work in one line and AIDLC suggests a task-type **recipe** (`bugfix`, `small-feature`, `refactor`, `feature-parallel`, `large-feature`, `spike`) and assembles the pipeline. No pipeline yet? Load the SDLC example or create one inline. Older workspaces get recipes back-filled automatically
+- **AIDLC Monitor** — a status bar item plus a panel with **Token Usage** and **Agents** tabs. The Agents tab embeds the [agents-observe](https://github.com/simple10/agents-observe) dashboard to watch live agent sessions and history. When the server is down it offers a one-click **Start Monitor** (Docker if available, otherwise a local runtime — no Docker required)
 - **Sidebar webview** — clickable **Agents / Skills / Flows / Epics** tiles that open the matching view, plus live counts and active runs
 - **Load Demo Project** — one click drops a full SDLC pipeline + 6 sample epics into `.aidlc/`, no YAML to write
 - **Add Skill wizard** — 4 sources: load template, paste markdown, upload a `.md` file, or open a blank file. Starter templates: hello-world, code-reviewer, test-converter, doc-writer, release-notes
@@ -52,6 +53,7 @@ All commands are available via `Cmd+Shift+P` (or `Ctrl+Shift+P`):
 |---------|-------------|
 | `AIDLC: Load Demo Project (full pipeline + 6 epics)` | Drop a complete demo workspace into the open folder |
 | `AIDLC: Open Workspace Builder` | Visual builder for agents, skills, and pipelines |
+| `AIDLC: Open AIDLC Monitor (Token Usage + Agents)` | Live token-usage and agent-observability panel |
 | `AIDLC: Init Sample Workspace` | Scaffold an empty `.aidlc/workspace.yaml` + sample skill |
 | `AIDLC: Show Workspace Config` | Dump parsed workspace.yaml to the AIDLC output channel |
 | `AIDLC: Add Skill (template / paste / upload / blank)` | Add a new skill from one of four sources |

@@ -1,6 +1,6 @@
 {
   "name": "aidlc",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "AIDLC terminal CLI — drive workspace.yaml pipelines with Claude from any terminal.",
   "license": "MIT",
   "repository": {
