@@ -20,13 +20,21 @@
     "workflow",
     "automation",
     "pipeline",
-    "workspace"
+    "workspace",
+    "claude-code",
+    "anthropic",
+    "sdlc",
+    "devops",
+    "orchestration"
   ],
   "engines": {
     "vscode": "^1.85.0"
   },
   "categories": [
-    "Other"
+    "AI",
+    "Chat",
+    "Machine Learning",
+    "Visualization"
   ],
   "main": "./out/extension.js",
   "contributes": {
