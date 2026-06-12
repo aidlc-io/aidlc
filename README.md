@@ -1,8 +1,19 @@
 # AIDLC
 
+**See what AI is building. Drive Claude through any pipeline you declare — and track every run, step, and token.**
+
+[![VS Code Marketplace](https://img.shields.io/badge/VS%20Code%20Marketplace-Install-2b6cb0)](https://marketplace.visualstudio.com/items?itemName=hueanmy.aidlc)
+[![Open VSX](https://img.shields.io/open-vsx/v/hueanmy/aidlc?label=Open%20VSX&color=a259e6)](https://open-vsx.org/extension/hueanmy/aidlc)
+[![License: MIT](https://img.shields.io/badge/license-MIT-97ca00)](LICENSE)
+[![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/hueanmy)
+
 AI-driven SDLC + agent workflow runner — drives Claude through any pipeline you
 declare in `.aidlc/workspace.yaml`. Use it through the VS Code Builder UI or
-straight from the terminal.
+straight from the terminal. The built-in **AIDLC Monitor** shows token usage,
+live agent observability, and a native session-insights dashboard built from
+the Claude Code transcript.
+
+![aidlc demo](packages/extension/media/demo.gif)
 
 This is a **monorepo** managed with [pnpm workspaces](https://pnpm.io/workspaces).
 
@@ -10,7 +21,7 @@ This is a **monorepo** managed with [pnpm workspaces](https://pnpm.io/workspaces
 
 | Package | Path | Purpose |
 |---|---|---|
-| [`aidlc`](packages/extension/) (extension) | `packages/extension/` | VS Code extension. Builder UI for `workspace.yaml`, sidebar for active runs, run-state commands. Marketplace + Open VSX as `hueanmy.aidlc`. |
+| [`aidlc`](packages/extension/) (extension) | `packages/extension/` | VS Code extension. Builder UI for `workspace.yaml`, sidebar for active runs, run-state commands, and the **AIDLC Monitor** (token usage + session insights + live agent observability). Marketplace + Open VSX as `hueanmy.aidlc`. |
 | [`@aidlc/core`](packages/core/) | `packages/core/` | Pure-TypeScript engine: Zod schema, workspace loader, runner registry (`DefaultRunner` shells out to `claude`), pipeline state machine. **No `import 'vscode'`** — runs identically in CLI / tests / cloud. |
 | [`aidlc`](packages/cli/) (CLI) | `packages/cli/` | Standalone terminal CLI. Manages `workspace.yaml`, drives runs end-to-end via Claude, no VS Code required. See [packages/cli/README.md](packages/cli/README.md). |
 
@@ -50,6 +61,7 @@ aidlc run exec <runId> --auto-approve
 aidlc watch                             # live-rendered table of all runs
 aidlc tail                              # one-line stream of state transitions
 aidlc dashboard                         # browser UI on http://127.0.0.1:8787
+aidlc monitor --start                   # agent observability (agents-observe), auto-installs the plugin
 ```
 
 ### 5. Watch from VS Code
@@ -90,6 +102,22 @@ aidlc preset   apply | save | list                  # built-ins: code-review, re
 ```
 aidlc epic list [--status pending|in_progress|done|failed] [--json]
 aidlc epic status <id>        # phase-by-phase view of one epic
+aidlc epic start <id> --brief "…" [--llm]   # classify the task → recipe → assembled pipeline
+```
+
+### Recipes (task-type pipeline assembly)
+```
+aidlc recipe init                     # back-fill built-in recipes into older workspaces
+aidlc pipeline recipes                # list recipes (bugfix, small-feature, refactor, …)
+aidlc pipeline classify "<brief>"     # which recipe fits this task
+aidlc pipeline generate               # assemble a pipeline from a recipe into workspace.yaml
+```
+
+### Monitoring & observability
+```
+aidlc monitor                 # agents-observe plugin status + pin stable data dir
+aidlc monitor --start         # launch the observe server (offers plugin auto-install; Docker or local runtime)
+aidlc monitor --open          # open the dashboard in the browser
 ```
 
 ### Run lifecycle (sequential, mirrors the upstream PipelineRunner)
@@ -170,6 +198,10 @@ neither side ever sees a half-written run state.
 
 - **VS Code Marketplace**: [hueanmy.aidlc](https://marketplace.visualstudio.com/items?itemName=hueanmy.aidlc)
 - **Open VSX**: [hueanmy.aidlc](https://open-vsx.org/extension/hueanmy/aidlc)
+
+## Sponsor
+
+If AIDLC saves you time, consider [sponsoring on GitHub](https://github.com/sponsors/hueanmy) ❤️ — it keeps the extension, the CLI, and the monitor maintained.
 
 ## License
 

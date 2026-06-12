@@ -1,10 +1,13 @@
 {
   "name": "aidlc",
   "displayName": "AIDLC",
-  "description": "Drive Claude through any pipeline declared in workspace.yaml — agents, skills, pipelines, and epics with sequential approve/reject/rerun runs, plus a live Monitor for token usage and agent activity, all from VS Code.",
-  "version": "1.3.1",
+  "description": "Drive Claude through any pipeline declared in workspace.yaml — agents, skills, pipelines, and epics with approve/reject/rerun runs, plus an AIDLC Monitor with token usage, live agent observability, and a native session-insights dashboard, all from VS Code.",
+  "version": "1.3.2",
   "publisher": "hueanmy",
   "license": "MIT",
+  "sponsor": {
+    "url": "https://github.com/sponsors/hueanmy"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/aidlc-io/aidlc"
@@ -175,7 +178,7 @@
       },
       {
         "command": "aidlc.openMonitor",
-        "title": "Open AIDLC Monitor (Token Usage + Agents)",
+        "title": "Open AIDLC Monitor (Token Usage + Insights + Agents)",
         "icon": "$(pulse)",
         "category": "AIDLC"
       },
