@@ -1,5 +1,8 @@
 # aidlc
 
+[![License: MIT](https://img.shields.io/badge/license-MIT-97ca00)](https://github.com/aidlc-io/aidlc/blob/main/LICENSE)
+[![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/hueanmy)
+
 Terminal CLI for AIDLC — drives Claude through pipelines you declare in
 `.aidlc/workspace.yaml`. Manages the workspace, executes runs end-to-end via
 the `claude` CLI, and shares state with the VS Code extension over the
@@ -132,6 +135,10 @@ aidlc pipeline add --id <id> --steps agent1,agent2,agent3
 aidlc pipeline list [--json]
 aidlc pipeline show <id>                                   # numbered step graph
 aidlc pipeline remove <id>
+aidlc pipeline recipes                                     # list task-type recipes (bugfix, refactor, …)
+aidlc pipeline classify "<brief>"                          # which recipe fits this task
+aidlc pipeline generate                                    # assemble a pipeline from a recipe
+aidlc recipe init                                          # back-fill built-in recipes into older workspaces
 ```
 
 ### Presets
@@ -155,7 +162,14 @@ under whatever `state.root` your `workspace.yaml` declares (default
 aidlc epic list [--status pending|in_progress|done|failed] [--json]
 aidlc epic status <id> [--json]                 # phase-by-phase view
 aidlc epic show <id>                            # alias for status
+aidlc epic start <id> --brief "…" [--llm]       # classify the brief → recipe → assembled pipeline
+aidlc epic start <id> --recipe <recipeId>       # or pick the recipe yourself
+aidlc epic start <id> --pipeline <pipelineId>   # or use an existing pipeline as-is
 ```
+
+`epic start` mirrors the extension's smart **Start Epic**: `--brief` classifies
+the requirement into a task-type recipe (heuristic by default, `--llm` for
+model-backed classification) and assembles a right-sized pipeline.
 
 In v2 an **epic** is a domain entity persisted on disk (one folder per epic
 with a `state.json`); it's distinct from a pipeline **run**. An epic can exist
@@ -311,10 +325,14 @@ aidlc monitor --json                      # machine-readable status (no writes)
 aidlc monitor --dry-run                   # show the settings.json change, don't write
 ```
 
+When the plugin isn't installed, `--start` offers to **auto-install** it (with
+confirmation) instead of only printing manual steps; `monitor` also
+distinguishes a plugin that is installed-but-failed-to-load from a healthy one.
 `--start` uses Docker when available, otherwise falls back to the plugin's
 **local** runtime (no Docker required) — in local mode the terminal becomes the
-server's log window. The extension's **Start Monitor** button runs
-`aidlc monitor --start`.
+server's log window, and `npm install` is pinned to the public npm registry so
+it never inherits a private registry default. The extension's **Start Monitor**
+button runs `aidlc monitor --start`.
 
 ## Recipes
 
@@ -407,6 +425,10 @@ Runs and presets are local-only — gitignore `.aidlc/runs/` and
 | `aidlc run start` rejects the runId | RunIds must match `^[A-Za-z0-9][A-Za-z0-9._-]*$`. No spaces, no leading dashes. |
 | Pipeline step appears as a string in YAML, but I edited it as an object | Both forms are valid. The CLI writes string form when there's no metadata, object form when there's `human_review` or `produces`. |
 | Custom runner not loading | `runner_path` must be `.js` / `.cjs` / `.mjs` (no TypeScript yet). Run `aidlc doctor` to check the file resolves. |
+
+## Sponsor
+
+If AIDLC saves you time, consider [sponsoring on GitHub](https://github.com/sponsors/hueanmy) ❤️ — it keeps the extension, the CLI, and the monitor maintained.
 
 ## License
 

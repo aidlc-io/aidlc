@@ -1,15 +1,24 @@
 # AIDLC
 
+**See what AI is building. Drive Claude through any pipeline you declare — and track every run, step, and token.**
+
+[![VS Code Marketplace](https://img.shields.io/badge/VS%20Code%20Marketplace-Install-2b6cb0)](https://marketplace.visualstudio.com/items?itemName=hueanmy.aidlc)
+[![Open VSX](https://img.shields.io/open-vsx/v/hueanmy/aidlc?label=Open%20VSX&color=a259e6)](https://open-vsx.org/extension/hueanmy/aidlc)
+[![License: MIT](https://img.shields.io/badge/license-MIT-97ca00)](https://github.com/aidlc-io/aidlc/blob/main/LICENSE)
+[![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/hueanmy)
+
 Drive Claude through any pipeline you declare in a single `workspace.yaml` — visually from VS Code, or from the terminal. Agents, skills, pipelines, and epics share one source of truth; both surfaces stay in sync within ~200ms.
 
-![aidlc demo](https://raw.githubusercontent.com/aidlc-io/aidlc/v0.8.5/packages/extension/media/demo.gif)
+![aidlc demo](https://raw.githubusercontent.com/aidlc-io/aidlc/main/packages/extension/media/demo.gif)
 
 ## Features
 
 - **Workspace Builder** — main-area panel with agent / skill / pipeline cards, reorder, on-failure toggle, inline skill editor
 - **Epics & runs** — bind a pipeline to a work item, then walk it step-by-step. **Approve** advances; **reject** cascades feedback to the producing step (auto-resets downstream); **rerun** with optional new context. Runs display by **step name**, not agent name
 - **Smart Start Epic** — describe the work in one line and AIDLC suggests a task-type **recipe** (`bugfix`, `small-feature`, `refactor`, `feature-parallel`, `large-feature`, `spike`) and assembles the pipeline. No pipeline yet? Load the SDLC example or create one inline. Older workspaces get recipes back-filled automatically
-- **AIDLC Monitor** — a status bar item plus a panel with **Token Usage** and **Agents** tabs. The Agents tab embeds the [agents-observe](https://github.com/simple10/agents-observe) dashboard to watch live agent sessions and history. When the server is down it offers a one-click **Start Monitor** (Docker if available, otherwise a local runtime — no Docker required)
+- **AIDLC Monitor** — a status bar item plus a panel with **Token Usage**, **Insights**, and **Agents** tabs. The Agents tab embeds the [agents-observe](https://github.com/simple10/agents-observe) dashboard to watch live agent sessions and history. When the server is down it offers a one-click **Start Monitor** that can auto-install the plugin (Docker if available, otherwise a local runtime — no Docker required)
+- **Session Insights** — a native dashboard built entirely from the Claude Code transcript (`~/.claude/projects/**.jsonl`) — no plugin, no server, no Docker. Session picker plus seven panels: overview, context+cache chart over turns, hooks (with errors), agents/subagents, prompts, context management (compactions / peak / file edits), retrieval and tool usage. Updates live while a session runs
+- **Live OTel strip** — a minimal OTLP/JSON receiver for Claude Code's native telemetry, with one-click "enable telemetry" that writes the env to `~/.claude/settings.json`
 - **Sidebar webview** — clickable **Agents / Skills / Flows / Epics** tiles that open the matching view, plus live counts and active runs
 - **Load Demo Project** — one click drops a full SDLC pipeline + 6 sample epics into `.aidlc/`, no YAML to write
 - **Add Skill wizard** — 4 sources: load template, paste markdown, upload a `.md` file, or open a blank file. Starter templates: hello-world, code-reviewer, test-converter, doc-writer, release-notes
@@ -53,7 +62,7 @@ All commands are available via `Cmd+Shift+P` (or `Ctrl+Shift+P`):
 |---------|-------------|
 | `AIDLC: Load Demo Project (full pipeline + 6 epics)` | Drop a complete demo workspace into the open folder |
 | `AIDLC: Open Workspace Builder` | Visual builder for agents, skills, and pipelines |
-| `AIDLC: Open AIDLC Monitor (Token Usage + Agents)` | Live token-usage and agent-observability panel |
+| `AIDLC: Open AIDLC Monitor (Token Usage + Insights + Agents)` | Token usage, native session insights, and live agent observability |
 | `AIDLC: Init Sample Workspace` | Scaffold an empty `.aidlc/workspace.yaml` + sample skill |
 | `AIDLC: Show Workspace Config` | Dump parsed workspace.yaml to the AIDLC output channel |
 | `AIDLC: Add Skill (template / paste / upload / blank)` | Add a new skill from one of four sources |
@@ -73,6 +82,10 @@ All commands are available via `Cmd+Shift+P` (or `Ctrl+Shift+P`):
 - A workspace folder (single-file mode is not supported)
 - The Claude CLI on `PATH` for the default runner
 - Node.js 20+ to compile from source
+
+## Sponsor
+
+If AIDLC saves you time, consider [sponsoring on GitHub](https://github.com/sponsors/hueanmy) ❤️ — it keeps the extension, the CLI, and the monitor maintained.
 
 ## License
 
