@@ -5,7 +5,7 @@ import chalk from 'chalk';
 import { validateWorkspace, WorkspaceLoader } from '@aidlc/core';
 import { requireYaml, writeYaml, existingIds } from '../yamlIO';
 import { resolveWorkspaceRoot } from '../workspaceRoot';
-import { parseContext, loadAgentSkills, formatSkillsList } from '../runHelpers';
+import { resolveContext, collectOption, loadAgentSkills, formatSkillsList } from '../runHelpers';
 
 export function registerAgent(program: Command): void {
   const cmd = program.command('agent').description('Manage agents in workspace.yaml');
@@ -146,10 +146,11 @@ export function registerAgent(program: Command): void {
     .command('run <id>')
     .description('One-shot: run an agent directly without creating a run state file')
     .option('--message <text>', 'User message sent to claude (what to do)')
-    .option('--context <pairs>', 'Context key=value pairs, comma-separated (e.g. epic=ABC-123)')
+    .option('--context <pairs>', 'Context key=value pairs (repeatable; each may be comma-separated)', collectOption, [])
+    .option('--context-file <path>', 'read context from a JSON object or key=value lines file')
     .option('--dry-run', 'Print the assembled prompt without spawning claude')
     .action(async (id: string, opts: {
-      message?: string; context?: string; dryRun?: boolean;
+      message?: string; context?: string[]; contextFile?: string; dryRun?: boolean;
     }, actionCmd: Command) => {
       const root = resolveWorkspaceRoot(actionCmd);
 
@@ -178,7 +179,7 @@ export function registerAgent(program: Command): void {
       }
 
       const env = ws.envResolver.resolveLayered(ws.config.environment ?? {}, agent.env ?? {});
-      const context = opts.context ? parseContext(opts.context) : {};
+      const context = resolveContext(opts);
       const contextStr = Object.entries(context).map(([k, v]) => `${k}=${v}`).join(' ');
       const userMessage = opts.message ?? (contextStr || `Run agent: ${id}`);
 

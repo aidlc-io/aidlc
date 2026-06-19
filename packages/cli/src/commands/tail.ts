@@ -14,12 +14,27 @@ interface Snapshot {
   steps: Array<{ status: StepRecord['status']; revision: number; rejectReason?: string }>;
 }
 
+/**
+ * Emit a transition either as a human-readable chalk line (default) or as one
+ * NDJSON object per line (`--json`). In JSON mode stdout is a clean event
+ * stream — pipe it into `jq`, a Slack notifier, or a downstream trigger.
+ */
+function out(json: boolean, human: () => void, event: Record<string, unknown>): void {
+  if (json) {
+    process.stdout.write(JSON.stringify({ ts: new Date().toISOString(), ...event }) + '\n');
+  } else {
+    human();
+  }
+}
+
 export function registerTail(program: Command): void {
   program
     .command('tail [runId]')
     .description('Stream state transitions as they happen (Ctrl+C to stop)')
-    .action((runId: string | undefined, _opts: unknown, cmd: Command) => {
+    .option('--json', 'Emit one NDJSON event per transition instead of chalk lines')
+    .action((runId: string | undefined, opts: { json?: boolean }, cmd: Command) => {
       const root = resolveWorkspaceRoot(cmd);
+      const json = !!opts.json;
       const watchPath = path.join(root, RUNS_GLOB);
 
       // Seed with current state so we don't print every existing run as new
@@ -29,20 +44,32 @@ export function registerTail(program: Command): void {
         seen.set(run.runId, snapshot(run));
       }
 
-      const focus = runId ? chalk.bold(runId) : chalk.bold('all runs');
-      console.log(chalk.dim(`tailing ${focus}  ·  ${root}  (Ctrl+C to stop)\n`));
+      if (!json) {
+        const focus = runId ? chalk.bold(runId) : chalk.bold('all runs');
+        console.log(chalk.dim(`tailing ${focus}  ·  ${root}  (Ctrl+C to stop)\n`));
 
-      if (seen.size === 0) {
-        console.log(chalk.dim('No runs to watch yet.  Try: aidlc run start <pipelineId>'));
+        if (seen.size === 0) {
+          console.log(chalk.dim('No runs to watch yet.  Try: aidlc run start <pipelineId>'));
+        } else {
+          for (const [id, snap] of seen) {
+            const cur = snap.steps[snap.currentStepIdx];
+            console.log(
+              chalk.dim(`[${time()}] `) + chalk.bold(id) +
+              chalk.dim(` already at step ${snap.currentStepIdx} (${cur ? cur.status : '?'})`),
+            );
+          }
+          console.log();
+        }
       } else {
+        // JSON mode: emit the initial state as `seed` events so a consumer
+        // starting mid-run knows where each run already is.
         for (const [id, snap] of seen) {
           const cur = snap.steps[snap.currentStepIdx];
-          console.log(
-            chalk.dim(`[${time()}] `) + chalk.bold(id) +
-            chalk.dim(` already at step ${snap.currentStepIdx} (${cur ? cur.status : '?'})`),
-          );
+          out(true, () => {}, {
+            event: 'seed', runId: id, runStatus: snap.status,
+            stepIdx: snap.currentStepIdx, stepStatus: cur ? cur.status : null,
+          });
         }
-        console.log();
       }
 
       const watcher = chokidar.watch(watchPath, {
@@ -51,9 +78,9 @@ export function registerTail(program: Command): void {
         awaitWriteFinish: { stabilityThreshold: 80, pollInterval: 30 },
       });
 
-      watcher.on('add',    (filePath: string) => onChange(root, filePath, seen, runId, 'add'));
-      watcher.on('change', (filePath: string) => onChange(root, filePath, seen, runId, 'change'));
-      watcher.on('unlink', (filePath: string) => onUnlink(filePath, seen));
+      watcher.on('add',    (filePath: string) => onChange(root, filePath, seen, runId, 'add', json));
+      watcher.on('change', (filePath: string) => onChange(root, filePath, seen, runId, 'change', json));
+      watcher.on('unlink', (filePath: string) => onUnlink(filePath, seen, json));
 
       process.on('SIGINT', () => {
         void watcher.close().then(() => process.exit(0));
@@ -67,6 +94,7 @@ function onChange(
   seen: Map<string, Snapshot>,
   filterId: string | undefined,
   evt: 'add' | 'change',
+  json: boolean,
 ): void {
   const id = path.basename(filePath, '.json');
   if (filterId && id !== filterId) { return; }
@@ -81,40 +109,46 @@ function onChange(
   // First-seen file: print one summary line, no diff
   if (!prev || evt === 'add') {
     const cur = next.steps[next.currentStepIdx];
-    console.log(
+    out(json, () => console.log(
       chalk.dim(`[${time()}] `) + chalk.green('NEW') + ' ' + chalk.bold(id) +
       chalk.dim(` step ${next.currentStepIdx} (${cur ? cur.status : '?'})`),
-    );
+    ), {
+      event: 'run_new', runId: id, runStatus: next.status,
+      stepIdx: next.currentStepIdx, stepStatus: cur ? cur.status : null,
+    });
     return;
   }
 
   // Diff snapshots, print one line per change
-  printDiff(id, prev, next);
+  printDiff(id, prev, next, json);
 }
 
-function onUnlink(filePath: string, seen: Map<string, Snapshot>): void {
+function onUnlink(filePath: string, seen: Map<string, Snapshot>, json: boolean): void {
   const id = path.basename(filePath, '.json');
   if (seen.has(id)) {
     seen.delete(id);
-    console.log(chalk.dim(`[${time()}] `) + chalk.red('GONE') + ' ' + chalk.bold(id));
+    out(json,
+      () => console.log(chalk.dim(`[${time()}] `) + chalk.red('GONE') + ' ' + chalk.bold(id)),
+      { event: 'run_gone', runId: id },
+    );
   }
 }
 
-function printDiff(runId: string, prev: Snapshot, next: Snapshot): void {
+function printDiff(runId: string, prev: Snapshot, next: Snapshot, json: boolean): void {
   // Run-level status change
   if (prev.status !== next.status) {
-    console.log(
+    out(json, () => console.log(
       chalk.dim(`[${time()}] `) + chalk.bold(runId) + ' run ' +
       chalk.dim(prev.status) + ' → ' + colorRunStatus(next.status),
-    );
+    ), { event: 'run_status', runId, from: prev.status, to: next.status });
   }
 
   // Pointer change
   if (prev.currentStepIdx !== next.currentStepIdx) {
-    console.log(
+    out(json, () => console.log(
       chalk.dim(`[${time()}] `) + chalk.bold(runId) +
       chalk.dim(` pointer ${prev.currentStepIdx} → ${next.currentStepIdx}`),
-    );
+    ), { event: 'pointer', runId, from: prev.currentStepIdx, to: next.currentStepIdx });
   }
 
   // Per-step status / revision changes
@@ -126,16 +160,16 @@ function printDiff(runId: string, prev: Snapshot, next: Snapshot): void {
 
     if (a.status !== b.status) {
       const reason = b.rejectReason ? chalk.red(`  ✘ ${b.rejectReason.slice(0, 60)}`) : '';
-      console.log(
+      out(json, () => console.log(
         chalk.dim(`[${time()}] `) + chalk.bold(runId) +
         chalk.dim(` step ${i} ${colorStatus(a.status)} → `) + colorStatus(b.status) + reason,
-      );
+      ), { event: 'step_status', runId, stepIdx: i, from: a.status, to: b.status, rejectReason: b.rejectReason });
     }
     if (a.revision !== b.revision) {
-      console.log(
+      out(json, () => console.log(
         chalk.dim(`[${time()}] `) + chalk.bold(runId) +
         chalk.dim(` step ${i} revision ${a.revision} → ${b.revision}`),
-      );
+      ), { event: 'step_revision', runId, stepIdx: i, from: a.revision, to: b.revision });
     }
   }
 }

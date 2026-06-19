@@ -56,6 +56,7 @@ Global flags available on every subcommand:
 | Flag | Default | Purpose |
 |---|---|---|
 | `-w, --workspace <path>` | `cwd` | Workspace root (containing `.aidlc/`). Also reads `AIDLC_WORKSPACE` env. |
+| `-q, --quiet` | off | Suppress decorative progress output (errors and `--json` still print). |
 
 ### `guide` — getting-started reference
 
@@ -90,24 +91,27 @@ Idempotent — skips anything that already exists.
 ### `doctor` — health check
 
 ```
-aidlc doctor
+aidlc doctor [--json]
 ```
 
 Verifies `workspace.yaml` parses + Zod-validates, `claude` binary is on PATH,
 authentication works, all skill paths exist, custom runner files exist, and
-run-state JSON files are parseable. Exit 1 on any failure.
+run-state JSON files are parseable. Exit 1 on any failure (including skill /
+runner / runtime checks). `--json` emits every section as
+`{ ok, failures, sections }` — a parseable CI preflight.
 
 ### `validate` — schema + cross-reference check
 
 ```
-aidlc validate [--strict]
+aidlc validate [--strict] [--json]
 ```
 
 Stricter than the `doctor` workspace section: enumerates every Zod issue with
 its `path[]` for editor jump-to-line. Also reports dangling cross-references
 (a pipeline step naming an undefined agent, an agent listing a missing skill, a
 recipe pointing at an unknown pipeline/step) as warnings. Pass `--strict` to
-exit non-zero on those too — handy as a CI gate.
+exit non-zero on those too — handy as a CI gate. `--json` emits the structured
+result (`{ ok, configPath, counts, refIssues }`).
 
 ### `list` — print workspace contents
 
@@ -210,7 +214,7 @@ These wrap `@aidlc/core`'s `PipelineRunner` and write atomically through
 `RunStateStore`. The VS Code sidebar updates within ~200ms.
 
 ```
-aidlc run start <pipelineId> [--id <runId>] [--context k=v,k=v]
+aidlc run start <pipelineId> [--id <runId>] [--context k=v ...] [--context-file <path>]
 aidlc run mark-done <runId>             # validates produces paths, advances or awaits review
 aidlc run approve   <runId> [--comment "…"]
 aidlc run reject    <runId> --reason "…"
@@ -218,10 +222,17 @@ aidlc run rerun     <runId> [--feedback "…"]
 aidlc run request-update <runId> <step> [--feedback "…"]  # reopen an already-approved step for changes
 aidlc run delete    <runId> [--force]
 aidlc run open      <runId> [--path]    # prints state.json content (or just file path)
-aidlc run exec      <runId> [--until <step>] [--auto-approve] [--message "…"] [--dry-run]
-aidlc run verify    <runId>             # re-checks recorded artifacts still exist + pass produces_contains
+aidlc run exec      <runId> [--until <step>] [--auto-approve] [--require-complete] [--json] [--dry-run]
+aidlc run verify    <runId> [--json]    # re-checks recorded artifacts still exist + pass produces_contains
 aidlc run report    <runId> [--format md|json] [--output <file>]  # shareable run history (Markdown/JSON)
 ```
+
+**Exit codes for `run exec`** (so CI can branch): `0` completed (or stopped at
+`--until`, or `--dry-run`), `2` paused on a gate (awaiting review / rejected /
+budget), `1` error. `--require-complete` maps any non-completed outcome to `1`.
+`--json` prints a final summary object to stdout (claude's stream goes to stderr).
+See [AUTOMATION.md](AUTOMATION.md) for the full headless guide +
+a GitHub Action recipe.
 
 **`run verify`** is a read-only post-run drift check: a `completed` run still
 claims its artifacts exist, but someone may have since deleted or gutted one.
@@ -318,7 +329,11 @@ change instead of redrawing a table. Useful for CI logs or piping.
 ```
 aidlc tail                                # all runs
 aidlc tail <runId>                        # one run
+aidlc tail [runId] --json                 # one NDJSON event per transition (pipe into jq / a notifier)
 ```
+
+`--json` events: `seed`, `run_new`, `run_status`, `pointer`, `step_status`,
+`step_revision`, `run_gone` — each with `ts` and `runId`.
 
 Output shape:
 

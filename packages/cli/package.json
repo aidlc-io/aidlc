@@ -31,7 +31,8 @@
   "files": [
     "dist/bundle.js",
     "dist/templates",
-    "README.md"
+    "README.md",
+    "AUTOMATION.md"
   ],
   "scripts": {
     "compile": "tsc -p ./",
