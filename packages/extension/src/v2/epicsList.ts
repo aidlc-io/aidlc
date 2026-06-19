@@ -151,25 +151,32 @@ export function listEpics(workspaceRoot: string, doc: YamlDocument | null): Epic
     try {
       runState = RunStateStore.load(workspaceRoot, epicId);
     } catch { /* invalid runId — treat as no run */ }
-    const runStepByAgent = new Map<string, StepStatus>();
-    const runRejectByAgent = new Map<string, string>();
-    const runVerdictByAgent = new Map<string, AutoReviewVerdict>();
-    const runHistoryByAgent = new Map<string, StepHistoryEntry[]>();
-    const runFeedbackByAgent = new Map<string, string>();
+    // Overlay run-state keyed by step *index*, not agent id. A single agent
+    // (persona) can own several steps in a pipeline — e.g. the `qa` persona
+    // in `sdlc-parallel-full` owns test-plan, generate-test-cases, and
+    // execute-test. Keying by agent collapses those into one entry
+    // (last-writer-wins), so a mid-pipeline step that is genuinely
+    // `awaiting_work` inherits a trailing step's `pending` status and loses
+    // its "Mark step done" affordance (issue #57). RunState.steps has one
+    // ordered entry per pipeline step with an explicit `stepIdx` that aligns
+    // with both stepStatesRaw[i] and pipelineCfg.steps[i].
+    const runStepByIdx = new Map<number, StepStatus>();
+    const runRejectByIdx = new Map<number, string>();
+    const runVerdictByIdx = new Map<number, AutoReviewVerdict>();
+    const runHistoryByIdx = new Map<number, StepHistoryEntry[]>();
+    const runFeedbackByIdx = new Map<number, string>();
     if (runState) {
       for (const sr of runState.steps) {
-        runStepByAgent.set(sr.agent, sr.status);
-        if (sr.rejectReason) { runRejectByAgent.set(sr.agent, sr.rejectReason); }
-        if (sr.autoReviewVerdict) { runVerdictByAgent.set(sr.agent, sr.autoReviewVerdict); }
+        runStepByIdx.set(sr.stepIdx, sr.status);
+        if (sr.rejectReason) { runRejectByIdx.set(sr.stepIdx, sr.rejectReason); }
+        if (sr.autoReviewVerdict) { runVerdictByIdx.set(sr.stepIdx, sr.autoReviewVerdict); }
         if (sr.history && sr.history.length > 0) {
-          runHistoryByAgent.set(sr.agent, sr.history);
+          runHistoryByIdx.set(sr.stepIdx, sr.history);
         }
-        if (sr.feedback) { runFeedbackByAgent.set(sr.agent, sr.feedback); }
+        if (sr.feedback) { runFeedbackByIdx.set(sr.stepIdx, sr.feedback); }
       }
     }
-    const runCurrentAgent = runState
-      ? runState.steps[runState.currentStepIdx]?.agent
-      : undefined;
+    const runCurrentStepIdx = runState ? runState.currentStepIdx : undefined;
 
     // Look up the pipeline definition from workspace.yaml so we can surface
     // each step's configured gates (auto_review / human_review) on the panel.
@@ -238,8 +245,8 @@ export function listEpics(workspaceRoot: string, doc: YamlDocument | null): Epic
     const stepDetails = stepStatesRaw.map((s, i) => {
       const agent = typeof s.agent === 'string' ? s.agent : '';
       const gate = stepGateByIdx.get(i) ?? { auto: false, human: false };
-      const runStatus = runStepByAgent.get(agent) ?? null;
-      const history = runHistoryByAgent.get(agent);
+      const runStatus = runStepByIdx.get(i) ?? null;
+      const history = runHistoryByIdx.get(i);
       const rejectCount = history
         ? history.filter((e) => e.kind === 'reject').length
         : 0;
@@ -269,15 +276,15 @@ export function listEpics(workspaceRoot: string, doc: YamlDocument | null): Epic
         startedAt: typeof s.startedAt === 'string' ? s.startedAt : null,
         finishedAt: typeof s.finishedAt === 'string' ? s.finishedAt : null,
         runStatus,
-        isCurrentRunStep: !!runState && agent === runCurrentAgent,
-        rejectReason: runRejectByAgent.get(agent),
-        autoReviewVerdict: runVerdictByAgent.get(agent),
+        isCurrentRunStep: !!runState && i === runCurrentStepIdx,
+        rejectReason: runRejectByIdx.get(i),
+        autoReviewVerdict: runVerdictByIdx.get(i),
         stepHasAutoReview: gate.auto,
         stepHasHumanReview: gate.human,
         dependsOn: stepDependsByIdx.get(i) ?? [],
         history,
         rejectCount,
-        feedback: runFeedbackByAgent.get(agent),
+        feedback: runFeedbackByIdx.get(i),
       };
     });
 
