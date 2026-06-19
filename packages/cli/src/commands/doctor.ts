@@ -109,14 +109,30 @@ export function registerDoctor(program: Command): void {
   program
     .command('doctor')
     .description('Validate workspace, claude binary, env, skills, and run state files')
-    .action((_opts: unknown, cmd: Command) => {
+    .option('--json', 'Output all checks as JSON (exit 1 still signals failures)')
+    .action((opts: { json?: boolean }, cmd: Command) => {
       const root = resolveWorkspaceRoot(cmd);
+      const json = !!opts.json;
 
-      console.log(chalk.bold('\naidlc doctor'));
-      console.log(chalk.dim(`workspace: ${root}\n`));
+      // Collect every section so --json can emit the whole report at the end.
+      // In human mode emitSection prints immediately, preserving the live feel.
+      const sections: Array<{ title: string; checks: Check[] }> = [];
+      const emitSection = (title: string, checks: Check[]): void => {
+        sections.push({ title, checks });
+        if (!json) { printSection(title, checks); }
+      };
+
+      if (!json) {
+        console.log(chalk.bold('\naidlc doctor'));
+        console.log(chalk.dim(`workspace: ${root}\n`));
+      }
 
       // ── Workspace ────────────────────────────────────────────────────────
       const wsChecks: Check[] = [];
+      // Declared here (not inside the `if (ws)` block) so the summary
+      // aggregation below can count skill/runner failures — otherwise a broken
+      // skill path is printed in red but doctor still exits 0.
+      const skillChecks: Check[] = [];
       let ws: Awaited<ReturnType<typeof WorkspaceLoader.load>> | null = null;
 
       const wsPath = path.join(root, '.aidlc', 'workspace.yaml');
@@ -137,7 +153,7 @@ export function registerDoctor(program: Command): void {
         }
       }
 
-      printSection('Workspace', wsChecks);
+      emitSection('Workspace', wsChecks);
 
       // ── Claude binary ─────────────────────────────────────────────────────
       const claudeChecks: Check[] = [];
@@ -170,11 +186,10 @@ export function registerDoctor(program: Command): void {
       // they're "Not authenticated" (issue #55).
       claudeChecks.push(detectAuth(claudeBin));
 
-      printSection('Claude', claudeChecks);
+      emitSection('Claude', claudeChecks);
 
       // ── Skills ────────────────────────────────────────────────────────────
       if (ws) {
-        const skillChecks: Check[] = [];
         for (const skill of ws.config.skills) {
           if (skill.builtin) {
             // SkillLoader will validate; for now mark as assumed-ok
@@ -206,7 +221,7 @@ export function registerDoctor(program: Command): void {
         }
 
         if (skillChecks.length > 0) {
-          printSection('Skills & runners', skillChecks);
+          emitSection('Skills & runners', skillChecks);
         }
       }
 
@@ -235,20 +250,31 @@ export function registerDoctor(program: Command): void {
         }
       }
 
-      printSection('Runs', runChecks);
+      emitSection('Runs', runChecks);
 
       // ── Runtime ──────────────────────────────────────────────────────────
       const nodeVersion = process.versions.node;
       const [nodeMajor] = nodeVersion.split('.').map(Number);
-      printSection('Runtime', [
+      emitSection('Runtime', [
         nodeMajor >= 18
           ? ok(`Node.js ${nodeVersion}`)
           : fail(`Node.js ${nodeVersion}`, 'upgrade to Node.js 18+'),
       ]);
 
       // ── Summary ───────────────────────────────────────────────────────────
-      const all = [...wsChecks, ...claudeChecks, ...runChecks];
-      const failures = all.filter(c => !c.pass);
+      // Aggregate across every collected section so no check (incl. skills,
+      // runners, runtime) is silently excluded from the exit code.
+      const failures = sections.flatMap(s => s.checks).filter(c => !c.pass);
+
+      if (json) {
+        console.log(JSON.stringify({
+          ok: failures.length === 0,
+          failures: failures.length,
+          sections,
+        }, null, 2));
+        if (failures.length > 0) { process.exit(1); }
+        return;
+      }
 
       console.log();
       if (failures.length === 0) {

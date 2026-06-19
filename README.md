@@ -122,6 +122,13 @@ aidlc monitor --start         # launch the observe server (offers plugin auto-in
 aidlc monitor --open          # open the dashboard in the browser
 ```
 
+### Workflow globals (built-in agents + skills under ~/.claude/)
+```
+aidlc globals status [--json]      # which built-in workflows are installed globally
+aidlc globals install [ids...]     # install (default: the standard workflows)
+aidlc globals uninstall [ids...]   # remove AIDLC-marked global files (run before removing the extension)
+```
+
 ### Run lifecycle (sequential, mirrors the upstream PipelineRunner)
 ```
 aidlc run start <pipeline> [--id …] [--context epic=ABC-123]
@@ -129,12 +136,18 @@ aidlc run mark-done <runId>      # validate produces, advance or await review
 aidlc run approve  <runId> [--comment …]
 aidlc run reject   <runId> --reason …
 aidlc run rerun    <runId> [--feedback …]
+aidlc run request-update <runId> <step> [--feedback …]   # reopen an approved step for changes
 aidlc run delete   <runId> [--force]
 aidlc run open     <runId> [--path]
-aidlc run exec     <runId> [--until …] [--auto-approve] [--dry-run]
-aidlc run verify   <runId>                       # re-check recorded artifacts still exist (drift check)
+aidlc run exec     <runId> [--until …] [--auto-approve] [--require-complete] [--json] [--dry-run]
+aidlc run verify   <runId> [--json]              # re-check recorded artifacts still exist (drift check)
 aidlc run report   <runId> [--format md|json] [--output <file>]
 ```
+
+`run exec` runs `auto_review` validators headlessly and exit-codes for CI:
+`0` completed, `2` paused on a gate, `1` error (`--require-complete` ⇒ any
+non-completed is `1`). See [packages/cli/AUTOMATION.md](packages/cli/AUTOMATION.md) for the
+full headless guide + a GitHub Action recipe.
 
 ### Step control (jump to any step, any order — bypasses sequential gate)
 ```
@@ -149,7 +162,7 @@ aidlc step jump   <runId> <step>          # auto-approve earlier pending steps
 ### Live observation
 ```
 aidlc watch [runId]           # cli-table3 view, redraws on any state change
-aidlc tail  [runId]           # streams transitions as one-line events
+aidlc tail  [runId] [--json]  # streams transitions as one-line events (or NDJSON)
 aidlc dashboard [--port …] [--host …]   # browser UI with action buttons
 ```
 

@@ -19,6 +19,8 @@ import { registerRecipe } from './commands/recipe';
 import { registerMonitor } from './commands/monitor';
 import { registerAsk } from './commands/ask';
 import { registerGuide } from './commands/guide';
+import { registerGlobals } from './commands/globals';
+import { setQuiet } from './output';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { version } = require('../package.json') as { version: string };
 
@@ -28,7 +30,14 @@ program
   .name('aidlc')
   .description('AIDLC terminal CLI — drive workspace.yaml pipelines from any terminal')
   .version(version)
-  .option('-w, --workspace <path>', 'workspace root (defaults to cwd)');
+  .option('-w, --workspace <path>', 'workspace root (defaults to cwd)')
+  .option('-q, --quiet', 'Suppress decorative progress output (errors and JSON still print)')
+  .hook('preAction', (thisCommand) => {
+    // Global --quiet silences info() across commands (today: run exec\'s
+    // step-by-step chatter). Colour is left to chalk, which already disables
+    // itself when stdout is not a TTY and honours NO_COLOR.
+    if (thisCommand.opts().quiet) { setQuiet(true); }
+  });
 
 registerInit(program);
 registerValidate(program);
@@ -49,6 +58,7 @@ registerRecipe(program);
 registerMonitor(program);
 registerAsk(program);
 registerGuide(program);
+registerGlobals(program);
 
 program.parseAsync(process.argv).catch((err) => {
   console.error(err instanceof Error ? err.message : String(err));

@@ -56,6 +56,7 @@ Global flags available on every subcommand:
 | Flag | Default | Purpose |
 |---|---|---|
 | `-w, --workspace <path>` | `cwd` | Workspace root (containing `.aidlc/`). Also reads `AIDLC_WORKSPACE` env. |
+| `-q, --quiet` | off | Suppress decorative progress output (errors and `--json` still print). |
 
 ### `guide` — getting-started reference
 
@@ -90,21 +91,27 @@ Idempotent — skips anything that already exists.
 ### `doctor` — health check
 
 ```
-aidlc doctor
+aidlc doctor [--json]
 ```
 
 Verifies `workspace.yaml` parses + Zod-validates, `claude` binary is on PATH,
 authentication works, all skill paths exist, custom runner files exist, and
-run-state JSON files are parseable. Exit 1 on any failure.
+run-state JSON files are parseable. Exit 1 on any failure (including skill /
+runner / runtime checks). `--json` emits every section as
+`{ ok, failures, sections }` — a parseable CI preflight.
 
-### `validate` — schema-only check
+### `validate` — schema + cross-reference check
 
 ```
-aidlc validate
+aidlc validate [--strict] [--json]
 ```
 
 Stricter than the `doctor` workspace section: enumerates every Zod issue with
-its `path[]` for editor jump-to-line.
+its `path[]` for editor jump-to-line. Also reports dangling cross-references
+(a pipeline step naming an undefined agent, an agent listing a missing skill, a
+recipe pointing at an unknown pipeline/step) as warnings. Pass `--strict` to
+exit non-zero on those too — handy as a CI gate. `--json` emits the structured
+result (`{ ok, configPath, counts, refIssues }`).
 
 ### `list` — print workspace contents
 
@@ -207,17 +214,25 @@ These wrap `@aidlc/core`'s `PipelineRunner` and write atomically through
 `RunStateStore`. The VS Code sidebar updates within ~200ms.
 
 ```
-aidlc run start <pipelineId> [--id <runId>] [--context k=v,k=v]
+aidlc run start <pipelineId> [--id <runId>] [--context k=v ...] [--context-file <path>]
 aidlc run mark-done <runId>             # validates produces paths, advances or awaits review
 aidlc run approve   <runId> [--comment "…"]
 aidlc run reject    <runId> --reason "…"
 aidlc run rerun     <runId> [--feedback "…"]
+aidlc run request-update <runId> <step> [--feedback "…"]  # reopen an already-approved step for changes
 aidlc run delete    <runId> [--force]
 aidlc run open      <runId> [--path]    # prints state.json content (or just file path)
-aidlc run exec      <runId> [--until <step>] [--auto-approve] [--message "…"] [--dry-run]
-aidlc run verify    <runId>             # re-checks recorded artifacts still exist + pass produces_contains
+aidlc run exec      <runId> [--until <step>] [--auto-approve] [--require-complete] [--json] [--dry-run]
+aidlc run verify    <runId> [--json]    # re-checks recorded artifacts still exist + pass produces_contains
 aidlc run report    <runId> [--format md|json] [--output <file>]  # shareable run history (Markdown/JSON)
 ```
+
+**Exit codes for `run exec`** (so CI can branch): `0` completed (or stopped at
+`--until`, or `--dry-run`), `2` paused on a gate (awaiting review / rejected /
+budget), `1` error. `--require-complete` maps any non-completed outcome to `1`.
+`--json` prints a final summary object to stdout (claude's stream goes to stderr).
+See [AUTOMATION.md](AUTOMATION.md) for the full headless guide +
+a GitHub Action recipe.
 
 **`run verify`** is a read-only post-run drift check: a `completed` run still
 claims its artifacts exist, but someone may have since deleted or gutted one.
@@ -231,9 +246,14 @@ description or status update. `--format json` dumps the raw state instead.
 
 **`run exec`** is the unique unlock: it spawns `claude` for the current step,
 streams stdout to your terminal, validates the produced artifacts, and advances
-to the next step automatically. With `--auto-approve` it also clears
-`human_review` gates without pausing — a single command then drives the entire
-pipeline end-to-end.
+to the next step automatically. Steps declaring `auto_review: true` have their
+`auto_review_runner` validator executed headlessly between produce-validation
+and approval — a `pass` advances the step, a `reject` stops with a rerun hint.
+With `--auto-approve` it also clears `human_review` gates without pausing — a
+single command then drives the entire pipeline end-to-end.
+
+**`run request-update`** reopens an already-approved step (bumps its revision,
+resets downstream steps), mirroring the extension's "Request update" action.
 
 `run start` defaults `runId` to `<pipelineId>-<timestamp>` if `--id` is omitted.
 
@@ -309,7 +329,11 @@ change instead of redrawing a table. Useful for CI logs or piping.
 ```
 aidlc tail                                # all runs
 aidlc tail <runId>                        # one run
+aidlc tail [runId] --json                 # one NDJSON event per transition (pipe into jq / a notifier)
 ```
+
+`--json` events: `seed`, `run_new`, `run_status`, `pointer`, `step_status`,
+`step_revision`, `run_gone` — each with `ts` and `runId`.
 
 Output shape:
 
@@ -356,6 +380,23 @@ distinguishes a plugin that is installed-but-failed-to-load from a healthy one.
 server's log window, and `npm install` is pinned to the public npm registry so
 it never inherits a private registry default. The extension's **Start Monitor**
 button runs `aidlc monitor --start`.
+
+### `globals` — built-in workflow agents + skills under `~/.claude/`
+
+Built-in workflows (e.g. the SDLC pipeline) ship agent + skill markdown that
+gets installed under `~/.claude/agents` and `~/.claude/skills` so their skill
+paths resolve. `preset apply sdlc` installs them implicitly; this command group
+manages them explicitly — including `uninstall`, which the extension exposes but
+the CLI previously couldn't do.
+
+```
+aidlc globals status [--json]      # which built-in workflows are installed globally
+aidlc globals install [ids...]     # install (default: the standard workflows)
+aidlc globals uninstall [ids...]   # remove AIDLC-marked global files (run before removing the extension)
+```
+
+`uninstall` only removes files AIDLC wrote (marker-guarded) and preserves files
+still needed by other globally-installed workflows.
 
 ## Recipes
 

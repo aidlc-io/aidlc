@@ -2,6 +2,7 @@
  * Shared helpers for commands that work with RunState and workspace pipelines.
  */
 
+import * as fs from 'fs';
 import chalk from 'chalk';
 import {
   WorkspaceLoader,
@@ -149,6 +150,66 @@ export function parseContext(raw: string): Record<string, string> {
       process.exit(1);
     }
     ctx[pair.slice(0, eq).trim()] = pair.slice(eq + 1).trim();
+  }
+  return ctx;
+}
+
+/** Commander collector — accumulates a repeatable option into an array. */
+export function collectOption(value: string, previous: string[]): string[] {
+  return [...previous, value];
+}
+
+/**
+ * Resolve the full context map from a `--context-file` plus zero or more
+ * `--context k=v,k=v` flags. File first (lowest precedence), then each
+ * `--context` in order, so a later flag overrides a file key.
+ *
+ * `--context-file` accepts either a JSON object or `key=value` lines
+ * (`#` comments and blank lines ignored) — handy for CI where the context is
+ * assembled into a file rather than squeezed onto the command line.
+ */
+export function resolveContext(opts: { context?: string[]; contextFile?: string }): Record<string, string> {
+  const ctx: Record<string, string> = {};
+
+  if (opts.contextFile) {
+    let raw: string;
+    try {
+      raw = fs.readFileSync(opts.contextFile, 'utf8');
+    } catch (err) {
+      console.error(chalk.red(`Cannot read --context-file "${opts.contextFile}": ${err instanceof Error ? err.message : String(err)}`));
+      process.exit(1);
+    }
+    const trimmed = raw.trim();
+    if (trimmed.startsWith('{')) {
+      let obj: unknown;
+      try {
+        obj = JSON.parse(trimmed);
+      } catch (err) {
+        console.error(chalk.red(`--context-file "${opts.contextFile}" is not valid JSON: ${err instanceof Error ? err.message : String(err)}`));
+        process.exit(1);
+      }
+      if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
+        for (const [k, v] of Object.entries(obj as Record<string, unknown>)) { ctx[k] = String(v); }
+      } else {
+        console.error(chalk.red(`--context-file "${opts.contextFile}" must be a JSON object of key→value.`));
+        process.exit(1);
+      }
+    } else {
+      for (const line of raw.split('\n')) {
+        const l = line.trim();
+        if (!l || l.startsWith('#')) { continue; }
+        const eq = l.indexOf('=');
+        if (eq < 1) {
+          console.error(chalk.red(`Invalid line in --context-file: "${l}" — expected key=value`));
+          process.exit(1);
+        }
+        ctx[l.slice(0, eq).trim()] = l.slice(eq + 1).trim();
+      }
+    }
+  }
+
+  for (const s of opts.context ?? []) {
+    Object.assign(ctx, parseContext(s));
   }
   return ctx;
 }

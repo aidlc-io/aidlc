@@ -10,7 +10,7 @@ import {
 } from '../runHelpers';
 
 const VALID_STATUSES: StepStatus[] = [
-  'pending', 'awaiting_work', 'awaiting_review', 'approved', 'rejected',
+  'pending', 'awaiting_work', 'awaiting_auto_review', 'awaiting_review', 'approved', 'rejected',
 ];
 
 export function registerStep(program: Command): void {

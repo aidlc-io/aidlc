@@ -9,22 +9,27 @@ import {
   approveStep,
   rejectStep,
   rerunStep,
+  requestStepUpdate,
   checkBudget,
   verifyRun,
   renderRunReport,
+  runAutoReview,
+  submitAutoReviewVerdict,
   PipelineRunError,
   RUN_ID_PATTERN,
   type RunState,
   type PipelineConfig,
 } from '@aidlc/core';
 import { resolveWorkspaceRoot } from '../workspaceRoot';
+import { info, setQuiet } from '../output';
 import {
   requireRun,
   requirePipeline,
   requirePipelineForRun,
   requireStepIdx,
   printRunSummary,
-  parseContext,
+  resolveContext,
+  collectOption,
   loadAgentSkills,
   formatSkillsList,
 } from '../runHelpers';
@@ -38,12 +43,13 @@ export function registerRun(program: Command): void {
   cmd
     .command('start <pipelineId>')
     .description('Start a new pipeline run')
-    .option('--id <runId>',        'run id (default: <pipeline>-<timestamp>)')
-    .option('--context <pairs>',   'context key=value pairs, comma-separated (e.g. epic=ABC-123)')
-    .action((pipelineId: string, opts: { id?: string; context?: string }, actionCmd: Command) => {
+    .option('--id <runId>',          'run id (default: <pipeline>-<timestamp>)')
+    .option('--context <pairs>',     'context key=value pairs (repeatable; each may be comma-separated)', collectOption, [])
+    .option('--context-file <path>', 'read context from a JSON object or key=value lines file')
+    .action((pipelineId: string, opts: { id?: string; context?: string[]; contextFile?: string }, actionCmd: Command) => {
       const root     = resolveWorkspaceRoot(actionCmd);
       const runId    = opts.id ?? `${pipelineId}-${Date.now()}`;
-      const context  = opts.context ? parseContext(opts.context) : {};
+      const context  = resolveContext(opts);
 
       if (!RUN_ID_PATTERN.test(runId)) {
         console.error(chalk.red(`Invalid run id "${runId}" — use letters, digits, dots, dashes, underscores.`));
@@ -195,6 +201,36 @@ export function registerRun(program: Command): void {
       console.log(chalk.dim(`  When done: aidlc run mark-done ${runId}`));
     });
 
+  // ── request-update ───────────────────────────────────────────────────────────
+  cmd
+    .command('request-update <runId> <step>')
+    .description(
+      'Reopen an already-approved step for changes (bumps revision, resets downstream).\n' +
+      '  <step> can be a 0-based index or an agent id. Mirrors the extension\'s "Request update".',
+    )
+    .option('--feedback <text>', 'Notes for the next attempt (stored on the step)')
+    .action((runId: string, step: string, opts: { feedback?: string }, actionCmd: Command) => {
+      const root     = resolveWorkspaceRoot(actionCmd);
+      const state    = requireRun(root, runId);
+      const pipeline = requirePipelineForRun(root, state);
+      const stepIdx  = requireStepIdx(state, step);
+
+      let next;
+      try {
+        next = requestStepUpdate({ state, pipeline, stepIdx, feedback: opts.feedback });
+      } catch (err) {
+        console.error(chalk.red(err instanceof Error ? err.message : String(err)));
+        process.exit(1);
+      }
+
+      RunStateStore.save(root, next);
+      const target = next.steps[stepIdx];
+      console.log(chalk.yellow('↻') + ` Reopened "${target.agent}" for update (rev ${target.revision})`);
+      if (opts.feedback) { console.log(chalk.dim(`  Feedback: ${opts.feedback}`)); }
+      console.log(chalk.dim(`  When done: aidlc run mark-done ${runId}`));
+      printRunSummary(next);
+    });
+
   // ── delete ─────────────────────────────────────────────────────────────────
   cmd
     .command('delete <runId>')
@@ -234,29 +270,50 @@ export function registerRun(program: Command): void {
     .command('exec <runId>')
     .description(
       'Execute the current step by spawning the claude CLI, then auto-advance.\n' +
-      '  Streams output live. Stops at human_review steps unless --auto-approve.',
+      '  Streams output live. Stops at human_review steps unless --auto-approve.\n' +
+      '  Exit codes: 0 completed (or stopped at --until), 2 paused on a gate\n' +
+      '  (awaiting review / rejected / budget), 1 error. --require-complete maps\n' +
+      '  any non-completed outcome to 1 for CI gating.',
     )
-    .option('--until <step>',   'Stop after this step completes (index or agent id)')
-    .option('--auto-approve',   'Also auto-approve human_review steps without pausing')
-    .option('--message <text>', 'Override the user message sent to claude (default: context pairs)')
-    .option('--dry-run',        'Print the assembled prompt without spawning claude')
+    .option('--until <step>',     'Stop after this step completes (index or agent id)')
+    .option('--auto-approve',     'Also auto-approve human_review steps without pausing')
+    .option('--require-complete', 'Exit 1 unless the run reaches completed (for CI gating)')
+    .option('--json',             'Suppress decorative output; print a final JSON summary to stdout (claude stream goes to stderr)')
+    .option('--message <text>',   'Override the user message sent to claude (default: context pairs)')
+    .option('--dry-run',          'Print the assembled prompt without spawning claude')
     .action(async (runId: string, opts: {
-      until?: string; autoApprove?: boolean; message?: string; dryRun?: boolean;
+      until?: string; autoApprove?: boolean; requireComplete?: boolean; json?: boolean; message?: string; dryRun?: boolean;
     }, actionCmd: Command) => {
       const root = resolveWorkspaceRoot(actionCmd);
-      await execLoop(root, runId, opts);
+      // In --json mode decorative stdout is silenced so the only thing on stdout
+      // is the final summary object — pipe it straight into jq.
+      if (opts.json) { setQuiet(true); }
+      const outcome = await execLoop(root, runId, opts);
+      const code = execExitCode(outcome, !!opts.requireComplete);
+      if (opts.json) {
+        const final = RunStateStore.load(root, runId);
+        process.stdout.write(JSON.stringify(execSummary(runId, outcome, code, final), null, 2) + '\n');
+      }
+      process.exit(code);
     });
 
   // ── verify ─────────────────────────────────────────────────────────────────
   cmd
     .command('verify <runId>')
     .description('Re-check each step\'s recorded artifacts still exist (and pass produces_contains). Read-only drift check.')
-    .action((runId: string, _opts: unknown, actionCmd: Command) => {
+    .option('--json', 'Output the drift report as JSON (exit 1 still signals drift)')
+    .action((runId: string, opts: { json?: boolean }, actionCmd: Command) => {
       const root     = resolveWorkspaceRoot(actionCmd);
       const state    = requireRun(root, runId);
       const pipeline = requirePipelineForRun(root, state);
 
       const report = verifyRun({ state, pipeline, workspaceRoot: root });
+
+      if (opts.json) {
+        console.log(JSON.stringify({ runId, ...report }, null, 2));
+        if (!report.ok) { process.exit(1); }
+        return;
+      }
 
       if (report.ok) {
         console.log(chalk.green('✔') + ` No drift — ${report.checked} step(s) with artifacts verified.`);
@@ -306,11 +363,60 @@ export function registerRun(program: Command): void {
 
 // ── Exec internals ────────────────────────────────────────────────────────────
 
+/**
+ * Why the exec loop stopped. The caller maps this to a process exit code so a
+ * CI job can tell "the pipeline finished" from "it paused waiting on a human".
+ */
+type ExecOutcome =
+  | { kind: 'completed' }
+  | { kind: 'until' }
+  | { kind: 'dry_run' }
+  | { kind: 'awaiting_review' }
+  | { kind: 'rejected' }
+  | { kind: 'budget_pause' }
+  | { kind: 'error' };
+
+/**
+ * 0 = run completed (or deliberately stopped at --until); 2 = paused on a gate
+ * (awaiting human review / rejected / budget); 1 = error. --require-complete
+ * collapses every non-`completed` outcome to 1 so naive `cmd && next` chains
+ * fail when the pipeline didn't finish.
+ */
+function execExitCode(outcome: ExecOutcome, requireComplete: boolean): number {
+  if (outcome.kind === 'error') { return 1; }
+  if (outcome.kind === 'completed') { return 0; }
+  if (outcome.kind === 'dry_run') { return 0; } // a preview, never a CI failure
+  if (requireComplete) { return 1; }
+  if (outcome.kind === 'until') { return 0; }
+  return 2; // awaiting_review | rejected | budget_pause
+}
+
+/** Machine-readable result of an exec run, printed under `--json`. */
+function execSummary(runId: string, outcome: ExecOutcome, exitCode: number, state: RunState | null) {
+  const steps = (state?.steps ?? []).map((s, idx) => ({
+    idx,
+    agent: s.agent,
+    status: s.status,
+    revision: s.revision,
+    costUsd: s.costUsd ?? null,
+  }));
+  const totalCostUsd = steps.reduce((sum, s) => sum + (s.costUsd ?? 0), 0);
+  return {
+    runId,
+    outcome: outcome.kind,
+    exitCode,
+    runStatus: state?.status ?? null,
+    currentStepIdx: state?.currentStepIdx ?? null,
+    totalCostUsd: totalCostUsd || null,
+    steps,
+  };
+}
+
 async function execLoop(
   root: string,
   runId: string,
-  opts: { until?: string; autoApprove?: boolean; message?: string; dryRun?: boolean },
-): Promise<void> {
+  opts: { until?: string; autoApprove?: boolean; json?: boolean; message?: string; dryRun?: boolean },
+): Promise<ExecOutcome> {
   // Resolve the optional --until boundary once (before loop, using initial state).
   const initialState = requireRun(root, runId);
   const untilIdx = opts.until !== undefined
@@ -326,19 +432,29 @@ async function execLoop(
     const state = RunStateStore.load(root, runId);
     if (!state) {
       console.error(chalk.red(`Run "${runId}" disappeared.`));
-      process.exit(1);
+      return { kind: 'error' };
     }
 
     if (state.status === 'completed') {
-      console.log(chalk.green('\n🎉 Run completed — all steps approved.'));
-      break;
+      info(chalk.green('\n🎉 Run completed — all steps approved.'));
+      return { kind: 'completed' };
     }
     if (state.status === 'failed') {
       console.error(chalk.red('\nRun failed.'));
-      process.exit(1);
+      return { kind: 'error' };
     }
 
     const step = state.steps[state.currentStepIdx];
+
+    // Auto-review gate: the step's produces validated, now run its
+    // auto_review_runner validator headlessly. submitAutoReviewVerdict
+    // transitions the step away from awaiting_auto_review (→ rejected, →
+    // awaiting_review, or auto-advance), so the next iteration picks it up.
+    if (step.status === 'awaiting_auto_review') {
+      const proceed = await runAutoReviewStep(root, runId);
+      if (!proceed) { return { kind: 'error' }; }
+      continue;
+    }
 
     // Stop at human_review unless --auto-approve
     if (step.status === 'awaiting_review') {
@@ -346,27 +462,31 @@ async function execLoop(
         await autoApproveStep(root, state, runId);
         continue;
       }
-      console.log(chalk.cyan(`\n⏸  Step "${step.agent}" is awaiting human review.`));
-      console.log(chalk.dim(`  Approve: aidlc run approve ${runId}`));
-      console.log(chalk.dim(`  Reject:  aidlc run reject ${runId} --reason "..."`));
-      break;
+      info(chalk.cyan(`\n⏸  Step "${step.agent}" is awaiting human review.`));
+      info(chalk.dim(`  Approve: aidlc run approve ${runId}`));
+      info(chalk.dim(`  Reject:  aidlc run reject ${runId} --reason "..."`));
+      return { kind: 'awaiting_review' };
     }
 
     // Stop at rejected unless user reruns
     if (step.status === 'rejected') {
-      console.log(chalk.red(`\n✘  Step "${step.agent}" was rejected.`));
-      console.log(chalk.dim(`  Rerun: aidlc run rerun ${runId} [--feedback "..."]`));
-      break;
+      info(chalk.red(`\n✘  Step "${step.agent}" was rejected.`));
+      info(chalk.dim(`  Rerun: aidlc run rerun ${runId} [--feedback "..."]`));
+      return { kind: 'rejected' };
     }
 
     if (step.status !== 'awaiting_work') {
       console.error(chalk.red(`\nUnexpected step status "${step.status}" — cannot exec.`));
-      process.exit(1);
+      return { kind: 'error' };
     }
 
     // Execute the current step
     const success = await execStep(root, state, runId, opts);
-    if (!success) { process.exit(1); }
+    if (!success) { return { kind: 'error' }; }
+
+    // Dry-run only previews the current step's prompt — it never advances the
+    // step, so returning here avoids re-previewing the same step forever.
+    if (opts.dryRun) { return { kind: 'dry_run' }; }
 
     // Budget guard — sum per-step cost from the just-saved state and stop if
     // a ceiling is crossed. `state.currentStepIdx` is the step that just ran.
@@ -377,22 +497,22 @@ async function execLoop(
       const verdict = checkBudget({ stepCosts, budget, lastStepCost });
       if (!verdict.ok) {
         const scope = verdict.exceeded === 'step' ? 'per-step' : 'total';
-        console.log(
+        info(
           chalk.yellow(`\n⚠  Budget exceeded (${scope}): spent $${verdict.spent.toFixed(4)}, limit $${verdict.limit.toFixed(2)}.`),
         );
         if (budget.on_exceed === 'fail') {
-          process.exit(1);
+          return { kind: 'error' };
         }
-        console.log(chalk.dim(`  Paused. Raise the budget in workspace.yaml or resume: aidlc run exec ${runId}`));
-        break;
+        info(chalk.dim(`  Paused. Raise the budget in workspace.yaml or resume: aidlc run exec ${runId}`));
+        return { kind: 'budget_pause' };
       }
-      console.log(chalk.dim(`  budget: $${verdict.spent.toFixed(4)} / $${budget.max_usd.toFixed(2)}`));
+      info(chalk.dim(`  budget: $${verdict.spent.toFixed(4)} / $${budget.max_usd.toFixed(2)}`));
     }
 
     // Check --until boundary
     if (untilIdx >= 0 && state.currentStepIdx >= untilIdx) {
-      console.log(chalk.dim(`\nStopped at step ${untilIdx} as requested.`));
-      break;
+      info(chalk.dim(`\nStopped at step ${untilIdx} as requested.`));
+      return { kind: 'until' };
     }
   }
 }
@@ -401,7 +521,7 @@ async function execStep(
   root: string,
   state: RunState,
   runId: string,
-  opts: { message?: string; dryRun?: boolean },
+  opts: { json?: boolean; message?: string; dryRun?: boolean },
 ): Promise<boolean> {
   const stepIdx  = state.currentStepIdx;
   const stepRec  = state.steps[stepIdx];
@@ -447,38 +567,41 @@ async function execStep(
 
   // Dry run — print prompt and exit
   if (opts.dryRun) {
-    console.log(chalk.bold(`\n── System prompt (skills: ${formatSkillsList(agent)}) ──`));
-    console.log(chalk.dim(skillText));
-    console.log(chalk.bold('\n── User message ───────────────────────────────────────'));
-    console.log(userMessage || chalk.dim('(empty)'));
-    console.log(chalk.bold('\n── Env vars ───────────────────────────────────────────'));
+    info(chalk.bold(`\n── System prompt (skills: ${formatSkillsList(agent)}) ──`));
+    info(chalk.dim(skillText));
+    info(chalk.bold('\n── User message ───────────────────────────────────────'));
+    info(userMessage || chalk.dim('(empty)'));
+    info(chalk.bold('\n── Env vars ───────────────────────────────────────────'));
     for (const [k, v] of Object.entries(env)) {
       const masked = k.toLowerCase().includes('key') || k.toLowerCase().includes('token')
         ? '***' : v;
-      console.log(chalk.dim(`  ${k}=${masked}`));
+      info(chalk.dim(`  ${k}=${masked}`));
     }
-    console.log();
+    info();
     return true;
   }
 
   // Execute
-  console.log(chalk.bold(`\n▶  Step ${stepIdx}: ${agentId}`) + chalk.dim(` (rev ${stepRec.revision})`));
-  console.log(chalk.dim(`   skills: ${formatSkillsList(agent)}  model: ${agent.model ?? 'claude-sonnet-4-5'}`));
-  if (userMessage) { console.log(chalk.dim(`   context: ${userMessage}`)); }
-  console.log(chalk.dim('─'.repeat(60)));
+  info(chalk.bold(`\n▶  Step ${stepIdx}: ${agentId}`) + chalk.dim(` (rev ${stepRec.revision})`));
+  info(chalk.dim(`   skills: ${formatSkillsList(agent)}  model: ${agent.model ?? 'claude-sonnet-4-5'}`));
+  if (userMessage) { info(chalk.dim(`   context: ${userMessage}`)); }
+  info(chalk.dim('─'.repeat(60)));
 
+  // In --json mode keep stdout clean for the final summary: claude's own
+  // streamed output goes to stderr instead.
+  const claudeOut = opts.json ? process.stderr : process.stdout;
   const runner = ws.runners.resolve(agent);
   const result = await runner.run({
     skill: skillText,
     env,
     args: userMessage ? [userMessage] : [],
     workspaceRoot: root,
-    onOutput: (chunk) => process.stdout.write(chunk),
+    onOutput: (chunk) => claudeOut.write(chunk),
     onError:  (chunk) => process.stderr.write(chalk.dim(chunk)),
     claude: null,
   });
 
-  console.log(chalk.dim('─'.repeat(60)));
+  info(chalk.dim('─'.repeat(60)));
 
   if (!result.success) {
     console.error(chalk.red(`\n✘  Step "${agentId}" failed (non-zero exit).`));
@@ -511,15 +634,58 @@ async function execStep(
   RunStateStore.save(root, next);
 
   const doneStep = next.steps[stepIdx];
-  if (doneStep.status === 'awaiting_review') {
-    console.log(chalk.cyan(`\n✔  Step "${agentId}" done — awaiting review.`));
+  if (doneStep.status === 'awaiting_auto_review') {
+    info(chalk.cyan(`\n✔  Step "${agentId}" done — auto-review pending.`));
+  } else if (doneStep.status === 'awaiting_review') {
+    info(chalk.cyan(`\n✔  Step "${agentId}" done — awaiting review.`));
   } else {
-    console.log(chalk.green(`\n✔  Step "${agentId}" approved.`));
+    info(chalk.green(`\n✔  Step "${agentId}" approved.`));
   }
   if (typeof result.costUsd === 'number') {
-    console.log(chalk.dim(`   cost: $${result.costUsd.toFixed(4)}`));
+    info(chalk.dim(`   cost: $${result.costUsd.toFixed(4)}`));
   }
 
+  return true;
+}
+
+async function runAutoReviewStep(root: string, runId: string): Promise<boolean> {
+  const state = RunStateStore.load(root, runId);
+  if (!state) {
+    console.error(chalk.red(`Run "${runId}" disappeared.`));
+    return false;
+  }
+  const pipeline = requirePipelineForRun(root, state);
+  const step = state.steps[state.currentStepIdx];
+
+  info(chalk.bold(`\n🔍  Auto-review: "${step.agent}"`));
+
+  let verdict;
+  try {
+    verdict = await runAutoReview({ workspaceRoot: root, state, pipeline });
+  } catch (err) {
+    // Config-level failure (missing/unloadable runner). The validator's own
+    // errors are already converted to a `reject` verdict inside runAutoReview;
+    // this only fires for a misconfigured auto_review_runner.
+    console.error(chalk.red(`✘  Auto-review could not run: ${err instanceof Error ? err.message : String(err)}`));
+    return false;
+  }
+
+  let next: RunState;
+  try {
+    next = submitAutoReviewVerdict({ state, pipeline, verdict });
+  } catch (err) {
+    console.error(chalk.red(`✘  ${err instanceof Error ? err.message : String(err)}`));
+    return false;
+  }
+
+  RunStateStore.save(root, next);
+
+  if (verdict.decision === 'pass') {
+    info(chalk.green(`✔  Auto-review passed`) + chalk.dim(` — ${verdict.reason}`));
+  } else {
+    info(chalk.red(`✘  Auto-review rejected`) + chalk.dim(` — ${verdict.reason}`));
+    info(chalk.dim(`  Fix the issue, then: aidlc run rerun ${runId} [--feedback "..."]`));
+  }
   return true;
 }
 
@@ -529,5 +695,5 @@ async function autoApproveStep(root: string, state: RunState, runId: string): Pr
   const next = approveStep({ state, pipeline });
   RunStateStore.save(root, next);
   const step = state.steps[state.currentStepIdx];
-  console.log(chalk.green(`✔  Auto-approved "${step.agent}" (--auto-approve)`));
+  info(chalk.green(`✔  Auto-approved "${step.agent}" (--auto-approve)`));
 }
