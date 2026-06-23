@@ -5,6 +5,7 @@ import { BuilderView } from './BuilderView';
 import { EpicsView } from './EpicsView';
 import { ThemeToggle } from './ThemeToggle';
 import { StartEpicModal } from './StartEpicModal';
+import { AnalyzeView } from './AnalyzeView';
 import { onHostMessage, postMessage } from '@/lib/bridge';
 
 export function WorkspaceShell({ state }: { state: WorkspaceState | null }) {
@@ -17,7 +18,7 @@ export function WorkspaceShell({ state }: { state: WorkspaceState | null }) {
     return onHostMessage((msg) => {
       if (msg.type !== 'setView') { return; }
       const next = msg.view;
-      if (next === 'builder' || next === 'epics') { setView(next); }
+      if (next === 'builder' || next === 'epics' || next === 'analyze') { setView(next); }
     });
   }, []);
 
@@ -102,7 +103,13 @@ export function WorkspaceShell({ state }: { state: WorkspaceState | null }) {
       <TopBar view={view} onView={setView} workspaceName={state.workspaceName} />
       <main className="flex-1 overflow-y-auto">
         <div className="p-6">
-          {view === 'builder' ? <BuilderView state={state} /> : <EpicsView state={state} />}
+          {view === 'builder' ? (
+            <BuilderView state={state} />
+          ) : view === 'epics' ? (
+            <EpicsView state={state} />
+          ) : (
+            <AnalyzeView state={state} />
+          )}
         </div>
       </main>
     </div>
@@ -125,6 +132,9 @@ function TopBar({
       </PillButton>
       <PillButton active={view === 'epics'} onClick={() => onView('epics')}>
         Epics
+      </PillButton>
+      <PillButton active={view === 'analyze'} onClick={() => onView('analyze')}>
+        Analyze
       </PillButton>
       <div className="ml-auto flex items-center gap-2">
         {workspaceName && (
