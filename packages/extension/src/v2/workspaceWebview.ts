@@ -227,11 +227,64 @@ import {
   startPipelineRunInlineCommand,
 } from './runCommands';
 import { pickAndReadTextFile } from './pickAndReadTextFile';
+import { scaffoldRequirementAnalysis } from './requirementWizard';
 import { missingBundleHtml } from './webviewBundleGuard';
+
+// ── Shared helper: open/reuse the Claude terminal and send a slash command ───
+
+const CLAUDE_TERMINAL_NAME = 'AIDLC · Claude';
+
+/**
+ * Open (or reuse) the Claude REPL terminal and run `slash` immediately.
+ *
+ * Always sends `claude '<slash>'` rather than the bare slash command.
+ * This handles two cases safely:
+ *   - Terminal exists but claude already exited (zsh is active) → `claude 'cmd'`
+ *     boots a new claude session and runs the command as the first message.
+ *   - No terminal yet → create one, wait for shell integration, then run.
+ *
+ * The previous approach of `sendText(slash, true)` to an existing terminal
+ * broke when claude had exited — zsh received the slash as a file path.
+ */
+function runSlashCommandInClaude(slash: string, root: string): void {
+  const escaped = slash.replace(/'/g, "'\\''");
+  const oneShot = `claude '${escaped}'`;
+
+  const existing = vscode.window.terminals.find((t) => t.name === CLAUDE_TERMINAL_NAME);
+  if (existing) {
+    existing.show(false);
+    // Send `claude 'slash'` — works whether claude is running or not:
+    // - Shell prompt: starts claude with slash as the first message.
+    // - Claude REPL: unlikely during a fresh analyze submit, but harmless.
+    existing.sendText(oneShot, true);
+    return;
+  }
+
+  const cwd = fs.existsSync(root) ? root : undefined;
+  const terminal = vscode.window.createTerminal({
+    name: CLAUDE_TERMINAL_NAME,
+    cwd,
+    iconPath: new vscode.ThemeIcon('rocket'),
+    location: vscode.TerminalLocation.Panel,
+    env: { DISABLE_AUTO_UPDATE: 'true', DISABLE_UPDATE_PROMPT: 'true' },
+  });
+  terminal.show(false);
+  let sent = false;
+  const integ = vscode.window.onDidChangeTerminalShellIntegration((e) => {
+    if (e.terminal === terminal && e.shellIntegration && !sent) {
+      sent = true;
+      e.shellIntegration.executeCommand(oneShot);
+      integ.dispose();
+    }
+  });
+  setTimeout(() => {
+    if (!sent) { sent = true; terminal.sendText(oneShot, true); integ.dispose(); }
+  }, 2000);
+}
 
 // ── Webview-side type shapes (must mirror src/webview/lib/types.ts) ───────
 
-type WorkspaceView = 'builder' | 'epics';
+type WorkspaceView = 'builder' | 'epics' | 'analyze';
 
 interface AgentSummary {
   id: string;
@@ -378,6 +431,17 @@ interface EpicSummaryUi {
   tokenUsage?: EpicTokenUsage;
 }
 
+interface RequirementRunSummary {
+  id: string;
+  createdAt: string;
+  platform: string;
+  parentTask: string;
+  source: string;
+  status: 'pending' | 'complete';
+  taskCount: number | null;
+  hasRequirements?: boolean;
+}
+
 interface SkillTemplateRef {
   id: string;
   description: string;
@@ -410,6 +474,7 @@ interface WorkspaceState {
   nextEpicId: string;
   /** All existing epic ids (folders under epicRoot) — for uniqueness check. */
   existingEpicIds: string[];
+  requirementRuns?: RequirementRunSummary[];
   initialView?: WorkspaceView;
 }
 
@@ -466,6 +531,7 @@ function buildState(initialView: WorkspaceView): WorkspaceState {
       skillTemplates: SKILL_TEMPLATE_REFS,
       nextEpicId: 'EPIC-001',
       existingEpicIds: [],
+      requirementRuns: [],
       initialView,
     };
   }
@@ -543,6 +609,7 @@ function buildState(initialView: WorkspaceView): WorkspaceState {
       skillTemplates: SKILL_TEMPLATE_REFS,
       nextEpicId: suggestNextEpicId(epicIds0),
       existingEpicIds: epicIds0,
+      requirementRuns: scanRequirementRuns(root),
       initialView,
     };
   }
@@ -601,8 +668,51 @@ function buildState(initialView: WorkspaceView): WorkspaceState {
       : undefined,
     nextEpicId: suggestNextEpicId(epicIds),
     existingEpicIds: epicIds,
+    requirementRuns: scanRequirementRuns(root),
     initialView,
   };
+}
+
+function scanRequirementRuns(root: string): RequirementRunSummary[] {
+  const dir = path.join(root, 'docs', 'task-breakdowns');
+  if (!fs.existsSync(dir)) { return []; }
+  const results: RequirementRunSummary[] = [];
+  try {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const e of entries) {
+      if (!e.isDirectory() || !/^REQ-\d+$/i.test(e.name)) { continue; }
+      const runDir = path.join(dir, e.name);
+      const inputsPath = path.join(runDir, 'inputs.json');
+      if (!fs.existsSync(inputsPath)) { continue; }
+      let inputs: Record<string, string> = {};
+      try { inputs = JSON.parse(fs.readFileSync(inputsPath, 'utf8')) as Record<string, string>; } catch { continue; }
+      const tasksJsonPath = path.join(runDir, 'tasks.json');
+      const tasksMdPath = path.join(runDir, 'tasks.md');
+      const reqMdPath = path.join(runDir, 'requirements.md');
+      const hasTasks = fs.existsSync(tasksJsonPath) || fs.existsSync(tasksMdPath);
+      const hasRequirements = fs.existsSync(reqMdPath);
+      let taskCount: number | null = null;
+      if (fs.existsSync(tasksJsonPath)) {
+        try {
+          const parsed = JSON.parse(fs.readFileSync(tasksJsonPath, 'utf8')) as unknown[];
+          taskCount = Array.isArray(parsed) ? parsed.length : null;
+        } catch { /* ignore */ }
+      }
+      const stat = fs.statSync(inputsPath);
+      const createdAt = stat.mtime.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      results.push({
+        id: e.name,
+        createdAt,
+        platform: inputs.task_platform ?? 'local',
+        parentTask: inputs.parent_task ?? '',
+        source: inputs.requirements_source ?? '',
+        status: hasTasks ? 'complete' : 'pending',
+        taskCount,
+        hasRequirements,
+      });
+    }
+  } catch { /* ignore */ }
+  return results.reverse();
 }
 
 function listRunIds(root: string): string[] {
@@ -1096,6 +1206,10 @@ export class WorkspaceWebview {
     void WorkspaceWebview.current?.panel.webview.postMessage({ type: 'setBuilderTab', tab });
   }
 
+  static openAnalyze(extensionUri: vscode.Uri): void {
+    WorkspaceWebview.show(extensionUri, 'analyze');
+  }
+
   /**
    * Re-build + push state to the open Builder panel, if any. Used by
    * install/uninstall workflow-globals commands so the Domain dropdown
@@ -1161,6 +1275,16 @@ export class WorkspaceWebview {
       artifactsWatcher.onDidCreate(refresh, null, this.disposables);
       artifactsWatcher.onDidDelete(refresh, null, this.disposables);
       this.disposables.push(artifactsWatcher);
+
+      const breakdownPattern = new vscode.RelativePattern(
+        vscode.Uri.file(root),
+        'docs/task-breakdowns/**',
+      );
+      const breakdownWatcher = vscode.workspace.createFileSystemWatcher(breakdownPattern);
+      breakdownWatcher.onDidChange(refresh, null, this.disposables);
+      breakdownWatcher.onDidCreate(refresh, null, this.disposables);
+      breakdownWatcher.onDidDelete(refresh, null, this.disposables);
+      this.disposables.push(breakdownWatcher);
     }
 
     this.refresh();
@@ -1209,7 +1333,7 @@ export class WorkspaceWebview {
 
       case 'setView': {
         const v = msg.view;
-        if (v === 'builder' || v === 'epics') { this.currentView = v; }
+        if (v === 'builder' || v === 'epics' || v === 'analyze') { this.currentView = v; }
         return;
       }
 
@@ -1236,6 +1360,47 @@ export class WorkspaceWebview {
       case 'openBuilder':
         this.setView('builder');
         return;
+      case 'openAnalyzeView':
+        this.setView('analyze');
+        return;
+      case 'openRequirementRun': {
+        const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+        const rId = String(msg.runId ?? '');
+        if (!root || !rId) { return; }
+        const runDir = path.join(root, 'docs', 'task-breakdowns', rId);
+        const fileArg = String(msg.file ?? '');
+        const candidates = fileArg === 'requirements'
+          ? ['requirements.md', 'inputs.json']
+          : ['tasks.md', 'tasks.json', 'inputs.json'];
+        let target: string | undefined;
+        for (const f of candidates) {
+          const p = path.join(runDir, f);
+          if (fs.existsSync(p)) { target = p; break; }
+        }
+        if (!target) { return; }
+        const doc = await vscode.workspace.openTextDocument(target);
+        await vscode.window.showTextDocument(doc, { preview: false });
+        return;
+      }
+      case 'startAnalyzeRequirements': {
+        const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+        if (!root) { void vscode.window.showWarningMessage('AIDLC: Open a project folder first.'); return; }
+        // scaffoldRequirementAnalysis imported statically at top of file
+        const runId = await scaffoldRequirementAnalysis(root, this.extensionUri.fsPath, {
+          source: String(msg.source ?? ''),
+          platform: String(msg.platform ?? 'local'),
+          parentTask: String(msg.parentTask ?? ''),
+          instruction: String(msg.instruction ?? ''),
+          detailLevel: msg.detailLevel === 'brief' ? 'brief' : 'detailed',
+          extraProjects: Array.isArray(msg.extraProjects) ? msg.extraProjects as Array<{type:string;ref:string;label:string}> : undefined,
+          businessContext: typeof msg.businessContext === 'string' ? msg.businessContext : undefined,
+          itsContext: typeof msg.itsContext === 'string' ? msg.itsContext : undefined,
+        });
+        if (!runId) { return; }
+        this.refresh();
+        runSlashCommandInClaude(`/analyze-requirements ${runId}`, root);
+        return;
+      }
       case 'openAddPipeline':
         // Switch to the Builder and pop its inline Add-pipeline modal. Used by
         // the Start-Epic modal's "Create new pipeline" button.
@@ -1478,6 +1643,17 @@ export class WorkspaceWebview {
         if (!requestId) { return; }
         const reply = await pickAndReadTextFile(requestId);
         void this.panel.webview.postMessage({ type: 'pickAndReadFile:reply', ...reply });
+        return;
+      }
+      case 'pickFolder': {
+        const requestId = String(msg.requestId ?? '');
+        if (!requestId) { return; }
+        const picked = await vscode.window.showOpenDialog({
+          canSelectFolders: true, canSelectFiles: false, canSelectMany: false,
+          openLabel: 'Select project folder',
+        });
+        const folderPath = picked && picked.length > 0 ? picked[0].fsPath : null;
+        void this.panel.webview.postMessage({ type: 'pickFolder:reply', requestId, folderPath });
         return;
       }
       case 'startPipelineRunForEpic': {

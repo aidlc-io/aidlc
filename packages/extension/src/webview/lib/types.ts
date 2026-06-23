@@ -585,13 +585,25 @@ export interface WorkspaceState {
   nextEpicId: string;
   /** All existing epic ids (folders under epicRoot) — for uniqueness check. */
   existingEpicIds: string[];
+  requirementRuns?: RequirementRunSummary[];
   /** Initial view to render when the panel first opens. */
   initialView?: WorkspaceView;
 }
 
-export type WorkspaceView = 'builder' | 'epics';
+export type WorkspaceView = 'builder' | 'epics' | 'analyze';
 
 export type EpicFilter = 'all' | 'in_progress' | 'pending' | 'done' | 'failed';
+
+export interface RequirementRunSummary {
+  id: string;           // REQ-001
+  createdAt: string;    // human-readable date string
+  platform: string;     // jira | github | linear | redmine | local
+  parentTask: string;   // parent epic key or blank
+  source: string;       // requirements_source value
+  status: 'pending' | 'complete';
+  taskCount: number | null;
+  hasRequirements?: boolean;
+}
 
 declare global {
   interface Window {

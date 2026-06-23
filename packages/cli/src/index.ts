@@ -21,6 +21,7 @@ import { registerAsk } from './commands/ask';
 import { registerGuide } from './commands/guide';
 import { registerGlobals } from './commands/globals';
 import { setQuiet } from './output';
+import { registerAnalyze } from './commands/analyze';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { version } = require('../package.json') as { version: string };
 
@@ -59,6 +60,7 @@ registerMonitor(program);
 registerAsk(program);
 registerGuide(program);
 registerGlobals(program);
+registerAnalyze(program);
 
 program.parseAsync(process.argv).catch((err) => {
   console.error(err instanceof Error ? err.message : String(err));

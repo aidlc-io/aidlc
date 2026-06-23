@@ -34,6 +34,7 @@ import type { PresetStore } from './presetStore';
 import { themeManager } from './themeManager';
 import { loadMcpServers, type McpServerInfo } from './mcpServers';
 import { pickAndReadTextFile } from './pickAndReadTextFile';
+import { scaffoldRequirementAnalysis } from './requirementWizard';
 import {
   rejectStepInlineCommand,
   rerunStepInlineCommand,
@@ -475,6 +476,17 @@ export class SidebarWebviewProvider implements vscode.WebviewViewProvider {
       }
       case 'startEpic':
         await vscode.commands.executeCommand('aidlc.startEpic');
+        return;
+      case 'analyzeRequirements':
+        await vscode.commands.executeCommand('aidlc.analyzeRequirements');
+        return;
+      case 'startAnalyzeRequirements':
+        // Form now lives in the workspace panel — this case is a fallback for
+        // the sidebar's old modal which is no longer used.
+        WorkspaceWebview.show(this.extensionUri, 'analyze');
+        return;
+      case 'openAnalyzeView':
+        WorkspaceWebview.show(this.extensionUri, 'analyze');
         return;
       case 'requestStartEpic':
         WorkspaceWebview.triggerStartEpic(this.extensionUri);
