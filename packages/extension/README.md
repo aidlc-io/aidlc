@@ -14,6 +14,8 @@ Drive Claude through any pipeline you declare in a single `workspace.yaml` — v
 ## Features
 
 - **Workspace Builder** — main-area panel with agent / skill / pipeline cards, reorder, on-failure toggle, inline skill editor
+- **Analyze Requirements** — import requirements from **Jira**, **GitHub Issues**, **Linear**, **Redmine**, or a local file into a `requirements.md` in your project. The "Analyze" tab in the Builder drives the interactive wizard; `aidlc analyze` does the same from the terminal
+- **Test Agent** — a "Tests" tab that integrates [`aidlc-testagent`](https://github.com/aidlc-io/aidlc-testagent) (`ata`) for AI-powered E2E tests. Shows the full **Explore → Plan → Confirm → Generate → Execute → Heal → Verdict** pipeline, lists targets from `testagent.config.yaml` with per-target **Plan** / **Run** buttons and a settings editor — no terminal needed for day-to-day test runs
 - **Epics & runs** — bind a pipeline to a work item, then walk it step-by-step. **Approve** advances; **reject** cascades feedback to the producing step (auto-resets downstream); **rerun** with optional new context. Runs display by **step name**, not agent name
 - **Smart Start Epic** — describe the work in one line and AIDLC suggests a task-type **recipe** (`bugfix`, `small-feature`, `refactor`, `feature-parallel`, `large-feature`, `spike`) and assembles the pipeline. No pipeline yet? Load the SDLC example or create one inline. Older workspaces get recipes back-filled automatically
 - **AIDLC Monitor** — a status bar item plus a panel with **Token Usage**, **Insights**, and **Agents** tabs. The Agents tab embeds the [agents-observe](https://github.com/simple10/agents-observe) dashboard to watch live agent sessions and history. When the server is down it offers a one-click **Start Monitor** that can auto-install the plugin (Docker if available, otherwise a local runtime — no Docker required)
@@ -75,6 +77,8 @@ All commands are available via `Cmd+Shift+P` (or `Ctrl+Shift+P`):
 | `AIDLC: Start Epic` | Begin a new epic from the sidebar |
 | `AIDLC: Open Epics List` | Browse epics in the open workspace |
 | `AIDLC: Insert Demo Epic (EPIC-100)` | Drop a single demo epic for quick exploration |
+| `AIDLC: Analyze Requirements` | Open the Analyze tab to import requirements from Jira, GitHub Issues, Linear, Redmine, or a local file into `requirements.md` |
+| `AIDLC: Open Tests` | Open the Tests tab to manage and run AI-powered E2E tests via `aidlc-testagent` |
 
 ## Requirements
 

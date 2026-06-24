@@ -161,6 +161,7 @@ function describeExecError(err: unknown): string {
   return msg.slice(0, 400);
 }
 
+import * as jsYaml from 'js-yaml';
 import { readYaml, writeYaml, type YamlDocument } from './yamlIO';
 import {
   WORKSPACE_DIR,
@@ -284,7 +285,7 @@ function runSlashCommandInClaude(slash: string, root: string): void {
 
 // ── Webview-side type shapes (must mirror src/webview/lib/types.ts) ───────
 
-type WorkspaceView = 'builder' | 'epics' | 'analyze';
+type WorkspaceView = 'builder' | 'epics' | 'analyze' | 'tests';
 
 interface AgentSummary {
   id: string;
@@ -476,6 +477,8 @@ interface WorkspaceState {
   existingEpicIds: string[];
   requirementRuns?: RequirementRunSummary[];
   initialView?: WorkspaceView;
+  testAgentConfigExists?: boolean;
+  testAgentTargets?: { name: string; filePath: string; adapter?: string; url?: string }[];
 }
 
 const SKILL_TEMPLATE_REFS: SkillTemplateRef[] = SKILL_TEMPLATES.map((t) => ({
@@ -533,6 +536,8 @@ function buildState(initialView: WorkspaceView): WorkspaceState {
       existingEpicIds: [],
       requirementRuns: [],
       initialView,
+      testAgentConfigExists: false,
+      testAgentTargets: [],
     };
   }
 
@@ -611,6 +616,7 @@ function buildState(initialView: WorkspaceView): WorkspaceState {
       existingEpicIds: epicIds0,
       requirementRuns: scanRequirementRuns(root),
       initialView,
+      ...(() => { const ta = readTestAgentTargets(root); return { testAgentConfigExists: ta.exists, testAgentTargets: ta.targets }; })(),
     };
   }
 
@@ -670,6 +676,7 @@ function buildState(initialView: WorkspaceView): WorkspaceState {
     existingEpicIds: epicIds,
     requirementRuns: scanRequirementRuns(root),
     initialView,
+    ...(() => { const ta = readTestAgentTargets(root); return { testAgentConfigExists: ta.exists, testAgentTargets: ta.targets }; })(),
   };
 }
 
@@ -713,6 +720,41 @@ function scanRequirementRuns(root: string): RequirementRunSummary[] {
     }
   } catch { /* ignore */ }
   return results.reverse();
+}
+
+function readTestAgentTargets(root: string): { exists: boolean; targets: { name: string; filePath: string; adapter?: string; url?: string }[] } {
+  const configPath = path.join(root, 'testagent.config.yaml');
+  if (!fs.existsSync(configPath)) { return { exists: false, targets: [] }; }
+  try {
+    const doc = jsYaml.load(fs.readFileSync(configPath, 'utf8')) as Record<string, unknown>;
+    const rawIncludes = Array.isArray(doc?.targets) ? (doc.targets as unknown[]) : [];
+    const targets: { name: string; filePath: string; adapter?: string; url?: string }[] = [];
+    for (const entry of rawIncludes) {
+      const include = (entry as { include?: unknown }).include;
+      if (typeof include !== 'string') { continue; }
+      const dir = path.join(root, path.dirname(include));
+      const ext = path.basename(include).replace(/^\*/, '');
+      if (!fs.existsSync(dir)) { continue; }
+      for (const file of fs.readdirSync(dir)) {
+        if (!file.endsWith(ext)) { continue; }
+        const filePath = path.join(dir, file);
+        try {
+          const td = jsYaml.load(fs.readFileSync(filePath, 'utf8')) as Record<string, unknown>;
+          targets.push({
+            name: typeof td?.name === 'string' ? td.name : path.basename(file, ext),
+            filePath,
+            adapter: typeof td?.adapter === 'string' ? td.adapter : undefined,
+            url: typeof td?.url === 'string' ? td.url : undefined,
+          });
+        } catch {
+          targets.push({ name: path.basename(file, ext), filePath });
+        }
+      }
+    }
+    return { exists: true, targets };
+  } catch {
+    return { exists: true, targets: [] };
+  }
 }
 
 function listRunIds(root: string): string[] {
@@ -1333,7 +1375,7 @@ export class WorkspaceWebview {
 
       case 'setView': {
         const v = msg.view;
-        if (v === 'builder' || v === 'epics' || v === 'analyze') { this.currentView = v; }
+        if (v === 'builder' || v === 'epics' || v === 'analyze' || v === 'tests') { this.currentView = v; }
         return;
       }
 
@@ -1363,6 +1405,46 @@ export class WorkspaceWebview {
       case 'openAnalyzeView':
         this.setView('analyze');
         return;
+
+      case 'openTestAgentsView':
+        this.setView('tests');
+        return;
+
+      case 'runTestAgent': {
+        const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+        if (!root) { void vscode.window.showWarningMessage('AIDLC: Open a project folder first.'); return; }
+        const command = String(msg.command ?? 'run');
+        const target = typeof msg.target === 'string' && msg.target ? msg.target : undefined;
+        const args = [command, ...(target ? [target] : [])].join(' ');
+        const term = vscode.window.createTerminal({ name: `ata ${args}`, cwd: root });
+        term.show();
+        term.sendText(`ata ${args}`);
+        return;
+      }
+
+      case 'openTestAgentConfig': {
+        const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+        if (!root) { return; }
+        const cfgPath = path.join(root, 'testagent.config.yaml');
+        if (!fs.existsSync(cfgPath)) { void vscode.window.showWarningMessage('testagent.config.yaml not found.'); return; }
+        const doc = await vscode.workspace.openTextDocument(cfgPath);
+        await vscode.window.showTextDocument(doc, { preview: false });
+        return;
+      }
+
+      case 'openTargetConfig': {
+        const filePath = String(msg.filePath ?? '');
+        if (!filePath || !fs.existsSync(filePath)) { void vscode.window.showWarningMessage('Target config file not found.'); return; }
+        const tdoc = await vscode.workspace.openTextDocument(filePath);
+        await vscode.window.showTextDocument(tdoc, { preview: false });
+        return;
+      }
+
+      case 'openExternalUrl': {
+        const url = String(msg.url ?? '');
+        if (url) { await vscode.env.openExternal(vscode.Uri.parse(url)); }
+        return;
+      }
       case 'openRequirementRun': {
         const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
         const rId = String(msg.runId ?? '');

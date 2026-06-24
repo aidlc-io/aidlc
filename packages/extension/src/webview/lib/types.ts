@@ -588,9 +588,20 @@ export interface WorkspaceState {
   requirementRuns?: RequirementRunSummary[];
   /** Initial view to render when the panel first opens. */
   initialView?: WorkspaceView;
+  /** Whether testagent.config.yaml exists at the workspace root. */
+  testAgentConfigExists?: boolean;
+  /** Targets parsed from testagent.config.yaml includes. */
+  testAgentTargets?: TestAgentTarget[];
 }
 
-export type WorkspaceView = 'builder' | 'epics' | 'analyze';
+export interface TestAgentTarget {
+  name: string;
+  filePath: string;
+  adapter?: string;
+  url?: string;
+}
+
+export type WorkspaceView = 'builder' | 'epics' | 'analyze' | 'tests';
 
 export type EpicFilter = 'all' | 'in_progress' | 'pending' | 'done' | 'failed';
 

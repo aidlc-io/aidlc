@@ -201,6 +201,37 @@ without a run, and a run can exist without an epic — `epic` reads the former,
 
 ---
 
+### `analyze` — import requirements
+
+Analyzes a requirements source and scaffolds a task breakdown folder
+(`docs/task-breakdowns/REQ-NNN/`). Supports Jira, GitHub Issues, Linear,
+Redmine, or a local file/URL. Runs interactively when options are omitted;
+fully non-interactive with `--source`/`--platform`/`--parent`. Works without a
+`workspace.yaml`.
+
+```
+aidlc analyze                                              # interactive wizard
+aidlc analyze --platform jira --parent PROJ-100 -y        # Jira epic, skip confirm
+aidlc analyze --source ./requirements.csv --platform redmine --brief
+```
+
+Options:
+
+| Flag | Description |
+|------|-------------|
+| `--source <path-or-url>` | Requirements file path or URL |
+| `--text <text>` | Inline requirements text |
+| `--platform <jira\|github\|linear\|redmine\|local>` | Source platform |
+| `--parent <ref>` | Parent epic/issue ref (Jira epic key, GitHub `owner/repo`, etc.) |
+| `--brief` | Brief task list (titles + 1-line desc, skip ACs/points) |
+| `--instruction <text>` | Custom guidance for task creation |
+| `--id <runId>` | Use this run ID instead of auto-generated REQ-NNN |
+| `-y, --yes` | Skip confirmation prompt |
+
+Outputs a `docs/task-breakdowns/REQ-NNN/` folder with the scaffolded breakdown.
+
+---
+
 ### `run` — pipeline lifecycle
 
 These wrap `@aidlc/core`'s `PipelineRunner` and write atomically through
