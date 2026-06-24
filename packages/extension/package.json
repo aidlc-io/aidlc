@@ -1,8 +1,8 @@
 {
   "name": "aidlc",
   "displayName": "AIDLC",
-  "description": "Drive Claude through any pipeline declared in workspace.yaml \u2014 agents, skills, pipelines, and epics with approve/reject/rerun runs, plus an AIDLC Monitor with token usage, live agent observability, and a native session-insights dashboard, all from VS Code.",
-  "version": "1.4.0",
+  "description": "Drive Claude through any pipeline declared in workspace.yaml — agents, skills, pipelines, and epics with approve/reject/rerun runs, plus an AIDLC Monitor with token usage, live agent observability, and a native session-insights dashboard, all from VS Code.",
+  "version": "2.0.0",
   "publisher": "hueanmy",
   "license": "MIT",
   "sponsor": {
@@ -162,7 +162,7 @@
       },
       {
         "command": "aidlc.analyzeRequirements",
-        "title": "Analyze Requirements \u2192 Create Tasks",
+        "title": "Analyze Requirements → Create Tasks",
         "icon": "$(list-tree)",
         "category": "AIDLC"
       },
@@ -239,7 +239,7 @@
           "type": "number",
           "default": 30,
           "minimum": 1,
-          "description": "Window the cost-suggestion engine scans (in days). Older logs are skipped \u2014 they don't reflect current habits."
+          "description": "Window the cost-suggestion engine scans (in days). Older logs are skipped — they don't reflect current habits."
         },
         "aidlc.monitor.enabled": {
           "type": "boolean",
@@ -304,12 +304,12 @@
       {
         "id": "aidlc.gettingStarted",
         "title": "Get started with AIDLC",
-        "description": "Drive Claude through any pipeline declared in workspace.yaml \u2014 visually, from the editor.",
+        "description": "Drive Claude through any pipeline declared in workspace.yaml — visually, from the editor.",
         "steps": [
           {
             "id": "aidlc.welcome",
             "title": "Welcome to AIDLC",
-            "description": "AIDLC turns a single `workspace.yaml` into a runnable pipeline of Claude agents \u2014 edit it visually, run epics step-by-step, approve or reject each handoff.\n\nThe fastest way to feel it is to load the demo project in the next step.",
+            "description": "AIDLC turns a single `workspace.yaml` into a runnable pipeline of Claude agents — edit it visually, run epics step-by-step, approve or reject each handoff.\n\nThe fastest way to feel it is to load the demo project in the next step.",
             "media": {
               "markdown": "media/walkthrough/welcome.md"
             }
@@ -317,7 +317,7 @@
           {
             "id": "aidlc.loadDemo",
             "title": "Load the demo project",
-            "description": "One click scaffolds a full pipeline plus 6 sample epics into your current folder \u2014 no YAML to write.\n[Load Demo Project](command:aidlc.loadDemoProject)",
+            "description": "One click scaffolds a full pipeline plus 6 sample epics into your current folder — no YAML to write.\n[Load Demo Project](command:aidlc.loadDemoProject)",
             "media": {
               "markdown": "media/walkthrough/demo.md"
             },
@@ -339,7 +339,7 @@
           {
             "id": "aidlc.runEpic",
             "title": "Run your first epic",
-            "description": "Pick a sample epic and watch Claude work through the pipeline. Approve, reject, or rerun any step.\n[Open Epics List](command:aidlc.openEpicsList) \u00b7 [Start Epic](command:aidlc.startEpic)",
+            "description": "Pick a sample epic and watch Claude work through the pipeline. Approve, reject, or rerun any step.\n[Open Epics List](command:aidlc.openEpicsList) · [Start Epic](command:aidlc.startEpic)",
             "media": {
               "markdown": "media/walkthrough/epics.md"
             },
@@ -362,7 +362,7 @@
           {
             "id": "aidlc.buildYourOwn",
             "title": "Build your own workspace",
-            "description": "Scaffold a fresh `.aidlc/workspace.yaml`, add custom skills/agents/pipelines, save the result as a reusable template.\n[Init Sample Workspace](command:aidlc.initWorkspace) \u00b7 [Add Skill](command:aidlc.addSkill) \u00b7 [Add Agent](command:aidlc.addAgent) \u00b7 [Save as Template](command:aidlc.savePreset)",
+            "description": "Scaffold a fresh `.aidlc/workspace.yaml`, add custom skills/agents/pipelines, save the result as a reusable template.\n[Init Sample Workspace](command:aidlc.initWorkspace) · [Add Skill](command:aidlc.addSkill) · [Add Agent](command:aidlc.addAgent) · [Save as Template](command:aidlc.savePreset)",
             "media": {
               "markdown": "media/walkthrough/build.md"
             },

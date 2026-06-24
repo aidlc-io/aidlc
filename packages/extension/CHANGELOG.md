@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.0.0
+
+### Test Agent + Analyze Requirements
+
+- feat(extension): **Tests tab** in the Workspace Builder — integrates [`aidlc-testagent`](https://github.com/aidlc-io/aidlc-testagent) (`ata`) for AI-powered E2E tests. Shows the full **Explore → Plan → Confirm → Generate → Execute → Heal → Verdict** pipeline, lists targets from `testagent.config.yaml` with per-target **Plan** / **Run** buttons, a settings (⚙) button that opens the `.target.yaml` directly in the editor, and a global **Validate all** action. Setup prompt with "Run ata config" when no config exists.
+- feat(extension): **Analyze Requirements tab** — import requirements from Jira, GitHub Issues, Linear, Redmine, or a local file/URL and convert them into a `requirements.md` via the `/analyze-requirements` slash command. Interactive wizard with platform picker, parent epic/issue ref, brief mode, and custom instructions.
+- feat(cli): `aidlc analyze` — terminal equivalent of the Analyze Requirements wizard. Supports `--source`, `--text`, `--platform`, `--parent`, `--brief`, `--instruction`, `--id`, `-y`. Works without a `workspace.yaml`.
+
 ## 1.4.0
 
 ### Ask AIDLC + Bedrock/Vertex auth
