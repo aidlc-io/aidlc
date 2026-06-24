@@ -59,6 +59,7 @@ the other within ~200ms.
 - Recipes: \`aidlc recipe init\`, \`aidlc pipeline recipes|classify "<brief>"|generate\`.
 - Runs: \`aidlc run start <pipeline> --context k=v\`, \`aidlc run exec <runId> [--auto-approve]\`.
 - Watch: \`aidlc watch\`, \`aidlc tail\`, \`aidlc dashboard\`, \`aidlc monitor [--start|--open]\`.
+- Requirements: \`aidlc analyze\` (import requirements → \`requirements.md\`).
 - Help: \`aidlc guide\` (static getting-started card), \`aidlc ask "<question>"\` (this).
 - Global flag: \`-w, --workspace <path>\` (defaults to cwd; also reads AIDLC_WORKSPACE).
 
@@ -76,7 +77,16 @@ the other within ~200ms.
    - **Open Claude CLI Terminal** — a terminal pre-launched into \`claude\`.
    - **Open AIDLC Monitor** — token usage + session insights + live agents.
    - **Open Getting Started Guide**, **Open AST Graph Report**.
-6. The extension auto-registers an **ast-graph** MCP server so Claude can read
+6. **Workspace Builder tabs** (inside the Workspace Builder panel):
+   - **Analyze** tab — import requirements from Jira, GitHub, Linear, Redmine, or a
+     local file; converts them into \`requirements.md\` in the project root. CLI
+     equivalent: \`aidlc analyze\`.
+   - **Tests** tab — integrates \`aidlc-testagent\` (\`ata\` CLI); reads
+     \`testagent.config.yaml\` at the workspace root; shows each target with
+     **Plan** (\`ata plan <target>\`) and **Run** (\`ata run <target>\`) buttons;
+     **Validate all** runs \`ata validate\`. If no config exists, the tab prompts
+     **Run ata config** to generate one.
+7. The extension auto-registers an **ast-graph** MCP server so Claude can read
    structural code context cheaply (toggle via \`aidlc.astGraph.enabled\`).
 
 ## Answering guidance

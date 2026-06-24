@@ -36,7 +36,7 @@ types. Start Epic uses them to suggest the right shape from a one-line brief:
 | `large-feature` | the full pipeline |
 | `spike` | plan only |
 
-The Builder panel surfaces three tabs:
+The Builder panel surfaces five tabs:
 
 - **Workflows** — the pipeline graph (drag to reorder, settings per step,
   `+` on a node to add a parallel step at the same level)
@@ -44,6 +44,10 @@ The Builder panel surfaces three tabs:
   `~/.claude/agents/`)
 - **Skills** — slash-command instructions referenced by agents (read from
   `.claude/skills/` and `~/.claude/skills/`)
+- **Analyze** — import requirements from Jira, GitHub, Linear, Redmine, or a
+  local file and convert them into a `requirements.md` in the project
+- **Tests** — run and plan test targets via `aidlc-testagent` (`ata`);
+  see [§ 8](#8-test-agent-aidlc-testagent) below
 
 ---
 
@@ -179,3 +183,21 @@ From the epic detail panel:
 
 You can re-open this guide any time via **AIDLC: Open Getting Started Guide**
 in the command palette.
+
+---
+
+## 8. Test Agent (aidlc-testagent)
+
+The **Tests** tab integrates `aidlc-testagent` (`ata`), a CLI tool for
+planning and running automated test targets defined in your project.
+
+**Requirements:** a `testagent.config.yaml` file at the workspace root.
+
+- **No config yet?** The Tests tab shows a setup prompt. Click **Run ata
+  config** (or run `ata config` in a terminal) to generate the config
+  interactively. Once the file exists, reload the tab to see your targets.
+- **Config present:** each target listed in the config gets two buttons:
+  - **Plan** — runs `ata plan <target>` in a terminal to preview what
+    the agent will do
+  - **Run** — runs `ata run <target>` to execute the target
+- **Validate all** — runs `ata validate` across every target at once.

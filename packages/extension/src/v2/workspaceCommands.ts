@@ -39,6 +39,7 @@ import { loadAllBuiltinPresets, BUILTIN_WORKFLOWS } from './builtinPresets';
 import { installWorkflowGlobalsCommand } from './installWorkflowGlobalsCommand';
 import { uninstallWorkflowGlobalsCommand } from './uninstallWorkflowGlobalsCommand';
 import { startEpicCommand } from './epicWizard';
+import { analyzeRequirementsCommand } from './requirementWizard';
 import { registerAskCommand } from './askCommand';
 import { insertDemoEpicCommand } from './demoEpic';
 import { loadDemoProjectCommand } from './demoProject';
@@ -250,6 +251,11 @@ export function registerV2WorkspaceCommands(
   const startEpicCmd = vscode.commands.registerCommand(
     'aidlc.startEpic',
     () => startEpicCommand(),
+  );
+
+  const analyzeRequirementsCmd = vscode.commands.registerCommand(
+    'aidlc.analyzeRequirements',
+    () => analyzeRequirementsCommand(context.extensionPath),
   );
 
   const openEpicsListCmd = vscode.commands.registerCommand(
@@ -490,6 +496,7 @@ export function registerV2WorkspaceCommands(
       uninstallWorkflowGlobalsCmd,
       migrateEpicsCmd,
       startEpicCmd,
+      analyzeRequirementsCmd,
       openEpicsListCmd,
       insertDemoEpicCmd,
       loadDemoProjectCmd,
