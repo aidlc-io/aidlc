@@ -301,6 +301,20 @@ function logHistory(dir, mdName, note, summary) {
   all[mdName] = list;
   fs.writeFileSync(path.join(dir, HISTORY_FILE), JSON.stringify(all, null, 2) + '\n', 'utf8');
   console.log(`logged rev ${rev} for ${mdName} (snapshot ${snapshot})`);
+
+  // Also record a concise entry in the epic's memory (parent dir) so the epic
+  // accumulates context automatically — the Memory button / next session sees
+  // what changed, not just the per-artifact revision history. Best-effort.
+  try {
+    const epicMem = path.join(__dirname, 'epic-memory.mjs');
+    const epicDir = path.dirname(dir); // artifacts/ → epic dir
+    if (fs.existsSync(epicMem) && fs.existsSync(path.join(epicDir, 'state.json'))) {
+      const text = `${mdName} (rev ${rev}): ${summary || note || 'edited via annotation'}`;
+      execFileSync(process.execPath, [epicMem, 'add', epicDir, '--kind', 'context', '--text', text], {
+        stdio: 'ignore', timeout: 5000,
+      });
+    }
+  } catch { /* epic memory is best-effort; never fail the render/log */ }
 }
 
 function renderHistorySection(entries) {
