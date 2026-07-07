@@ -200,7 +200,11 @@ img { max-width: 100%; height: auto; border-radius: 8px; }
   color: var(--muted); font-size: .78rem;
 }
 .rev-history .rev-n { color: var(--accent); font-weight: 700; }
+a.rev-n { border-bottom: 1px dotted var(--accent); }
+a.rev-n:hover { border-bottom-style: solid; }
 .rev-history .rev-author { color: var(--text); font-weight: 600; }
+.doc-historical { border-style: dashed; }
+.doc-historical::before { background: #d98b3c; }
 .rev-history .rev-note { color: var(--text); font-weight: 600; margin: .2em 0 .1em; }
 .rev-history .rev-summary { color: var(--muted); }
 
@@ -235,6 +239,9 @@ function firstH1(text, fallback) {
 // The /annotate-artifact loop appends an entry each time it applies feedback to
 // the .md, so re-rendering surfaces "what changed, and why" per revision.
 const HISTORY_FILE = '.annotation-history.json';
+// Per-revision snapshots (a .md + rendered .html copy) so old revisions can be
+// viewed later without re-deriving them.
+const REV_DIR = '.revisions';
 
 function readHistory(dir) {
   try {
@@ -262,30 +269,55 @@ function detectAuthor(cwd) {
 }
 
 function logHistory(dir, mdName, note, summary) {
-  const p = path.join(dir, HISTORY_FILE);
   const all = readHistory(dir);
   const list = Array.isArray(all[mdName]) ? all[mdName] : [];
   const rev = list.length ? (list[list.length - 1].rev ?? list.length) + 1 : 1;
+  const stem = mdName.replace(/\.md$/i, '');
+
+  // Snapshot the current .md (the post-edit state for this revision) plus a
+  // rendered HTML copy, so this revision can be reopened later as-is.
+  const snapshot = `${REV_DIR}/${stem}/rev-${rev}.html`;
+  try {
+    const snapDir = path.join(dir, REV_DIR, stem);
+    fs.mkdirSync(snapDir, { recursive: true });
+    const mdText = fs.readFileSync(path.join(dir, mdName), 'utf8');
+    fs.writeFileSync(path.join(snapDir, `rev-${rev}.md`), mdText, 'utf8');
+    const html = render(mdText, `${firstH1(mdText, stem)} (rev ${rev})`, mdName, [], [], {
+      historical: { rev, backHref: `../../${stem}.html` },
+    });
+    fs.writeFileSync(path.join(snapDir, `rev-${rev}.html`), html, 'utf8');
+  } catch (e) {
+    console.error(`warning: could not snapshot rev ${rev}: ${e.message}`);
+  }
+
   list.push({
     at: new Date().toISOString(),
     rev,
     author: detectAuthor(dir),
     note: note || '',
     summary: summary || '',
+    snapshot,
   });
   all[mdName] = list;
-  fs.writeFileSync(p, JSON.stringify(all, null, 2) + '\n', 'utf8');
-  console.log(`logged rev ${rev} for ${mdName}`);
+  fs.writeFileSync(path.join(dir, HISTORY_FILE), JSON.stringify(all, null, 2) + '\n', 'utf8');
+  console.log(`logged rev ${rev} for ${mdName} (snapshot ${snapshot})`);
 }
 
 function renderHistorySection(entries) {
   if (!entries || !entries.length) return '';
   const items = entries.map((e) => {
     const when = escapeHtml(e.at || '');
+    const revLabel = `rev ${escapeHtml(String(e.rev ?? ''))}`;
+    // Link each revision to its snapshot so you can open the old version.
+    // (Navigates when the .html is opened directly; annotron's own server
+    // doesn't serve sibling files.)
+    const revEl = e.snapshot
+      ? `<a class="rev-n" href="${escapeHtml(e.snapshot)}" title="Open this revision">${revLabel}</a>`
+      : `<span class="rev-n">${revLabel}</span>`;
     const author = e.author ? `<span class="rev-author">${escapeHtml(e.author)}</span>` : '';
     const note = e.note ? `<div class="rev-note">${escapeHtml(e.note)}</div>` : '';
     const summary = e.summary ? `<div class="rev-summary">${escapeHtml(e.summary)}</div>` : '';
-    return `<li><div class="rev-head"><span class="rev-n">rev ${escapeHtml(String(e.rev ?? ''))}</span>${author}<time>${when}</time></div>${note}${summary}</li>`;
+    return `<li><div class="rev-head">${revEl}${author}<time>${when}</time></div>${note}${summary}</li>`;
   }).join('\n');
   return `\n<details class="rev-history">
 <summary>Revision history (${entries.length})</summary>
@@ -342,10 +374,15 @@ function wrapTables(body) {
     .replace(/<\/table>/g, '</table></div>');
 }
 
-function render(text, title, sourceName, siblingStems = [], history = []) {
+function render(text, title, sourceName, siblingStems = [], history = [], opts = {}) {
   let body = marked.parse(text, { renderer: makeRenderer(), gfm: true });
   body = rewriteSiblingLinks(body, siblingStems);
   body = wrapTables(body);
+  const meta = opts.historical
+    ? `<div class="doc-meta doc-historical">Historical snapshot · rev ${escapeHtml(String(opts.historical.rev))} · <a href="${escapeHtml(opts.historical.backHref)}">← back to current</a></div>`
+    : `<div class="doc-meta">Rendered from ${escapeHtml(sourceName)} · annotation copy — edit the .md source, not this file</div>`;
+  // Snapshots don't carry a revision-history section (they're a point in time).
+  const historySection = opts.historical ? '' : renderHistorySection(history);
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -355,8 +392,8 @@ function render(text, title, sourceName, siblingStems = [], history = []) {
 <style>${CSS}</style>
 </head>
 <body>
-<div class="doc-meta">Rendered from ${escapeHtml(sourceName)} · annotation copy — edit the .md source, not this file</div>
-${body}${renderHistorySection(history)}
+${meta}
+${body}${historySection}
 </body>
 </html>
 `;
@@ -371,6 +408,10 @@ function convertOne(mdPath, outPath, siblingStems = [], history = []) {
 }
 
 function die(msg) { console.error(msg); process.exit(1); }
+
+function mtime(p) {
+  try { return fs.statSync(p).mtimeMs; } catch { return 0; }
+}
 
 function main() {
   const args = process.argv.slice(2);
@@ -389,8 +430,10 @@ function main() {
   }
 
   if (args[0] === '--all') {
-    const dir = args[1];
-    if (!dir) die('usage: node md-to-html.mjs --all <dir>');
+    const rest = args.slice(1);
+    const force = rest.includes('--force');
+    const dir = rest.find((a) => a !== '--force');
+    if (!dir) die('usage: node md-to-html.mjs --all <dir> [--force]');
     const mdFiles = fs.readdirSync(dir)
       .filter((n) => n.toLowerCase().endsWith('.md'))
       .sort()
@@ -398,8 +441,16 @@ function main() {
     if (!mdFiles.length) die(`no .md files in ${dir}`);
     const stems = mdFiles.map((p) => path.basename(p).replace(/\.md$/i, ''));
     const history = readHistory(dir);
+    const historyMtime = mtime(path.join(dir, HISTORY_FILE));
     for (const p of mdFiles) {
-      convertOne(p, p.replace(/\.md$/i, '.html'), stems, history[path.basename(p)] ?? []);
+      const out = p.replace(/\.md$/i, '.html');
+      // Skip re-gen when the .html is already newer than both the .md and the
+      // history file — reopening an unchanged artifact costs nothing.
+      if (!force && mtime(out) >= mtime(p) && mtime(out) >= historyMtime) {
+        console.log(`skip (up to date) ${out}`);
+        continue;
+      }
+      convertOne(p, out, stems, history[path.basename(p)] ?? []);
     }
     return;
   }
