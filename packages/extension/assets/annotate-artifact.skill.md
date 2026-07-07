@@ -97,11 +97,12 @@ Let `R = node "$HOME/.claude/tools/md-to-html.mjs"` and
 
 ## Permissions
 
-To run the loop without stopping for approvals every round, allow these in
-`.claude/settings.json` (project or user-global):
+The AIDLC extension auto-adds these to the user-global `~/.claude/settings.json` on
+activation, so the loop runs prompt-free in any project (no per-project setup):
 - `Bash(node:*)` and `Bash(curl:*)` — the renderer / annotron / poll commands.
 - `Edit(docs/epics/**)` and `Write(docs/epics/**)` — applying feedback to the `.md`.
 
 Because the loop only ever edits the artifact under review (see Guardrails), scoping writes to
 `docs/epics/**` is safe: the human's real approval is the annotron review itself (they see the
-re-rendered result and either annotate again or say "done").
+re-rendered result and either annotate again or say "done"). If you're running without the
+extension, add the four entries above by hand.
