@@ -1201,6 +1201,34 @@ function mergeSkills(
 
 // ── Singleton panel ───────────────────────────────────────────────────────
 
+/** Render an epic-memory.json object as a readable Markdown digest. */
+function formatEpicMemoryMarkdown(mem: Record<string, unknown>, epicId: string): string {
+  const esc = (v: unknown) => String(v ?? '');
+  const entries = Array.isArray(mem.entries) ? (mem.entries as Array<Record<string, unknown>>) : [];
+  const reflections = Array.isArray(mem.reflections) ? (mem.reflections as Array<Record<string, unknown>>) : [];
+  const lines: string[] = [`# Epic memory — ${esc(mem.epic) || epicId}`];
+  if (mem.updatedAt) { lines.push('', `_updated ${esc(mem.updatedAt)}_`); }
+  if (mem.summary) { lines.push('', '## Summary', '', esc(mem.summary)); }
+  if (entries.length) {
+    lines.push('', '## Context & decisions', '');
+    for (const e of entries) {
+      const who = [e.author, e.at].filter(Boolean).map(esc).join(', ');
+      lines.push(`- **[${esc(e.kind) || 'note'}]** ${esc(e.text)}${who ? `  \n  _— ${who}_` : ''}`);
+    }
+  }
+  if (reflections.length) {
+    lines.push('', '## Reflections — prompt/work better next time', '');
+    for (const r of reflections) {
+      const who = [r.author, r.at].filter(Boolean).map(esc).join(', ');
+      lines.push(`- ${esc(r.text)}${who ? `  \n  _— ${who}_` : ''}`);
+    }
+  }
+  if (entries.length === 0 && reflections.length === 0 && !mem.summary) {
+    lines.push('', '_(empty — add entries with `/epic-context` while working the epic)_');
+  }
+  return lines.join('\n') + '\n';
+}
+
 export class WorkspaceWebview {
   static current: WorkspaceWebview | undefined;
   private disposables: vscode.Disposable[] = [];
@@ -1414,6 +1442,32 @@ export class WorkspaceWebview {
       `Đang mở vòng annotate cho ${filename}: Claude sẽ render + mở annotron rồi tự nhận feedback và sửa .md. ` +
         `(Cần Claude CLI. Chưa có thì chạy “${skillCmd}” trong Claude Code.)`,
     );
+  }
+
+  /**
+   * Show an epic's memory digest (docs/epics/<epic>/epic-memory.json) as a
+   * rendered Markdown preview so anyone can read the shared context (summary,
+   * decisions/constraints, reflections) without opening raw JSON.
+   */
+  private async openEpicMemory(epicDir: string): Promise<void> {
+    const p = path.join(epicDir, 'epic-memory.json');
+    if (!fs.existsSync(p)) {
+      void vscode.window.showInformationMessage(
+        `Epic này chưa có memory. Chạy /epic-context ${path.basename(epicDir)} trong Claude Code để bắt đầu tích luỹ context.`,
+      );
+      return;
+    }
+    let mem: Record<string, unknown>;
+    try {
+      mem = JSON.parse(fs.readFileSync(p, 'utf8'));
+    } catch {
+      void vscode.window.showErrorMessage(`epic-memory.json không đọc được (JSON lỗi): ${p}`);
+      return;
+    }
+    const md = formatEpicMemoryMarkdown(mem, path.basename(epicDir));
+    const doc = await vscode.workspace.openTextDocument({ content: md, language: 'markdown' });
+    await vscode.window.showTextDocument(doc, { preview: true });
+    await vscode.commands.executeCommand('markdown.showPreview', doc.uri);
   }
 
   // ── Message routing ─────────────────────────────────────────────────────
@@ -1632,6 +1686,12 @@ export class WorkspaceWebview {
         const filename = String(msg.filename ?? '');
         if (!epicDir || !filename) { return; }
         this.annotateArtifact(epicDir, filename);
+        return;
+      }
+      case 'openEpicMemory': {
+        const epicDir = String(msg.epicDir ?? '');
+        if (!epicDir) { return; }
+        await this.openEpicMemory(epicDir);
         return;
       }
       case 'copyCommand': {

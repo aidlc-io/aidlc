@@ -13,6 +13,7 @@ import {
   User,
   ExternalLink,
   Highlighter,
+  Brain,
   Folder,
   Play,
   History,
@@ -1193,6 +1194,15 @@ function EpicActions({ epic, hasInputs }: { epic: EpicSummary; hasInputs: boolea
       >
         <Folder className="h-3 w-3" />
         Reveal artifacts
+      </button>
+      <button
+        type="button"
+        onClick={() => postMessage({ type: 'openEpicMemory', epicDir: epic.epicDir })}
+        className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground"
+        title="View this epic's memory digest (decisions, constraints, reflections) — shared context to continue the epic cheaply"
+      >
+        <Brain className="h-3 w-3" />
+        Memory
       </button>
     </div>
   );
