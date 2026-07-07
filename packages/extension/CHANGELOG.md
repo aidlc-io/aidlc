@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.1.0
+
+### Artifact annotation loop (annotron) + epic memory
+
+- feat(extension): **Annotate artifacts in a browser** — clicking a step's `.md` artifact opens a popover with **Open Markdown** and **Open HTML + feedback**. The feedback option renders the Markdown to a self-contained, Claude-styled HTML (zero-dep Node renderer, `marked` vendored — no Python/pip) and opens it in **annotron** (vendored, no global install) for point-and-click review. Feedback is applied **back to the `.md`** (canonical source), never the HTML, then re-rendered live via the `/annotate-artifact` skill.
+- feat(extension): **Revision history** — every applied round is snapshotted to `.revisions/<artifact>/rev-N.{md,html}`, attributed to the editing dev (git identity, hostname fallback), and shown both in the rendered HTML's "Revision history" section (with a per-revision selector to reopen old versions) and in the pipeline **History** panel. Reopening an unchanged artifact skips re-rendering.
+- feat(extension): **Epic memory** — a compact per-epic digest (`docs/epics/<epic>/epic-memory.json`: summary, decisions/constraints, and reflections on how to prompt better next time) so continuing an epic with any agent is cheap on tokens. Viewable via the **Memory** button in the epic footer and maintained with the `/epic-context` skill; annotation rounds auto-append context entries.
+- feat(cli): `aidlc globals install` now also installs the annotation tooling (renderer + annotron + epic-memory + the `/annotate-artifact` and `/epic-context` skills) under `~/.claude` — the loop works from a plain terminal + Claude Code, no VS Code required.
+- chore: the annotation tooling auto-installs into `~/.claude` on extension activation and is shared with the CLI via `@aidlc/core`; it never modifies your `settings.json`.
+
 ## 2.0.1
 
 - fix(extension): correctly handle claude mcp list timeout (#61)

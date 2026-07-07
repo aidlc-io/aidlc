@@ -17,6 +17,10 @@ the Claude Code transcript.
 
 This is a **monorepo** managed with [pnpm workspaces](https://pnpm.io/workspaces).
 
+## Review artifacts, keep the memory
+
+Open any epic artifact in a **browser annotation editor** ([annotron](https://www.npmjs.com/package/annotron), vendored — no separate install), point-and-click your feedback, and let Claude apply it **back to the Markdown** (the canonical source) and re-render — with a full **revision history**: who changed what, and a per-revision selector to reopen any past version. Each epic also keeps a compact **memory** (`epic-memory.json`: decisions, constraints, reflections) so picking it back up later — with any agent — costs far fewer tokens. Markdown → HTML uses a zero-dependency Node renderer (no Python). Works in the VS Code extension, and from the terminal via `aidlc globals install` (installs the `/annotate-artifact` and `/epic-context` skills + tools under `~/.claude`).
+
 ## Packages
 
 | Package | Path | Purpose |

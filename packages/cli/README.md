@@ -426,6 +426,14 @@ aidlc globals install [ids...]     # install (default: the standard workflows)
 aidlc globals uninstall [ids...]   # remove AIDLC-marked global files (run before removing the extension)
 ```
 
+`aidlc globals install` also lays down the **artifact annotation tooling** — the
+zero-dependency Markdown→HTML renderer, a vendored [annotron](https://www.npmjs.com/package/annotron)
+(no global install), the per-epic memory tool, and the `/annotate-artifact` +
+`/epic-context` skills — under `~/.claude`. That makes the browser annotation loop
+and epic memory work from a plain terminal + Claude Code, no VS Code required. It
+never edits your `settings.json` (add `Edit(docs/epics/**)` yourself if you want the
+loop to run without per-write confirmation).
+
 `uninstall` only removes files AIDLC wrote (marker-guarded) and preserves files
 still needed by other globally-installed workflows.
 
