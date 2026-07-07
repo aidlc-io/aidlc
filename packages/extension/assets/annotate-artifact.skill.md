@@ -48,8 +48,14 @@ Let `R = node "$HOME/.claude/tools/md-to-html.mjs"` and
 3. **Wait for feedback.** `$A poll "$HTML"` — blocks until the user sends. Output JSON:
    - `items[]` — each `{ kind: element|text, selector, text, note }`
    - `message` — freeform message
-   - `finalized: true` — the user is done → go to step 6.
+   - `finalized: true` — the user clicked **Finalize** → go to step 6.
    If it returns empty / times out with nothing, run it again.
+
+   **End signal (robust):** if `finalized` is true, OR the `message` is essentially just
+   "done" / "xong" / "finalize" / "close" / "stop" (with no `items`), the user is finished →
+   go to step 6. Tell the user up front they can end the loop either way — clicking Finalize,
+   or typing "done" and Send (the latter always works even if the Finalize button doesn't
+   respond).
 
 4. **Apply to the `.md` (never the `.html`).** For each item, locate the corresponding place
    in the **Markdown source** — match on the item's `text` (the selected/element text) and
@@ -67,9 +73,14 @@ Let `R = node "$HOME/.claude/tools/md-to-html.mjs"` and
      browser conversation log and re-arms the poll. Then loop back to step 3.
    - Keep the summary short: "Tightened the goals section, fixed the metric, added a risks table."
 
-6. **Finalize.** When poll returns `"finalized": true`, the review is done. Confirm the `.md`
-   already reflects every applied change (it does — each round edited the `.md`). Remind the
-   user the `.html` is a throwaway render. Optionally `$A stop` to shut the server.
+6. **Finalize (exit — do NOT re-arm).** When the end signal fires (`finalized: true`, or a
+   "done"/"xong" message), the review is over. **Do not call `poll` again** — `poll --reply`
+   re-arms and would hang. Instead:
+   - Confirm to the user (in your normal reply) that the `.md` reflects every applied change
+     (it does — each round edited the `.md`).
+   - Optionally `$A stop` to shut the annotron server.
+   - Stop. The `.html` is a throwaway render (Finalize may also write it; the next render
+     overwrites it — harmless).
 
 ## Guardrails
 
