@@ -95,14 +95,14 @@ Let `R = node "$HOME/.claude/tools/md-to-html.mjs"` and
 - Do not add this loop to any pipeline `produces:` — MD stays the official artifact.
 - One artifact per session. To review another file, re-invoke with that filename.
 
-## Permissions
+## Permissions (optional)
 
-The AIDLC extension auto-adds these to the user-global `~/.claude/settings.json` on
-activation, so the loop runs prompt-free in any project (no per-project setup):
+By default Claude Code will ask before each file write. If you'd rather the loop run without
+stopping to confirm every round, add these to `.claude/settings.json` yourself (project or
+user-global) — the extension does NOT change your settings automatically:
 - `Bash(node:*)` and `Bash(curl:*)` — the renderer / annotron / poll commands.
 - `Edit(docs/epics/**)` and `Write(docs/epics/**)` — applying feedback to the `.md`.
 
 Because the loop only ever edits the artifact under review (see Guardrails), scoping writes to
-`docs/epics/**` is safe: the human's real approval is the annotron review itself (they see the
-re-rendered result and either annotate again or say "done"). If you're running without the
-extension, add the four entries above by hand.
+`docs/epics/**` is safe: the human's real approval is the annotron review itself. Leaving the
+prompts on is perfectly fine too — you just confirm each edit.

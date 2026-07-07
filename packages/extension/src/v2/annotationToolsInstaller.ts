@@ -18,8 +18,8 @@
  * and only overwritten if they're ours — a hand-edited file (no marker) is left
  * alone.
  *
- * It also merges the annotate-loop permissions into ~/.claude/settings.json so
- * the loop runs prompt-free in any project (no per-project settings needed).
+ * It does NOT touch the user's settings.json — permissions stay under the user's
+ * control (the skill documents the allows to add if you want the loop prompt-free).
  *
  * Safe to call on every activation; wrap the call in try/catch so a filesystem
  * hiccup never blocks the extension from starting.
@@ -34,16 +34,6 @@ import * as path from 'path';
 // end of the file and ownership is detected with a substring check.
 const SKILL_MARKER = '<!-- AIDLC annotation tool — reinstalled by the AIDLC extension; hand edits are overwritten -->';
 const SKILL_MARKER_KEY = 'AIDLC annotation tool';
-
-// Permissions the annotate loop needs to run without stopping to ask each round.
-// Scoped: file writes are limited to docs/epics/**; the loop only ever edits the
-// artifact under review. `Bash(node:*)` covers the bundled node tools.
-const ANNOTATE_ALLOWS = [
-  'Bash(node:*)',
-  'Bash(curl:*)',
-  'Edit(docs/epics/**)',
-  'Write(docs/epics/**)',
-];
 
 export function installAnnotationTools(extensionPath: string, log?: (msg: string) => void): void {
   const home = os.homedir();
@@ -87,43 +77,7 @@ export function installAnnotationTools(extensionPath: string, log?: (msg: string
     removeIfOurs(path.join(skillsDest, `aidlc-${name}.md`), log);
   }
 
-  ensureAnnotatePermissions(home, log);
-
   log?.(`annotationTools: installed renderer + annotron + epic-memory + skills into ${path.join(home, '.claude')}`);
-}
-
-/**
- * Ensure the annotate-loop permissions are allowed in the user-global
- * `~/.claude/settings.json`, so the loop runs prompt-free in any project without
- * the user hand-editing per-project settings. Merges (adds only missing entries;
- * never removes or reorders the user's existing allows) and is idempotent.
- */
-function ensureAnnotatePermissions(home: string, log?: (msg: string) => void): void {
-  const settingsPath = path.join(home, '.claude', 'settings.json');
-  let settings: Record<string, unknown> = {};
-  if (fs.existsSync(settingsPath)) {
-    try {
-      const parsed = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
-      if (parsed && typeof parsed === 'object') { settings = parsed as Record<string, unknown>; }
-    } catch {
-      log?.('annotationTools: ~/.claude/settings.json is not valid JSON — skipping permission setup');
-      return;
-    }
-  }
-  const perms = (settings.permissions && typeof settings.permissions === 'object'
-    ? settings.permissions
-    : (settings.permissions = {})) as Record<string, unknown>;
-  const allow = (Array.isArray(perms.allow) ? perms.allow : (perms.allow = [])) as string[];
-
-  let added = 0;
-  for (const entry of ANNOTATE_ALLOWS) {
-    if (!allow.includes(entry)) { allow.push(entry); added++; }
-  }
-  if (added === 0) { return; }
-
-  fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
-  fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n', 'utf8');
-  log?.(`annotationTools: added ${added} annotate permission(s) to ~/.claude/settings.json`);
 }
 
 function installSkill(src: string, destDir: string, name: string, log?: (msg: string) => void): void {
