@@ -605,7 +605,7 @@ function StepDetail({
                   });
                 }}
                 className="inline-flex w-fit items-center gap-1 rounded border border-border bg-surface px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary"
-                title={`Render ${artifactName} to HTML and open it in annotron for annotation`}
+                title={`Start the annotate loop for ${artifactName}: Claude opens it in annotron, receives your feedback, and edits the .md`}
               >
                 <Highlighter className="h-2.5 w-2.5" />
                 <span>Annotate</span>

@@ -24,7 +24,11 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
+// Ownership marker. MUST NOT go on line 1 — the skill's YAML frontmatter has to
+// start at line 1 or Claude Code won't register the skill. So it lives at the
+// end of the file and ownership is detected with a substring check.
 const SKILL_MARKER = '<!-- AIDLC annotation tool — reinstalled by the AIDLC extension; hand edits are overwritten -->';
+const SKILL_MARKER_KEY = 'AIDLC annotation tool';
 const SKILL_TARGET = 'aidlc-annotate-artifact.md';
 
 export function installAnnotationTools(extensionPath: string, log?: (msg: string) => void): void {
@@ -60,11 +64,12 @@ export function installAnnotationTools(extensionPath: string, log?: (msg: string
 
 function installSkill(src: string, dest: string, log?: (msg: string) => void): void {
   const body = fs.readFileSync(src, 'utf8');
-  const stamped = `${SKILL_MARKER}\n${body}`;
+  // Frontmatter stays on line 1; marker appended at the end.
+  const stamped = `${body.replace(/\s*$/, '')}\n\n${SKILL_MARKER}\n`;
 
   if (fs.existsSync(dest)) {
-    const firstLine = readFirstLine(dest);
-    if (!firstLine.startsWith('<!-- AIDLC annotation tool')) {
+    const existing = fs.readFileSync(dest, 'utf8');
+    if (!existing.includes(SKILL_MARKER_KEY)) {
       log?.(`annotationTools: ${SKILL_TARGET} exists and is user-owned — leaving it alone`);
       return; // never clobber a hand-authored skill
     }
@@ -87,15 +92,5 @@ function copyDir(src: string, dest: string): void {
     } else if (entry.isFile()) {
       fs.copyFileSync(s, d);
     }
-  }
-}
-
-function readFirstLine(filePath: string): string {
-  try {
-    const buf = fs.readFileSync(filePath, 'utf8');
-    const nl = buf.indexOf('\n');
-    return nl === -1 ? buf : buf.slice(0, nl);
-  } catch {
-    return '';
   }
 }

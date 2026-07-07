@@ -1358,64 +1358,61 @@ export class WorkspaceWebview {
   }
 
   /**
-   * Render an epic's Markdown artifacts to standalone HTML and open the clicked
-   * one in annotron (a local review editor for agent-generated HTML). Markdown
-   * stays the canonical source — the .html is a throwaway annotation render.
+   * Start the full /annotate-artifact review loop for an artifact in one click.
    *
-   * Everything ships with the extension: the Node renderer (`tools/md-to-html.mjs`,
-   * zero-dep, `marked` vendored) and annotron (`vendor/annotron`, zero-dep). Both
-   * run under VS Code's own Electron as Node (`process.execPath` +
-   * ELECTRON_RUN_AS_NODE), so the feature needs no `python`, no global `annotron`,
-   * and nothing on the user's PATH. annotron spawns its server with the same
-   * `process.execPath`, so that propagates.
+   * Opens a Claude Code terminal running `claude "/annotate-artifact <epic> <file>"`.
+   * The skill (installed into ~/.claude on activation) renders the .md to HTML,
+   * opens it in the vendored annotron, then *polls* for the user's annotations,
+   * applies them back to the .md, logs a revision, and re-renders. Polling is the
+   * receiving half the extension itself can't do — it isn't the agent — which is
+   * why the button hands off to Claude rather than just opening annotron. Markdown
+   * stays canonical.
+   *
+   * Requires the `claude` CLI on the terminal's PATH (AIDLC users have it). If it
+   * isn't installed the terminal shows the error; the user can still run the
+   * renderer + annotron by hand.
    */
   private annotateArtifact(epicDir: string, filename: string): void {
-    const artifactsDir = path.join(epicDir, 'artifacts');
-    const htmlPath = path.join(artifactsDir, filename.replace(/\.md$/i, '.html'));
-    const extRoot = this.extensionUri.fsPath;
-    const renderer = path.join(extRoot, 'tools', 'md-to-html.mjs');
-    const annotronBin = path.join(extRoot, 'vendor', 'annotron', 'bin', 'annotron');
+    const epicId = path.basename(epicDir);
+    const skillCmd = `/annotate-artifact ${epicId} ${filename}`;
+    const termName = `AIDLC · Annotate: ${epicId}/${filename}`;
 
-    for (const [label, p] of [['renderer', renderer], ['annotron', annotronBin]] as const) {
-      if (!fs.existsSync(p)) {
-        void vscode.window.showErrorMessage(
-          `Annotate: bundled ${label} not found at ${p}. Rebuild the extension (pnpm compile).`,
-        );
-        return;
+    // Reuse the terminal if a loop is already running for this artifact.
+    const existing = vscode.window.terminals.find((t) => t.name === termName);
+    if (existing) { existing.show(false); return; }
+
+    const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    const cwd = root && fs.existsSync(root) ? root : epicDir;
+    const terminal = vscode.window.createTerminal({
+      name: termName,
+      cwd,
+      iconPath: new vscode.ThemeIcon('comment-discussion'),
+      location: vscode.TerminalLocation.Panel,
+      // oh-my-zsh's weekly update prompt can swallow the launch command before
+      // shell integration installs — disable it for this terminal only.
+      env: { DISABLE_AUTO_UPDATE: 'true', DISABLE_UPDATE_PROMPT: 'true' },
+    });
+    terminal.show(false);
+
+    // Prefer shell integration; fall back to sendText for shells without it.
+    // Mirrors aidlc.openClaudeTerminal.
+    const launch = `claude ${JSON.stringify(skillCmd)}`;
+    let sent = false;
+    const integ = vscode.window.onDidChangeTerminalShellIntegration((e) => {
+      if (e.terminal === terminal && e.shellIntegration && !sent) {
+        sent = true;
+        e.shellIntegration.executeCommand(launch);
+        integ.dispose();
       }
-    }
+    });
+    this.disposables.push(integ);
+    setTimeout(() => {
+      if (!sent) { sent = true; terminal.sendText(launch, true); integ.dispose(); }
+    }, 2000);
 
-    // Run our bundled Node scripts through VS Code's own Electron-as-Node.
-    const nodeEnv = { ...process.env, ELECTRON_RUN_AS_NODE: '1' };
-    const exe = process.execPath;
-
-    void vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Notification, title: `Rendering ${filename} for annotation…` },
-      async () => {
-        try {
-          await new Promise<void>((resolve, reject) => {
-            const proc = spawn(exe, [renderer, '--all', artifactsDir], { env: nodeEnv });
-            let stderr = '';
-            proc.stderr?.on('data', (d) => { stderr += String(d); });
-            proc.on('error', reject);
-            proc.on('close', (code) =>
-              code === 0 ? resolve() : reject(new Error(stderr.trim() || `renderer exited ${code}`)),
-            );
-          });
-          // annotron starts its background server (if needed) and opens the browser.
-          const annotron = spawn(exe, [annotronBin, htmlPath], {
-            env: nodeEnv,
-            detached: true,
-            stdio: 'ignore',
-          });
-          annotron.unref();
-          void vscode.window.showInformationMessage(
-            `Opened ${path.basename(htmlPath)} in annotron. To let Claude receive your feedback and edit the .md, run /annotate-artifact in Claude Code.`,
-          );
-        } catch (e) {
-          void vscode.window.showErrorMessage(`Annotate failed: ${(e as Error).message}`);
-        }
-      },
+    void vscode.window.showInformationMessage(
+      `Đang mở vòng annotate cho ${filename}: Claude sẽ render + mở annotron rồi tự nhận feedback và sửa .md. ` +
+        `(Cần Claude CLI. Chưa có thì chạy “${skillCmd}” trong Claude Code.)`,
     );
   }
 
