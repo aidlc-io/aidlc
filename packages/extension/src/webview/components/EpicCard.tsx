@@ -1169,7 +1169,8 @@ function GateButton({
 
 function EpicActions({ epic, hasInputs }: { epic: EpicSummary; hasInputs: boolean }) {
   return (
-    <div className="flex flex-wrap items-center gap-2 border-t border-border pt-4">
+    <div className="border-t border-border pt-4">
+      <div className="flex flex-wrap items-center gap-2">
       {!epic.runId && epic.pipeline && (
         <button
           type="button"
@@ -1221,6 +1222,29 @@ function EpicActions({ epic, hasInputs }: { epic: EpicSummary; hasInputs: boolea
         <Brain className="h-3 w-3" />
         Memory
       </button>
+      </div>
+      {epic.artifactFiles.length > 0 && (
+        <div className="mt-3 flex flex-wrap items-center gap-1.5">
+          <span className="mr-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Files
+          </span>
+          {epic.artifactFiles.map((f) => {
+            const isHtml = /\.html?$/i.test(f);
+            return (
+              <button
+                key={f}
+                type="button"
+                onClick={() => postMessage({ type: 'openArtifactAny', epicDir: epic.epicDir, filename: f })}
+                className="inline-flex items-center gap-1 rounded border border-border bg-card px-2 py-0.5 font-mono text-[10.5px] text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary"
+                title={isHtml ? `Open ${f} in your browser` : `Open ${f} in a tab`}
+              >
+                {isHtml ? <Eye className="h-2.5 w-2.5" /> : <FileText className="h-2.5 w-2.5" />}
+                {f}
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

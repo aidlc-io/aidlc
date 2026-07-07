@@ -98,6 +98,8 @@ export interface EpicSummary {
   statePath: string;
   /** Absolute path to the epic dir (for opening artifacts/). */
   epicDir: string;
+  /** Every non-hidden file in the artifacts folder (all extensions). */
+  artifactFiles: string[];
 }
 
 const STATUS_VALUES: ReadonlyArray<EpicStatus> = ['pending', 'in_progress', 'done', 'failed'];
@@ -134,6 +136,23 @@ function readAnnotationHistory(artifactsDir: string): Record<string, StepHistory
     return out;
   } catch {
     return {};
+  }
+}
+
+/**
+ * List every real file in an epic's artifacts folder (any extension), so the
+ * panel can surface all of them — not just pipeline-step outputs. Hidden entries
+ * (`.revisions/`, `.annotation-history.json`, dotfiles) and subdirectories are
+ * excluded.
+ */
+function listArtifactFiles(artifactsDir: string): string[] {
+  try {
+    return fs.readdirSync(artifactsDir, { withFileTypes: true })
+      .filter((d) => d.isFile() && !d.name.startsWith('.'))
+      .map((d) => d.name)
+      .sort();
+  } catch {
+    return [];
   }
 }
 
@@ -369,6 +388,7 @@ export function listEpics(workspaceRoot: string, doc: YamlDocument | null): Epic
       inputsCount: Object.keys(inputs).length,
       statePath: stateFile,
       epicDir,
+      artifactFiles: listArtifactFiles(path.join(epicDir, 'artifacts')),
       runId: runState ? runState.runId : null,
     });
   }

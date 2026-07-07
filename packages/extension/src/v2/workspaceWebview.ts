@@ -427,6 +427,7 @@ interface EpicSummaryUi {
   inputs: Record<string, string>;
   epicDir: string;
   existingArtifacts: string[];
+  artifactFiles: string[];
   createdAt: string;
   /** Aggregate token usage for the epic. */
   tokenUsage?: EpicTokenUsage;
@@ -897,6 +898,7 @@ function toEpicSummaryUi(e: CoreEpicSummary): EpicSummaryUi {
     inputs: e.inputs,
     epicDir,
     existingArtifacts,
+    artifactFiles: e.artifactFiles,
     createdAt: e.createdAt,
     tokenUsage: e.tokenUsage
       ? { total: e.tokenUsage.total, hasOverlap: e.tokenUsage.hasOverlap }
@@ -1736,6 +1738,21 @@ export class WorkspaceWebview {
         const filename = String(msg.filename ?? '');
         if (!epicDir || !filename) { return; }
         await this.openRenderedHtml(epicDir, filename);
+        return;
+      }
+      case 'openArtifactAny': {
+        const epicDir = String(msg.epicDir ?? '');
+        const filename = String(msg.filename ?? '');
+        if (!epicDir || !filename) { return; }
+        const filePath = path.join(epicDir, 'artifacts', filename);
+        if (!fs.existsSync(filePath)) { return; }
+        if (/\.html?$/i.test(filename)) {
+          // Open .html in the browser (file://) so it renders + rev links work.
+          await vscode.env.openExternal(vscode.Uri.file(filePath));
+        } else {
+          const doc = await vscode.workspace.openTextDocument(filePath);
+          await vscode.window.showTextDocument(doc, { preview: false });
+        }
         return;
       }
       case 'copyCommand': {

@@ -550,6 +550,8 @@ export interface EpicSummary {
   inputs: Record<string, string>;
   epicDir: string;
   existingArtifacts: string[];
+  /** Every non-hidden file in the artifacts folder (all extensions). */
+  artifactFiles: string[];
   createdAt: string;
   /** Aggregate token usage for the epic. */
   tokenUsage?: EpicUsage;
