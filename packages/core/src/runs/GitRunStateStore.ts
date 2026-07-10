@@ -162,6 +162,7 @@ export class GitRunStateStore implements RunStateBackend {
     if (fs.existsSync(path.join(wt, '.git'))) { this.ready.add(workspaceRoot); return; }
 
     fs.mkdirSync(path.dirname(wt), { recursive: true });
+    this.ensureIgnored(workspaceRoot);
 
     const online = this.hasRemote(workspaceRoot);
     if (online) { this.trySilently(workspaceRoot, ['fetch', this.remote]); }
@@ -185,6 +186,25 @@ export class GitRunStateStore implements RunStateBackend {
       }
     }
     this.ready.add(workspaceRoot);
+  }
+
+  /**
+   * Keep the state worktree out of the code branch's `git status`. Idempotent:
+   * skips if the path is already ignored, otherwise appends a rule to
+   * `.aidlc/.gitignore` (creating it if needed).
+   */
+  private ensureIgnored(workspaceRoot: string): void {
+    const rel = this.worktreeSubdir.split(path.sep).join('/');
+    if (this.trySilently(workspaceRoot, ['check-ignore', '-q', this.worktreeSubdir])) { return; }
+    const aidlcDir = path.join(workspaceRoot, '.aidlc');
+    if (!fs.existsSync(aidlcDir)) { return; }
+    const ignoreFile = path.join(aidlcDir, '.gitignore');
+    // Rule relative to .aidlc/, e.g. worktree `.aidlc/.state` → `.state/`.
+    const rule = (rel.startsWith('.aidlc/') ? rel.slice('.aidlc/'.length) : rel).replace(/\/?$/, '/');
+    const existing = fs.existsSync(ignoreFile) ? fs.readFileSync(ignoreFile, 'utf8') : '';
+    if (existing.split(/\r?\n/).includes(rule)) { return; }
+    const prefix = existing.length && !existing.endsWith('\n') ? '\n' : '';
+    fs.appendFileSync(ignoreFile, `${prefix}${rule}\n`);
   }
 
   /** Rebase local state onto the remote branch, if syncing and online. */

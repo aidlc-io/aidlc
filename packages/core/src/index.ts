@@ -25,6 +25,7 @@ export type {
   RecipeConfig,
   NormalizedStep,
   StateConfig,
+  PersistenceConfig,
   SidebarConfig,
   SidebarView,
   WorkspaceRefIssue,
@@ -117,6 +118,11 @@ export { RunStateStore, FileRunStateStore, RUN_ID_PATTERN } from './runs/RunStat
 export type { RunStateBackend } from './runs/RunStateStore';
 export { GitRunStateStore } from './runs/GitRunStateStore';
 export type { GitRunStateStoreOptions, GitExec } from './runs/GitRunStateStore';
+export {
+  resolveRunStateBackend,
+  activateRunStateBackend,
+  activateBackendFromWorkspace,
+} from './runs/resolveBackend';
 export {
   startRun,
   canStartStep,
