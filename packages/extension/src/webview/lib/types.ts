@@ -551,6 +551,10 @@ export interface EpicSummary {
   epicDir: string;
   existingArtifacts: string[];
   createdAt: string;
+  /** True when this folder has no state.json/pipeline and the summary was
+   *  synthesized from the `.md` files in its artifacts/ folder. Steps are a
+   *  straight lifecycle-ordered list with no run controls. */
+  artifactsOnly?: boolean;
   /** Aggregate token usage for the epic. */
   tokenUsage?: EpicUsage;
 }

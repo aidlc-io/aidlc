@@ -114,3 +114,53 @@ describe('listEpics run-state overlay with a multi-step agent', () => {
     expect(steps[1].runStatus).toBe('approved');
   });
 });
+
+/**
+ * Coverage for the artifacts-only fallback: a folder with no `state.json`
+ * (no pipeline binding) is no longer silently skipped — it's synthesized into
+ * an epic straight from the `.md` files in its `artifacts/` folder, mirroring
+ * cf-aidlc-dashboard's `pipelineId: 'artifacts'` behavior.
+ */
+describe('listEpics artifacts-only fallback (no state.json)', () => {
+  let root: string;
+
+  const write = (rel: string, body: string) => {
+    const full = path.join(root, rel);
+    fs.mkdirSync(path.dirname(full), { recursive: true });
+    fs.writeFileSync(full, body);
+  };
+
+  beforeEach(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'aidlc-epicslist-artifacts-'));
+    // An epic folder with artifacts but NO state.json, in lifecycle-shuffled order.
+    write('docs/epics/LOOSE-1/artifacts/TECH-DESIGN.md', '---\nstatus: draft\n---\n# Design\n');
+    write('docs/epics/LOOSE-1/artifacts/PRD.md', '---\nstatus: approved\n---\n# PRD\n');
+    write('docs/epics/LOOSE-1/artifacts/.annotation-history.json', '{}');
+    // A folder with neither state.json nor artifacts — must stay skipped.
+    fs.mkdirSync(path.join(root, 'docs', 'epics', 'EMPTY'), { recursive: true });
+  });
+
+  afterEach(() => {
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it('synthesizes an epic from artifact .md files, ordered by lifecycle', () => {
+    const epics = listEpics(root, { state: { root: 'docs/epics' } } as unknown as Parameters<typeof listEpics>[1]);
+
+    // The empty folder is skipped; only the artifacts-bearing one appears.
+    expect(epics.map((e) => e.id)).toEqual(['LOOSE-1']);
+
+    const epic = epics[0];
+    expect(epic.artifactsOnly).toBe(true);
+    expect(epic.pipeline).toBeNull();
+    expect(epic.statePath).toBe('');
+
+    // PRD sorts before TECH-DESIGN (lifecycle), dotfiles are excluded.
+    expect(epic.stepDetails.map((s) => s.artifact)).toEqual(['PRD.md', 'TECH-DESIGN.md']);
+
+    // Status is read from each artifact's own frontmatter.
+    expect(epic.stepDetails[0].status).toBe('done');       // approved
+    expect(epic.stepDetails[1].status).toBe('in_progress'); // draft
+    expect(epic.status).toBe('in_progress');
+  });
+});

@@ -94,10 +94,19 @@ export interface EpicSummary {
   /** Resolved inputs (capability id → user-supplied value). Keys may be empty. */
   inputs: Record<string, string>;
   inputsCount: number;
-  /** Absolute path to state.json — used by the webview to open the file. */
+  /** Absolute path to state.json — used by the webview to open the file.
+   *  Empty string for artifacts-only epics (see `artifactsOnly`). */
   statePath: string;
   /** Absolute path to the epic dir (for opening artifacts/). */
   epicDir: string;
+  /**
+   * True when this folder has no `state.json` / pipeline binding and the
+   * summary was synthesized purely from the `.md` files in its `artifacts/`
+   * folder — mirrors cf-aidlc-dashboard's `pipelineId: 'artifacts'` fallback.
+   * Steps are a straight lifecycle-ordered list; status comes from each
+   * artifact's own frontmatter `status:` field, not a run-state machine.
+   */
+  artifactsOnly?: boolean;
 }
 
 const STATUS_VALUES: ReadonlyArray<EpicStatus> = ['pending', 'in_progress', 'done', 'failed'];
@@ -159,6 +168,161 @@ export function epicsRoot(workspaceRoot: string, doc: YamlDocument | null): stri
   return path.resolve(workspaceRoot, stateRoot);
 }
 
+/**
+ * Parse the `status:` field from an artifact `.md` file's YAML frontmatter.
+ * Hand-rolled (same shape as `parseAgentFrontmatter` in workspaceWebview) —
+ * reads only the first 4 KB and stops at the closing `---`. Returns the raw
+ * status token (`approved` | `in-review` | `draft` | `template` | …) lowercased,
+ * or undefined when the file has no frontmatter / no status.
+ */
+function parseArtifactStatus(filePath: string): string | undefined {
+  let raw: string;
+  try { raw = fs.readFileSync(filePath, 'utf8').slice(0, 4096); }
+  catch { return undefined; }
+  const m = raw.match(/^(?:<!--[^\n]*-->\s*\n)?---\r?\n([\s\S]*?)\r?\n---/);
+  if (!m) { return undefined; }
+  for (const line of m[1].split(/\r?\n/)) {
+    const kv = line.match(/^status\s*:\s*(.+)$/i);
+    if (kv) {
+      const v = kv[1].trim().replace(/^['"]|['"]$/g, '').toLowerCase();
+      return v || undefined;
+    }
+  }
+  return undefined;
+}
+
+/** Map an artifact frontmatter status to an epic step status. */
+function artifactStatusToEpicStatus(s: string | undefined): EpicStatus {
+  switch (s) {
+    case 'approved': return 'done';
+    case 'in-review':
+    case 'draft': return 'in_progress';
+    default: return 'pending';
+  }
+}
+
+// Rough SDLC phase order for the synthetic (no-pipeline) timeline, since
+// filenames vary per repo (PRD.md, prd.md, PRD-Scanning-Flows-*.md, …).
+// Matched by hyphen/underscore-delimited token subsequence, in phase order —
+// first match wins. Anything unmatched sorts after all known phases
+// (alphabetically). Token matching (not raw substring) avoids e.g.
+// "implementation-plan" wrongly matching a lone "plan" keyword for phase 0.
+// Kept in sync with cf-aidlc-dashboard's LIFECYCLE_PHASES.
+const LIFECYCLE_PHASES: string[][] = [
+  ['prd'],
+  ['design'],
+  ['test-plan', 'testplan'],
+  ['implementation', 'implement'],
+  ['test-cases', 'testcases'],
+  ['test-script', 'performance-test', 'execute-test', 'test-report', 'run-report'],
+  ['approval', 'review'],
+  ['release'],
+  ['health-report', 'monitor'],
+  ['doc-reverse-sync', 'doc-sync'],
+];
+
+function lifecycleRank(filename: string): number {
+  const tokens = filename.replace(/\.md$/i, '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  const hasSubseq = (kwTokens: string[]): boolean => {
+    for (let j = 0; j <= tokens.length - kwTokens.length; j++) {
+      if (kwTokens.every((t, k) => tokens[j + k] === t)) { return true; }
+    }
+    return false;
+  };
+  for (let i = 0; i < LIFECYCLE_PHASES.length; i++) {
+    if (LIFECYCLE_PHASES[i].some((kw) => hasSubseq(kw.split('-')))) { return i; }
+  }
+  return LIFECYCLE_PHASES.length;
+}
+
+function sortByLifecycle(files: string[]): string[] {
+  return [...files].sort((a, b) => {
+    const ra = lifecycleRank(a);
+    const rb = lifecycleRank(b);
+    return ra !== rb ? ra - rb : a.localeCompare(b);
+  });
+}
+
+/**
+ * Build an `EpicSummary` for a folder that has NO `state.json` / pipeline
+ * binding, straight from the `.md` files in its `artifacts/` folder. One step
+ * per artifact, ordered by SDLC lifecycle, status read from each file's own
+ * frontmatter. Returns null when there's no `artifacts/` folder or no `.md`
+ * files (nothing to show). Mirrors cf-aidlc-dashboard's `pipelineId: 'artifacts'`
+ * fallback so artifact-only epics render instead of being silently skipped.
+ */
+function synthesizeArtifactsEpic(epicDir: string, folder: string): EpicSummary | null {
+  const artifactsDir = path.join(epicDir, 'artifacts');
+  if (!fs.existsSync(artifactsDir)) { return null; }
+  let files: string[];
+  try {
+    files = fs.readdirSync(artifactsDir).filter((n) => !n.startsWith('.') && /\.md$/i.test(n));
+  } catch { return null; }
+  if (files.length === 0) { return null; }
+
+  const ordered = sortByLifecycle(files);
+  const annotationHistory = readAnnotationHistory(artifactsDir);
+
+  const stepDetails = ordered.map((filename) => {
+    const status = artifactStatusToEpicStatus(parseArtifactStatus(path.join(artifactsDir, filename)));
+    const name = filename.replace(/\.md$/i, '');
+    const history = mergeHistory(undefined, annotationHistory[filename]);
+    return {
+      // Synthesize a readable "agent" label from the filename (PRD → prd,
+      // TECH-DESIGN → tech design) — there's no pipeline persona to name.
+      agent: name.replace(/-/g, ' '),
+      name,
+      slashCommand: undefined,
+      artifact: filename,
+      status,
+      startedAt: null,
+      finishedAt: null,
+      runStatus: null,
+      isCurrentRunStep: false,
+      stepHasAutoReview: false,
+      stepHasHumanReview: false,
+      // No DAG info from static files — leave empty so the UI renders a
+      // straight LinearStepper rather than a DagStepper.
+      dependsOn: [] as string[],
+      history,
+      rejectCount: history ? history.filter((e) => e.kind === 'reject').length : 0,
+    };
+  });
+
+  const inputs = readInputs(epicDir);
+  const done = stepDetails.filter((s) => s.status === 'done').length;
+  const epicStatus: EpicStatus =
+    stepDetails.length > 0 && done === stepDetails.length
+      ? 'done'
+      : stepDetails.some((s) => s.status !== 'pending')
+      ? 'in_progress'
+      : 'pending';
+
+  // Use the epic dir's mtime as a best-effort "Started" date for sorting/display.
+  let createdAt = '';
+  try { createdAt = fs.statSync(epicDir).mtime.toISOString(); } catch { /* leave blank */ }
+
+  return {
+    id: folder,
+    title: '',
+    description: '',
+    status: epicStatus,
+    createdAt,
+    pipeline: null,
+    agent: null,
+    agents: stepDetails.map((s) => s.agent),
+    currentStep: 0,
+    stepStatuses: stepDetails.map((s) => s.status),
+    stepDetails,
+    inputs,
+    inputsCount: Object.keys(inputs).length,
+    statePath: '',
+    epicDir,
+    runId: null,
+    artifactsOnly: true,
+  };
+}
+
 export function listEpics(workspaceRoot: string, doc: YamlDocument | null): EpicSummary[] {
   const dir = epicsRoot(workspaceRoot, doc);
   if (!fs.existsSync(dir)) { return []; }
@@ -171,7 +335,13 @@ export function listEpics(workspaceRoot: string, doc: YamlDocument | null): Epic
   for (const folder of folders) {
     const epicDir = path.join(dir, folder);
     const stateFile = path.join(epicDir, 'state.json');
-    if (!fs.existsSync(stateFile)) { continue; }
+    if (!fs.existsSync(stateFile)) {
+      // No pipeline binding — fall back to an artifacts-only summary built
+      // from the `.md` files in this folder, instead of skipping it entirely.
+      const synthetic = synthesizeArtifactsEpic(epicDir, folder);
+      if (synthetic) { epics.push(synthetic); }
+      continue;
+    }
 
     let parsed: Record<string, unknown>;
     try {
