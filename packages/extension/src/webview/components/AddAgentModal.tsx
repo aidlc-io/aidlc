@@ -16,6 +16,25 @@ const MODELS = [
   { value: 'claude-haiku-4-5-20251001', label: 'claude-haiku-4-5', hint: 'Fastest, cheapest' },
 ];
 
+const isClaudeModel = (m: string) => MODELS.some((x) => x.value === m);
+
+/**
+ * Which CLI/LLM runs this agent. `default` uses the bundled `claude` CLI;
+ * `codex` / `opencode` run the agent on another provider's CLI. `custom`
+ * (runner_path JS) isn't offered here — it's a workspace.yaml power-user knob.
+ */
+const RUNNERS = [
+  { value: 'default', label: 'Claude Code', hint: 'claude CLI — the default' },
+  { value: 'codex', label: 'Codex', hint: 'OpenAI codex CLI' },
+  { value: 'opencode', label: 'OpenCode', hint: 'opencode CLI — any provider/model' },
+];
+
+/** Placeholder shown in the free-text model box per non-Claude runner. */
+const MODEL_PLACEHOLDER: Record<string, string> = {
+  codex: 'optional — e.g. gpt-5-codex (blank = codex default)',
+  opencode: 'optional — provider/model, e.g. openai/gpt-5 (blank = default)',
+};
+
 const KNOWN_CAPABILITIES = [
   { id: 'jira', label: 'Jira', hint: 'Read Jira issues + projects' },
   { id: 'figma', label: 'Figma', hint: 'Read Figma files + designs' },
@@ -33,6 +52,9 @@ export interface AddAgentDraft {
   name: string;
   skills: string[];
   model: string;
+  /** Which CLI/LLM runs the agent (default | codex | opencode). Only sent when
+   *  non-default; persisted to workspace.yaml's AIDLC layer. */
+  runner?: string;
   description?: string;
   capabilities?: string[];
   /** aidlc only — file-based agents don't have an env concept. */
@@ -69,7 +91,20 @@ export function AddAgentModal({
   const [id, setId] = useState('');
   const [name, setName] = useState('');
   const [pickedSkills, setPickedSkills] = useState<string[]>([]);
+  const [runner, setRunner] = useState('default');
   const [model, setModel] = useState(MODELS[0].value);
+
+  // Keep model coherent with runner: a Claude model id is meaningless to
+  // codex/opencode, so drop it when leaving `default` and restore a Claude
+  // default when returning.
+  const selectRunner = (next: string) => {
+    setRunner(next);
+    if (next === 'default') {
+      if (!isClaudeModel(model)) { setModel(MODELS[0].value); }
+    } else if (isClaudeModel(model)) {
+      setModel('');
+    }
+  };
   const [envRows, setEnvRows] = useState<Array<{ key: string; value: string }>>([]);
   const [capabilities, setCapabilities] = useState<string[]>([]);
   const [customCapInput, setCustomCapInput] = useState('');
@@ -143,6 +178,7 @@ export function AddAgentModal({
       skills: pickedSkills,
       model,
     };
+    if (runner !== 'default') { draft.runner = runner; }
     if (description.trim()) { draft.description = description.trim(); }
     if (capabilities.length > 0) { draft.capabilities = capabilities; }
     // Env vars only apply to AIDLC scope (workspace.yaml-managed).
@@ -324,28 +360,64 @@ export function AddAgentModal({
 
         <div>
           <label className="mb-1 block text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">
-            Model
+            Runner <span className="font-normal normal-case tracking-normal text-muted-foreground/80">(which CLI / LLM runs this agent)</span>
           </label>
-          <div className="flex flex-col gap-1.5">
-            {MODELS.map((m) => (
+          <div className="grid grid-cols-3 gap-2">
+            {RUNNERS.map((r) => (
               <button
-                key={m.value}
+                key={r.value}
                 type="button"
-                onClick={() => setModel(m.value)}
+                onClick={() => selectRunner(r.value)}
+                title={r.hint}
                 className={cn(
-                  'flex items-baseline gap-2 rounded-md border px-2.5 py-1.5 text-left',
-                  model === m.value
+                  'flex flex-col items-start rounded-md border px-2.5 py-1.5 text-left',
+                  runner === r.value
                     ? 'border-primary/60 bg-primary/10'
                     : 'border-border bg-transparent hover:border-border/80 hover:bg-accent/40',
                 )}
               >
-                <span className="font-mono text-[12px] font-medium text-foreground">
-                  {m.label}
-                </span>
-                <span className="text-[10.5px] text-muted-foreground">{m.hint}</span>
+                <span className="text-[12px] font-medium text-foreground">{r.label}</span>
+                <span className="text-[10px] text-muted-foreground">{r.hint}</span>
               </button>
             ))}
           </div>
+        </div>
+
+        <div>
+          <label className="mb-1 block text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">
+            Model
+          </label>
+          {runner === 'default' ? (
+            <div className="flex flex-col gap-1.5">
+              {MODELS.map((m) => (
+                <button
+                  key={m.value}
+                  type="button"
+                  onClick={() => setModel(m.value)}
+                  className={cn(
+                    'flex items-baseline gap-2 rounded-md border px-2.5 py-1.5 text-left',
+                    model === m.value
+                      ? 'border-primary/60 bg-primary/10'
+                      : 'border-border bg-transparent hover:border-border/80 hover:bg-accent/40',
+                  )}
+                >
+                  <span className="font-mono text-[12px] font-medium text-foreground">
+                    {m.label}
+                  </span>
+                  <span className="text-[10.5px] text-muted-foreground">{m.hint}</span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <input
+              type="text"
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              placeholder={MODEL_PLACEHOLDER[runner] ?? 'optional model id'}
+              spellCheck={false}
+              className="w-full rounded-md border border-border bg-input/50 px-2.5 py-2 font-mono text-[12px] text-foreground placeholder:text-muted-foreground/70 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/40"
+            />
+          )}
         </div>
 
         <div>

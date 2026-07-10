@@ -97,6 +97,10 @@ export type {
 export { RunnerRegistry } from './runner/RunnerRegistry';
 export { DefaultRunner } from './runner/DefaultRunner';
 export type { DefaultRunnerOptions } from './runner/DefaultRunner';
+export { CodexRunner } from './runner/CodexRunner';
+export type { CodexRunnerOptions } from './runner/CodexRunner';
+export { OpenCodeRunner } from './runner/OpenCodeRunner';
+export type { OpenCodeRunnerOptions } from './runner/OpenCodeRunner';
 export { isInsideClaudeCodeSession, hasClaudeLogin, buildClaudeSpawnEnv } from './runner/claudeEnv';
 export {
   CustomRunnerLoader,

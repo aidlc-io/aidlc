@@ -14,6 +14,12 @@ export interface RunnerContext {
   env: Record<string, string>;
   /** Slash command args, already split. */
   args: string[];
+  /**
+   * Model id the agent declares (`agent.model`), when set. Runners that talk to
+   * a multi-model CLI (codex `--model`, opencode `-m provider/model`) forward
+   * it; the default `claude` runner and CLIs without model selection ignore it.
+   */
+  model?: string;
   /** Absolute path to the user's project root (where .aidlc/ lives). */
   workspaceRoot: string;
   /** Stream chunk to terminal/output channel. Always full UTF-8 strings. */

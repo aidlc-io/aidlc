@@ -13,6 +13,8 @@ import * as path from 'path';
 import type { AidlcRunner } from './types';
 import type { AgentConfig } from '../schema/WorkspaceSchema';
 import { DefaultRunner } from './DefaultRunner';
+import { CodexRunner } from './CodexRunner';
+import { OpenCodeRunner } from './OpenCodeRunner';
 import { CustomRunnerLoader } from './CustomRunnerLoader';
 
 export class RunnerRegistry {
@@ -22,7 +24,11 @@ export class RunnerRegistry {
 
   constructor(workspaceRoot: string) {
     this.loader = new CustomRunnerLoader(workspaceRoot);
+    // Built-in agent CLIs. `default` shells out to `claude`; the others let an
+    // agent run on a different LLM by setting `runner: codex` / `runner: opencode`.
     this.register('default', new DefaultRunner());
+    this.register('codex', new CodexRunner());
+    this.register('opencode', new OpenCodeRunner());
   }
 
   /** Add or replace a builtin runner. */
@@ -47,7 +53,10 @@ export class RunnerRegistry {
       return fresh;
     }
 
-    const builtin = this.builtins.get('default');
+    // Pick the built-in named by `agent.runner` (e.g. `codex`, `opencode`),
+    // falling back to `default` for the unset/`default` case or any id we
+    // don't recognise.
+    const builtin = this.builtins.get(agent.runner) ?? this.builtins.get('default');
     if (!builtin) {
       throw new Error('No default runner registered. RunnerRegistry constructor should have registered one.');
     }

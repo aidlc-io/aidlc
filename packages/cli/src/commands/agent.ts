@@ -20,7 +20,7 @@ export function registerAgent(program: Command): void {
     .option('--model <model>',   'Claude model override', 'claude-sonnet-4-5')
     .option('--capabilities <caps>', 'comma-separated capabilities (e.g. files,github)')
     .option('--description <desc>',  'one-line description shown in the sidebar')
-    .option('--runner <runner>',  'runner type: default or custom', 'default')
+    .option('--runner <runner>',  'runner: default (claude), codex, opencode, or custom', 'default')
     .option('--runner-path <path>',  'path to custom runner .js (required when --runner custom)')
     .action((opts: {
       id: string; name: string; skills: string; model: string;
@@ -201,6 +201,7 @@ export function registerAgent(program: Command): void {
         skill: skillText,
         env,
         args: userMessage ? [userMessage] : [],
+        model: agent.model,
         workspaceRoot: root,
         onOutput: (chunk) => process.stdout.write(chunk),
         onError:  (chunk) => process.stderr.write(chalk.dim(chunk)),

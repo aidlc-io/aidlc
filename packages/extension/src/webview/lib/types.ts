@@ -374,6 +374,8 @@ export interface AgentSummary {
   skills?: string[];
   model?: string;
   integrations?: string[];
+  /** Which CLI/LLM runs this agent: `default` (claude), `codex`, `opencode`, `custom`. */
+  runner?: string;
   /** Human label of the built-in preset that contributed this entry (e.g. "SDLC Pipeline"). Absent for user-created entries. */
   builtinFrom?: string;
 }

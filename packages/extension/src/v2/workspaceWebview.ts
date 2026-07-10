@@ -299,6 +299,8 @@ interface AgentSummary {
   skills?: string[];
   model?: string;
   integrations?: string[];
+  /** Which CLI/LLM runs this agent: `default` (claude), `codex`, `opencode`, `custom`. Read from the workspace.yaml AIDLC layer. */
+  runner?: string;
   /** Human label of the built-in preset that contributed this entry (e.g. "SDLC Pipeline"). Absent for user-created entries. */
   builtinFrom?: string;
 }
@@ -946,6 +948,17 @@ function detectBuiltinSource(filePath: string): string | undefined {
   } catch { return undefined; }
 }
 
+/**
+ * Normalize the modal's runner choice for persistence. `default` (or an
+ * empty/unknown value) is the implicit runner and is never written to YAML;
+ * `codex` / `opencode` / `custom` are stored verbatim so the runner registry
+ * can key off them.
+ */
+function normalizeRunner(raw: unknown): string | undefined {
+  const v = typeof raw === 'string' ? raw.trim() : '';
+  return v === 'codex' || v === 'opencode' || v === 'custom' ? v : undefined;
+}
+
 function mergeAgents(doc: YamlDocument | null, root: string, discovered: DiscoveredAsset[]): AgentSummary[] {
   const out: AgentSummary[] = [];
 
@@ -955,10 +968,15 @@ function mergeAgents(doc: YamlDocument | null, root: string, discovered: Discove
   // inherit their `skills:` array — the picker hides the AIDLC scope, so
   // without this overlay the per-step skill picker would be empty.
   const yamlSkillsById = new Map<string, string[]>();
+  // Runner selection (`runner: codex` etc.) lives only in the workspace.yaml
+  // AIDLC layer — the Claude `.md` frontmatter has no such field — so overlay
+  // it onto file-based agents the same way we overlay skills.
+  const yamlRunnerById = new Map<string, string>();
   if (doc) {
     for (const a of doc.agents) {
       const skills = extractSkillIds(a);
       if (skills.length > 0) { yamlSkillsById.set(String(a.id), skills); }
+      if (typeof a.runner === 'string') { yamlRunnerById.set(String(a.id), a.runner); }
     }
   }
 
@@ -974,6 +992,7 @@ function mergeAgents(doc: YamlDocument | null, root: string, discovered: Discove
       integrations: fm.tools,
       skill: yamlSkills?.[0],
       skills: yamlSkills,
+      runner: yamlRunnerById.get(a.id),
       builtinFrom: detectBuiltinSource(a.filePath),
     });
   }
@@ -1009,6 +1028,7 @@ function mergeAgents(doc: YamlDocument | null, root: string, discovered: Discove
         integrations: Array.isArray(a.capabilities)
           ? (a.capabilities as unknown[]).map(String)
           : undefined,
+        runner: typeof a.runner === 'string' ? a.runner : undefined,
         builtinFrom: detectBuiltinSource(primarySkillPath),
       });
     }
@@ -1025,6 +1045,7 @@ function mergeAgents(doc: YamlDocument | null, root: string, discovered: Discove
       integrations: fm.tools,
       skill: yamlSkills?.[0],
       skills: yamlSkills,
+      runner: yamlRunnerById.get(a.id),
       builtinFrom: detectBuiltinSource(a.filePath),
     });
   }
@@ -2364,6 +2385,9 @@ export class WorkspaceWebview {
     const description = String(draft.description ?? '').trim();
     const capsRaw = Array.isArray(draft.capabilities) ? (draft.capabilities as unknown[]) : [];
     const capabilities = capsRaw.map(String).filter((c) => c);
+    // Runner (which CLI/LLM runs the agent). `default` is implicit — only a
+    // non-default choice is persisted, into the workspace.yaml AIDLC layer.
+    const runner = normalizeRunner(draft.runner);
 
     if (scope === 'aidlc') {
       if (!model) { return; }
@@ -2377,6 +2401,7 @@ export class WorkspaceWebview {
       if (description) { agent.description = description; }
       if (Object.keys(env).length > 0) { agent.env = env; }
       if (capabilities.length > 0) { agent.capabilities = capabilities; }
+      if (runner) { agent.runner = runner; }
 
       this.mutateYaml((d) => {
         d.agents.push(agent);
@@ -2438,6 +2463,20 @@ export class WorkspaceWebview {
     fs.mkdirSync(path.dirname(agentPath), { recursive: true });
     fs.writeFileSync(agentPath, content, 'utf8');
 
+    // Runner selection has no place in Claude's .md frontmatter, so a
+    // non-default choice for a file-based agent is recorded in the
+    // workspace.yaml AIDLC layer (where the runner registry reads it).
+    if (runner) {
+      this.mutateYaml((d) => {
+        const existing = d.agents.find((a) => String(a.id) === id);
+        if (existing) {
+          (existing as Record<string, unknown>).runner = runner;
+        } else {
+          d.agents.push({ id, runner } as unknown as YamlDocument['agents'][number]);
+        }
+      });
+    }
+
     const docOpen = await vscode.workspace.openTextDocument(agentPath);
     await vscode.window.showTextDocument(docOpen, { preview: false });
 
@@ -2465,6 +2504,9 @@ export class WorkspaceWebview {
     const model = String(draft.model ?? '').trim();
     const capsRaw = Array.isArray(draft.capabilities) ? (draft.capabilities as unknown[]) : [];
     const capabilities = capsRaw.map(String).filter((c) => c);
+    // Runner: `default` (or absent) clears the field; codex/opencode/custom set it.
+    const runnerProvided = draft.runner !== undefined;
+    const runner = normalizeRunner(draft.runner);
     // `skills` is only present on edits that opened the modal post-v2 —
     // older payloads omit the field, which we read as "leave skills alone".
     const skillsProvided = Array.isArray(draft.skills);
@@ -2487,6 +2529,9 @@ export class WorkspaceWebview {
           agent.capabilities = capabilities;
         } else {
           delete agent.capabilities;
+        }
+        if (runnerProvided) {
+          if (runner) { agent.runner = runner; } else { delete agent.runner; }
         }
         if (skillsProvided) {
           if (skills.length > 0) {
@@ -2523,26 +2568,36 @@ export class WorkspaceWebview {
     // agent frontmatter has no `skills:` field), so write it there even
     // for file-based agents. Idempotent — creates the entry on first edit,
     // updates it thereafter.
-    if (skillsProvided) {
+    if (skillsProvided || runnerProvided) {
       this.mutateYaml((doc) => {
-        const existing = doc.agents.find((a) => String(a.id) === id);
-        if (skills.length === 0) {
-          if (existing) {
-            delete (existing as Record<string, unknown>).skills;
-            delete (existing as Record<string, unknown>).skill;
-          }
-          return;
-        }
-        if (existing) {
-          (existing as Record<string, unknown>).skills = skills;
-          delete (existing as Record<string, unknown>).skill;
-        } else {
-          const entry: Record<string, unknown> = { id, skills };
+        let existing = doc.agents.find((a) => String(a.id) === id);
+        // Only materialize a new AIDLC-layer entry when there's something to
+        // store (a skill binding or a non-default runner). A cleared value on a
+        // non-existent entry is a no-op.
+        const needsEntry =
+          (skillsProvided && skills.length > 0) || (runnerProvided && !!runner);
+        if (!existing && needsEntry) {
+          const entry: Record<string, unknown> = { id };
           if (name) { entry.name = name; }
           if (description) { entry.description = description; }
           if (model) { entry.model = model; }
           if (capabilities.length > 0) { entry.capabilities = capabilities; }
           doc.agents.push(entry as unknown as YamlDocument['agents'][number]);
+          existing = doc.agents[doc.agents.length - 1];
+        }
+        if (!existing) { return; }
+        const e = existing as Record<string, unknown>;
+        if (skillsProvided) {
+          if (skills.length > 0) {
+            e.skills = skills;
+            delete e.skill;
+          } else {
+            delete e.skills;
+            delete e.skill;
+          }
+        }
+        if (runnerProvided) {
+          if (runner) { e.runner = runner; } else { delete e.runner; }
         }
       });
     }
