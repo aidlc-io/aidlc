@@ -493,6 +493,48 @@ const SidebarSchema = z.object({
   views: z.array(SidebarViewSchema).default([]),
 });
 
+// ── Team / multi-user (optional) ───────────────────────────────────
+
+/**
+ * Multi-user review policy for a git-shared workspace. When two or more
+ * people drive the same `.aidlc/runs/*.json` through git, this block declares
+ * *who may approve which gate*. It is intentionally lightweight: identity is
+ * the committer's `git config user.email` (no login system), and enforcement
+ * is advisory client-side plus a git-remote CI check (see the sample
+ * `.github/workflows/aidlc-gate-check.yml`).
+ *
+ * `reviewers` is keyed by **gate id** — a pipeline step's `name` (falling back
+ * to its `agent` id), matching how the runner keys steps (`stepDagId`). A gate
+ * absent from the map is unrestricted (anyone may approve). Emails are
+ * compared case-insensitively.
+ *
+ * Example:
+ *   team:
+ *     require_distinct_reviewer: true
+ *     reviewers:
+ *       plan:   [alice@corp.com]
+ *       design: [alice@corp.com, bob@corp.com]
+ */
+const TeamSchema = z.object({
+  /**
+   * Gate id → list of emails allowed to approve that gate. A gate not present
+   * here is unrestricted. Empty list = nobody may approve (hard lock).
+   */
+  reviewers: z.record(z.string().min(1), z.array(z.string().min(1))).default({}),
+  /**
+   * When true, the person who last worked a step (its recorded author) may not
+   * approve their own work — enforces author≠reviewer separation. Defaults to
+   * true because that separation is the whole point of a review gate.
+   */
+  require_distinct_reviewer: z.boolean().default(true),
+  /**
+   * How long (ms) a `run claim` stays active before it is considered stale and
+   * another user may take over. Defaults to 4h. Claims are advisory — they
+   * prevent accidental double-driving, not a hard lock.
+   */
+  claim_ttl_ms: z.number().int().positive().default(4 * 60 * 60 * 1000),
+});
+
 // ── Top-level workspace ────────────────────────────────────────────
 
 export const WorkspaceSchema = z.object({
@@ -512,6 +554,8 @@ export const WorkspaceSchema = z.object({
 
   state: StateSchema.optional(),
   sidebar: SidebarSchema.optional(),
+  /** Multi-user review policy for git-shared workspaces. See {@link TeamSchema}. */
+  team: TeamSchema.optional(),
 });
 
 export type WorkspaceConfig = z.infer<typeof WorkspaceSchema>;
@@ -522,6 +566,7 @@ export type PipelineConfig = z.infer<typeof PipelineSchema>;
 export type PipelineBudget = z.infer<typeof PipelineBudgetSchema>;
 export type RecipeConfig = z.infer<typeof RecipeSchema>;
 export type StateConfig = z.infer<typeof StateSchema>;
+export type TeamConfig = z.infer<typeof TeamSchema>;
 export type SidebarConfig = z.infer<typeof SidebarSchema>;
 export type SidebarView = z.infer<typeof SidebarViewSchema>;
 

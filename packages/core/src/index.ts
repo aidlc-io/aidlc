@@ -25,6 +25,7 @@ export type {
   RecipeConfig,
   NormalizedStep,
   StateConfig,
+  TeamConfig,
   SidebarConfig,
   SidebarView,
   WorkspaceRefIssue,
@@ -135,12 +136,58 @@ export type { AutoReviewerContext, AutoReviewerFn } from './runs/AutoReviewer';
 export { resolvePath } from './runs/RunState';
 export type {
   RunState,
+  RunClaim,
   StepRecord,
   StepStatus,
   RunStatus,
   AutoReviewVerdict,
   StepHistoryEntry,
 } from './runs/RunState';
+
+// ── Multi-user: git identity, reviewer policy, run claims ──────────
+export { resolveGitIdentity, emailFromLabel } from './runs/gitIdentity';
+export type { GitIdentity } from './runs/gitIdentity';
+export {
+  checkReviewPolicy,
+  assertCanReview,
+  assertCanReviewStep,
+  gateIdForStep,
+  ReviewNotAllowedError,
+} from './runs/reviewPolicy';
+export type {
+  ReviewCheckArgs,
+  ReviewDecision,
+  ReviewDenyCode,
+} from './runs/reviewPolicy';
+export {
+  claimRun,
+  releaseRun,
+  isClaimActive,
+  DEFAULT_CLAIM_TTL_MS,
+} from './runs/claims';
+export type { ClaimOutcome } from './runs/claims';
+
+// ── Cross-epic memory curator ──────────────────────────────────────
+export {
+  readEpicMemories,
+  rollupEpicMemories,
+  rollupProjectMemory,
+  writeProjectMemory,
+  loadProjectMemory,
+  projectMemoryPath,
+  renderProjectMemory,
+  PROJECT_MEMORY_FILE,
+  PROJECT_MEMORY_DIR,
+  DEFAULT_EPICS_DIR,
+} from './memory/epicMemoryRollup';
+export type {
+  ProjectMemory,
+  RolledItem,
+  EpicMemory,
+  EpicMemoryEntry,
+  EpicMemoryReflection,
+  EpicMemorySource,
+} from './memory/epicMemoryRollup';
 
 // ── Built-in workflow presets (shared by extension + CLI) ──────────
 export {

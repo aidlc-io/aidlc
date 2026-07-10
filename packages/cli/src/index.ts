@@ -22,6 +22,9 @@ import { registerGuide } from './commands/guide';
 import { registerGlobals } from './commands/globals';
 import { setQuiet } from './output';
 import { registerAnalyze } from './commands/analyze';
+import { registerSync } from './commands/sync';
+import { registerMemory } from './commands/memory';
+import { registerGateCheck } from './commands/gateCheck';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { version } = require('../package.json') as { version: string };
 
@@ -61,6 +64,9 @@ registerAsk(program);
 registerGuide(program);
 registerGlobals(program);
 registerAnalyze(program);
+registerSync(program);
+registerMemory(program);
+registerGateCheck(program);
 
 program.parseAsync(process.argv).catch((err) => {
   console.error(err instanceof Error ? err.message : String(err));

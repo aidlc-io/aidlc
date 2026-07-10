@@ -1,0 +1,46 @@
+# Authoritative reviewer-gate enforcement for git-shared AIDLC workspaces.
+#
+# AIDLC's multi-user model (Option A) keeps run state as files in the repo
+# (.aidlc/runs/*.json). The `aidlc run approve` guard is advisory — it runs on
+# the approver's machine. This workflow re-validates the *recorded* approvals
+# against `team.reviewers` in .aidlc/workspace.yaml on every PR/push, so the
+# allow-list and author≠reviewer rule are enforced at the remote even for
+# commits that hand-edited state or bypassed the CLI.
+#
+# It is a no-op for workspaces without a `team:` block, so it's safe to enable
+# repo-wide. Make it a required status check to hard-enforce the policy.
+name: AIDLC gate-check
+
+on:
+  pull_request:
+    paths:
+      - '.aidlc/runs/**'
+      - '.aidlc/workspace.yaml'
+  push:
+    branches: [main]
+    paths:
+      - '.aidlc/runs/**'
+      - '.aidlc/workspace.yaml'
+
+jobs:
+  gate-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build CLI + core
+        run: pnpm -r build
+
+      - name: Enforce reviewer policy on recorded approvals
+        run: node packages/cli/dist/index.js gate-check

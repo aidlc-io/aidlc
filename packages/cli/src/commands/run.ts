@@ -17,6 +17,13 @@ import {
   submitAutoReviewVerdict,
   PipelineRunError,
   RUN_ID_PATTERN,
+  resolveGitIdentity,
+  assertCanReviewStep,
+  ReviewNotAllowedError,
+  claimRun,
+  releaseRun,
+  isClaimActive,
+  DEFAULT_CLAIM_TTL_MS,
   type RunState,
   type PipelineConfig,
 } from '@aidlc/core';
@@ -32,6 +39,7 @@ import {
   collectOption,
   loadAgentSkills,
   formatSkillsList,
+  loadTeamConfig,
 } from '../runHelpers';
 
 export function registerRun(program: Command): void {
@@ -90,9 +98,10 @@ export function registerRun(program: Command): void {
       const state    = requireRun(root, runId);
       const pipeline = requirePipelineForRun(root, state);
 
+      const actor = resolveGitIdentity(root).email;
       let next;
       try {
-        next = markStepDone({ state, pipeline, workspaceRoot: root });
+        next = markStepDone({ state, pipeline, workspaceRoot: root, actor });
       } catch (err) {
         if (err instanceof PipelineRunError && err.missing?.length) {
           console.error(chalk.red('Missing artifacts — step not marked done:'));
@@ -129,10 +138,30 @@ export function registerRun(program: Command): void {
       const root     = resolveWorkspaceRoot(actionCmd);
       const state    = requireRun(root, runId);
       const pipeline = requirePipelineForRun(root, state);
+      const identity = resolveGitIdentity(root);
+      const team     = loadTeamConfig(root);
+
+      // Multi-user gate: enforce the reviewer allow-list + author≠reviewer
+      // rule before mutating state. No-op when the workspace has no `team:`.
+      try {
+        assertCanReviewStep({
+          team,
+          pipeline,
+          state,
+          stepIdx: state.currentStepIdx,
+          actorEmail: identity.email,
+        });
+      } catch (err) {
+        if (err instanceof ReviewNotAllowedError) {
+          console.error(chalk.red('✘ Approval blocked — ' + err.message));
+          process.exit(1);
+        }
+        throw err;
+      }
 
       let next;
       try {
-        next = approveStep({ state, pipeline });
+        next = approveStep({ state, pipeline, actor: identity.label });
       } catch (err) {
         console.error(chalk.red(err instanceof Error ? err.message : String(err)));
         process.exit(1);
@@ -161,10 +190,11 @@ export function registerRun(program: Command): void {
     .action((runId: string, opts: { reason: string }, actionCmd: Command) => {
       const root  = resolveWorkspaceRoot(actionCmd);
       const state = requireRun(root, runId);
+      const actor = resolveGitIdentity(root).label;
 
       let next;
       try {
-        next = rejectStep({ state, reason: opts.reason });
+        next = rejectStep({ state, reason: opts.reason, actor });
       } catch (err) {
         console.error(chalk.red(err instanceof Error ? err.message : String(err)));
         process.exit(1);
@@ -175,6 +205,55 @@ export function registerRun(program: Command): void {
       console.log(chalk.red('✘') + ` Rejected "${step.agent}"`);
       console.log(chalk.dim(`  Reason: ${opts.reason}`));
       console.log(chalk.dim(`  Rerun:  aidlc run rerun ${runId} [--feedback "..."]`));
+    });
+
+  // ── claim ────────────────────────────────────────────────────────────────────
+  cmd
+    .command('claim <runId>')
+    .description('Claim a run so teammates know you are driving it (advisory, git-shared)')
+    .option('--force', 'Take over an active claim held by someone else')
+    .action((runId: string, opts: { force?: boolean }, actionCmd: Command) => {
+      const root  = resolveWorkspaceRoot(actionCmd);
+      const state = requireRun(root, runId);
+      const team  = loadTeamConfig(root);
+      const actor = resolveGitIdentity(root).label;
+      const ttlMs = team?.claim_ttl_ms ?? DEFAULT_CLAIM_TTL_MS;
+
+      const outcome = claimRun({ state, actor, ttlMs, force: opts.force });
+      if (!outcome.ok) {
+        console.error(
+          chalk.red(`✘ Run "${runId}" is already claimed by ${outcome.heldBy}`) +
+          chalk.dim(` (since ${outcome.heldAt}).`),
+        );
+        console.error(chalk.dim('  Coordinate with them, or take over with: aidlc run claim ' + runId + ' --force'));
+        process.exit(1);
+      }
+
+      RunStateStore.save(root, outcome.state);
+      console.log(
+        chalk.green('✔') +
+        ` ${outcome.refreshed ? 'Refreshed your claim on' : 'Claimed'} run "${runId}" as ${chalk.bold(actor)}`,
+      );
+      console.log(chalk.dim('  Remember to `aidlc sync` so teammates see the claim.'));
+    });
+
+  // ── release ──────────────────────────────────────────────────────────────────
+  cmd
+    .command('release <runId>')
+    .description('Drop your claim on a run')
+    .action((runId: string, _opts: unknown, actionCmd: Command) => {
+      const root  = resolveWorkspaceRoot(actionCmd);
+      const state = requireRun(root, runId);
+      const ttlMs = loadTeamConfig(root)?.claim_ttl_ms ?? DEFAULT_CLAIM_TTL_MS;
+
+      if (state.claim && isClaimActive(state.claim, ttlMs)) {
+        const me = resolveGitIdentity(root).label.trim().toLowerCase();
+        if (state.claim.by.trim().toLowerCase() !== me) {
+          console.log(chalk.dim(`• Run "${runId}" is claimed by ${state.claim.by} — releasing anyway.`));
+        }
+      }
+      RunStateStore.save(root, releaseRun(state));
+      console.log(chalk.green('✔') + ` Released claim on "${runId}"`);
     });
 
   // ── rerun ──────────────────────────────────────────────────────────────────
@@ -619,7 +698,7 @@ async function execStep(
     if (typeof result.costUsd === 'number') {
       freshState.steps[stepIdx].costUsd = result.costUsd;
     }
-    next = markStepDone({ state: freshState, pipeline, workspaceRoot: root });
+    next = markStepDone({ state: freshState, pipeline, workspaceRoot: root, actor: resolveGitIdentity(root).email });
   } catch (err) {
     if (err instanceof PipelineRunError && err.missing?.length) {
       console.error(chalk.red('\n✘  Step completed but missing expected artifacts:'));
@@ -692,7 +771,10 @@ async function runAutoReviewStep(root: string, runId: string): Promise<boolean> 
 async function autoApproveStep(root: string, state: RunState, runId: string): Promise<void> {
   const ws = WorkspaceLoader.load(root);
   const pipeline = ws.config.pipelines.find((p: PipelineConfig) => p.id === state.pipelineId)!;
-  const next = approveStep({ state, pipeline });
+  // --auto-approve is an explicit automation bypass, so the reviewer allow-list
+  // is intentionally NOT enforced here; we still attribute the approval to the
+  // operator who launched the autopilot for the audit trail.
+  const next = approveStep({ state, pipeline, actor: `${resolveGitIdentity(root).label} (auto-approve)` });
   RunStateStore.save(root, next);
   const step = state.steps[state.currentStepIdx];
   info(chalk.green(`✔  Auto-approved "${step.agent}" (--auto-approve)`));

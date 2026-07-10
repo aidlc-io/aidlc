@@ -59,6 +59,12 @@ export interface StepRecord {
   costUsd?: number;
   /** Optional human feedback supplied at rerun time. Carried forward. */
   feedback?: string;
+  /**
+   * Git email of whoever last marked this step done (produced its artifacts).
+   * Recorded at mark-done time so a review gate can enforce author≠reviewer
+   * (`team.require_distinct_reviewer`). Lower-cased. Optional / back-compat.
+   */
+  workedBy?: string;
   /** Reason supplied with the most recent rejection. Cleared on rerun. */
   rejectReason?: string;
   /**
@@ -92,6 +98,8 @@ export type StepHistoryEntry =
        * step's idx for an in-place rerun; lower idx for a cascade.
        */
       sentBackToIdx: number;
+      /** Git identity that performed the rejection (multi-user audit). */
+      author?: string;
     }
   | {
       kind: 'rerun';
@@ -113,6 +121,8 @@ export type StepHistoryEntry =
       kind: 'approve';
       at: string;
       revision: number;
+      /** Git identity that approved the gate (multi-user audit). */
+      author?: string;
     }
   | {
       /**
@@ -147,6 +157,20 @@ export interface AutoReviewVerdict {
   runner: string;
 }
 
+/**
+ * Advisory claim on a run in a git-shared, multi-user workspace. Written by
+ * `aidlc run claim` so teammates who pull the run state can see who is
+ * currently driving it and avoid double-work. Not a hard lock — a claim older
+ * than the workspace's `team.claim_ttl_ms` is considered stale and may be
+ * taken over.
+ */
+export interface RunClaim {
+  /** Git identity (email, falling back to label) of the claimant. */
+  by: string;
+  /** ISO timestamp the claim was made / refreshed. */
+  at: string;
+}
+
 export interface RunState {
   schemaVersion: 1;
   /** Unique within the workspace; used as the .json filename. */
@@ -165,6 +189,11 @@ export interface RunState {
   status: RunStatus;
   /** One entry per pipeline step, length === pipeline.steps.length. */
   steps: StepRecord[];
+  /**
+   * Advisory multi-user claim. Present when someone has run `aidlc run claim`.
+   * Optional for backward compat with state files written before this field.
+   */
+  claim?: RunClaim;
 }
 
 /**

@@ -136,8 +136,14 @@ export function markStepDone(args: {
   workspaceRoot: string;
   /** Step to mark done. Defaults to `state.currentStepIdx` for back-compat. */
   stepIdx?: number;
+  /**
+   * Git email of the person marking the step done. Recorded on the step as
+   * `workedBy` so a downstream review gate can enforce author≠reviewer.
+   * Optional — omitted in single-user / non-git contexts.
+   */
+  actor?: string;
 }): RunState {
-  const { state, pipeline, workspaceRoot } = args;
+  const { state, pipeline, workspaceRoot, actor } = args;
   const idx = args.stepIdx ?? state.currentStepIdx;
   const step = state.steps[idx];
   if (!step) {
@@ -222,6 +228,8 @@ export function markStepDone(args: {
   nextStep.artifactsProduced = resolvedProduces;
   // Clear any prior verdict so the new run gets a fresh one.
   nextStep.autoReviewVerdict = undefined;
+  // Record who produced this work (multi-user author≠reviewer enforcement).
+  if (actor) { nextStep.workedBy = actor.toLowerCase(); }
 
   if (norm.auto_review) {
     nextStep.status = 'awaiting_auto_review';
@@ -316,8 +324,10 @@ export function approveStep(args: {
   pipeline: PipelineConfig;
   /** Step to approve. Defaults to `state.currentStepIdx`. */
   stepIdx?: number;
+  /** Git identity that approved the gate — recorded on the approve history entry. */
+  actor?: string;
 }): RunState {
-  const { state, pipeline } = args;
+  const { state, pipeline, actor } = args;
   const idx = args.stepIdx ?? state.currentStepIdx;
   const step = state.steps[idx];
   if (!step) {
@@ -328,7 +338,7 @@ export function approveStep(args: {
       `Cannot approve step "${step.agent}": status is "${step.status}", expected "awaiting_review"`,
     );
   }
-  return advance(clone(state), idx, pipeline);
+  return advance(clone(state), idx, pipeline, actor);
 }
 
 /**
@@ -359,8 +369,10 @@ export function rejectStep(args: {
    * positions in a DAG don't reflect dependency order.
    */
   pipeline?: PipelineConfig;
+  /** Git identity that performed the rejection — recorded on the reject history entry. */
+  actor?: string;
 }): RunState {
-  const { state, reason, targetIdx, pipeline } = args;
+  const { state, reason, targetIdx, pipeline, actor } = args;
   const idx = args.stepIdx ?? state.currentStepIdx;
   const step = state.steps[idx];
   if (!step) {
@@ -383,6 +395,7 @@ export function rejectStep(args: {
       revision: next.steps[idx].revision,
       reason,
       sentBackToIdx: targetIdx as number,
+      author: actor,
     });
 
     // Choose between sequential index-range and DAG transitive-descendants
@@ -462,6 +475,7 @@ export function rejectStep(args: {
       revision: step.revision,
       reason,
       sentBackToIdx: idx,
+      author: actor,
     }),
   };
   next.status = 'running';
@@ -621,7 +635,7 @@ export function requestStepUpdate(args: {
  *
  * The run transitions to `completed` only when every step is approved.
  */
-function advance(next: RunState, idx: number, pipeline: PipelineConfig): RunState {
+function advance(next: RunState, idx: number, pipeline: PipelineConfig, author?: string): RunState {
   const finishedAt = new Date().toISOString();
   const approved = next.steps[idx];
   next.steps[idx] = {
@@ -632,6 +646,7 @@ function advance(next: RunState, idx: number, pipeline: PipelineConfig): RunStat
       kind: 'approve',
       at: finishedAt,
       revision: approved.revision,
+      author,
     }),
   };
 

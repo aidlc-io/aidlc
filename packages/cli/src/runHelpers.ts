@@ -12,6 +12,7 @@ import {
   type PipelineConfig,
   type AgentConfig,
   type SkillLoader,
+  type TeamConfig,
 } from '@aidlc/core';
 
 // ── Run loading ───────────────────────────────────────────────────────────────
@@ -64,6 +65,19 @@ export function requirePipeline(root: string, pipelineId: string): {
 /** Load workspace and find the pipeline that matches a run's pipelineId. */
 export function requirePipelineForRun(root: string, state: RunState): PipelineConfig {
   return requirePipeline(root, state.pipelineId).pipeline;
+}
+
+/**
+ * Load the workspace `team` block (multi-user review policy), or undefined
+ * when the workspace has none / fails to load. Non-fatal: a workspace without
+ * a `team:` block simply has no reviewer restrictions.
+ */
+export function loadTeamConfig(root: string): TeamConfig | undefined {
+  try {
+    return WorkspaceLoader.load(root).config.team;
+  } catch {
+    return undefined;
+  }
 }
 
 // ── Step resolution ───────────────────────────────────────────────────────────
@@ -121,6 +135,9 @@ export function printRunSummary(state: RunState): void {
   if (Object.keys(state.context).length > 0) {
     const ctx = Object.entries(state.context).map(([k, v]) => `${k}=${v}`).join(', ');
     console.log(chalk.dim(`  context:  ${ctx}`));
+  }
+  if (state.claim) {
+    console.log(chalk.dim(`  claimed:  ${state.claim.by} (${state.claim.at})`));
   }
   console.log();
 
