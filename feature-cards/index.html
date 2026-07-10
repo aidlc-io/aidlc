@@ -23,6 +23,11 @@ a.card.green{border-left:8px solid var(--green);}
 a.card.amber{border-left:8px solid var(--amber);}
 .foot{margin-top:24px;font-size:14px;color:var(--ink-soft);}
 .foot .brand{font-family:var(--marker);font-weight:700;font-size:22px;color:var(--ink);}
+.seq{opacity:0;transform:translateY(10px);}
+.seq.show{opacity:1;transform:none;transition:opacity .5s ease,transform .55s cubic-bezier(.2,.8,.2,1);}
+@media(prefers-reduced-motion:reduce){.seq{opacity:1!important;transform:none!important;}}
+.replay{position:fixed;right:16px;bottom:16px;z-index:9;font-family:var(--hand);font-weight:700;font-size:15px;color:var(--ink);background:var(--box);border:2px solid var(--ink);border-radius:12px 8px 13px 7px/8px 13px 7px 12px;padding:7px 14px;box-shadow:2px 3px 0 rgba(43,43,43,.18);cursor:pointer;}
+.replay:active{transform:translate(1px,2px);box-shadow:1px 1px 0 rgba(43,43,43,.18);}
 </style>
 </head>
 <body>
@@ -51,5 +56,20 @@ a.card.amber{border-left:8px solid var(--amber);}
 
   <div class="foot"><span class="brand">— aidlc</span> · #aidlc #annotron #memory</div>
 </div>
+<button class="replay" onclick="playSeq()">▶ Chạy lại</button>
+<script>
+const SEQ_SEL=".eyebrow, h1, .sub, a.card, .foot";
+let seqT=[];
+function playSeq(){
+  seqT.forEach(clearTimeout);seqT=[];
+  const els=[...document.querySelectorAll(SEQ_SEL)];
+  els.forEach(e=>{e.classList.add('seq');e.classList.remove('show');});
+  const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const step=reduce?0:360;
+  els.forEach((e,i)=>seqT.push(setTimeout(()=>e.classList.add('show'),200+i*step)));
+}
+playSeq();
+addEventListener('keydown',e=>{if(e.key==='r'||e.key==='R'||e.key===' '){e.preventDefault();playSeq();}});
+</script>
 </body>
 </html>
