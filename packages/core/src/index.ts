@@ -115,6 +115,8 @@ export type {
 // ── Pipeline runs (phase 1) ────────────────────────────────────────
 export { RunStateStore, FileRunStateStore, RUN_ID_PATTERN } from './runs/RunStateStore';
 export type { RunStateBackend } from './runs/RunStateStore';
+export { GitRunStateStore } from './runs/GitRunStateStore';
+export type { GitRunStateStoreOptions, GitExec } from './runs/GitRunStateStore';
 export {
   startRun,
   canStartStep,

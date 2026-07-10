@@ -57,6 +57,55 @@ export interface RunStateBackend {
 }
 
 /**
+ * Assert a runId is filesystem-safe, throwing the canonical error otherwise.
+ * Shared by every backend that maps a runId onto a `<id>.json` filename.
+ */
+export function assertRunId(runId: string): void {
+  if (!RUN_ID_PATTERN.test(runId)) {
+    throw new Error(`Invalid runId "${runId}" — must match ${RUN_ID_PATTERN}`);
+  }
+}
+
+/** Serialize a run to the canonical on-disk form (2-space pretty JSON). */
+export function serializeRunState(state: RunState): string {
+  return JSON.stringify(state, null, 2);
+}
+
+/**
+ * Parse and schema-validate a single run file at `filePath`. Returns `null`
+ * for a missing file, unparseable JSON, or a mismatched schemaVersion —
+ * never throws. Shared read path for the file and git backends.
+ */
+export function readRunFile(filePath: string): RunState | null {
+  if (!fs.existsSync(filePath)) { return null; }
+  try {
+    const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    if (parsed && parsed.schemaVersion === 1) { return parsed as RunState; }
+    return null;
+  } catch { return null; }
+}
+
+/**
+ * Read every valid `*.json` run in `dir`, skipping corrupt/non-matching
+ * files, sorted by `updatedAt` descending. Tolerates a missing directory.
+ */
+export function readRunsDir(dir: string): RunState[] {
+  if (!fs.existsSync(dir)) { return []; }
+  const out: RunState[] = [];
+  for (const entry of fs.readdirSync(dir)) {
+    if (!entry.endsWith('.json')) { continue; }
+    try {
+      const parsed = JSON.parse(fs.readFileSync(path.join(dir, entry), 'utf8'));
+      if (parsed && parsed.schemaVersion === 1 && typeof parsed.runId === 'string') {
+        out.push(parsed as RunState);
+      }
+    } catch { /* skip corrupt run files — surface as warning when picked */ }
+  }
+  out.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  return out;
+}
+
+/**
  * Default filesystem backend. This is the original {@link RunStateStore}
  * implementation, moved verbatim onto an instance so it can be swapped.
  */
@@ -66,49 +115,23 @@ export class FileRunStateStore implements RunStateBackend {
   }
 
   file(workspaceRoot: string, runId: string): string {
-    if (!RUN_ID_PATTERN.test(runId)) {
-      throw new Error(`Invalid runId "${runId}" — must match ${RUN_ID_PATTERN}`);
-    }
+    assertRunId(runId);
     return path.join(this.dir(workspaceRoot), `${runId}.json`);
   }
 
   list(workspaceRoot: string): RunState[] {
-    const dir = this.dir(workspaceRoot);
-    if (!fs.existsSync(dir)) { return []; }
-    const out: RunState[] = [];
-    for (const entry of fs.readdirSync(dir)) {
-      if (!entry.endsWith('.json')) { continue; }
-      try {
-        const raw = fs.readFileSync(path.join(dir, entry), 'utf8');
-        const parsed = JSON.parse(raw);
-        if (parsed && parsed.schemaVersion === 1 && typeof parsed.runId === 'string') {
-          out.push(parsed as RunState);
-        }
-      } catch { /* skip corrupt run files — surface as warning when picked */ }
-    }
-    out.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-    return out;
+    return readRunsDir(this.dir(workspaceRoot));
   }
 
   load(workspaceRoot: string, runId: string): RunState | null {
-    const p = this.file(workspaceRoot, runId);
-    if (!fs.existsSync(p)) { return null; }
-    try {
-      const parsed = JSON.parse(fs.readFileSync(p, 'utf8'));
-      if (parsed && parsed.schemaVersion === 1) { return parsed as RunState; }
-      return null;
-    } catch { return null; }
+    return readRunFile(this.file(workspaceRoot, runId));
   }
 
   save(workspaceRoot: string, state: RunState): void {
     const dir = this.dir(workspaceRoot);
     fs.mkdirSync(dir, { recursive: true });
     state.updatedAt = new Date().toISOString();
-    fs.writeFileSync(
-      this.file(workspaceRoot, state.runId),
-      JSON.stringify(state, null, 2),
-      'utf8',
-    );
+    fs.writeFileSync(this.file(workspaceRoot, state.runId), serializeRunState(state), 'utf8');
   }
 
   delete(workspaceRoot: string, runId: string): void {
