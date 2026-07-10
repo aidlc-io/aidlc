@@ -113,7 +113,8 @@ export type {
 } from './runner/types';
 
 // ── Pipeline runs (phase 1) ────────────────────────────────────────
-export { RunStateStore, RUN_ID_PATTERN } from './runs/RunStateStore';
+export { RunStateStore, FileRunStateStore, RUN_ID_PATTERN } from './runs/RunStateStore';
+export type { RunStateBackend } from './runs/RunStateStore';
 export {
   startRun,
   canStartStep,
