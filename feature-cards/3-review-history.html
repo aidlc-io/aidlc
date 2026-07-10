@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AIDLC · Auto-review + History</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&family=Kalam:wght@400;700&display=swap');
+:root{--ink:#2b2b2b;--ink-soft:#555;--paper:#f6f4ec;--paper-line:#e5e0d2;--red:#d6493b;--green:#2f8f5b;--blue:#2f6f9f;--amber:#c98a2b;--box:#fffdf7;--hand:'Kalam','Comic Sans MS',cursive;--marker:'Caveat','Comic Sans MS',cursive;}
+*{box-sizing:border-box;}
+body{margin:0;font-family:var(--hand);color:var(--ink);background:repeating-linear-gradient(0deg,transparent 0 31px,var(--paper-line) 31px 32px),var(--paper);line-height:1.35;-webkit-font-smoothing:antialiased;}
+.card{max-width:680px;margin:0 auto;padding:34px 30px 28px;}
+.eyebrow{display:inline-block;font-weight:700;font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--amber);border:2px solid var(--amber);padding:2px 10px;border-radius:12px 7px 13px 6px/7px 13px 6px 12px;transform:rotate(-1.2deg);}
+h1{font-family:var(--marker);font-size:44px;line-height:.98;margin:14px 0 6px;}
+h1 .u{background:linear-gradient(transparent 62%,#ffe0a8 62% 92%,transparent 92%);padding:0 2px;}
+.sub{font-size:18px;color:var(--ink-soft);margin:0;max-width:56ch;}
+.pline{display:flex;gap:8px;align-items:flex-start;font-size:17px;margin:10px 0 0;}
+.pline .tag{font-weight:700;white-space:nowrap;}
+.pline.bad .tag{color:var(--red);}
+.pline.good .tag{color:var(--green);}
+.gates{display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;margin:22px 0 4px;}
+.gate{background:var(--box);border:2px solid var(--ink);border-radius:14px 9px 15px 7px/9px 15px 7px 14px;padding:10px 16px;box-shadow:2px 3px 0 rgba(43,43,43,.14);text-align:center;}
+.gate .t{font-family:var(--marker);font-weight:700;font-size:22px;}
+.gate .d{font-size:13px;color:var(--ink-soft);}
+.gate.bot{border-color:#c9a24b;}
+.gate.hum{border-color:var(--green);}
+.gate.hum .t{color:var(--green);}
+.gate.bot .t{color:var(--amber);}
+.gate-arrow{font-family:var(--marker);font-weight:700;font-size:28px;color:#b9b2a0;}
+.tl-title{font-family:var(--marker);font-size:26px;font-weight:700;margin:20px 0 10px;color:var(--ink);}
+.timeline{border-left:3px solid var(--paper-line);margin-left:8px;padding-left:0;}
+.ev{position:relative;padding:0 0 12px 26px;}
+.ev::before{content:"";position:absolute;left:-9px;top:4px;width:14px;height:14px;border-radius:50%;background:var(--box);border:2.5px solid var(--ink);}
+.ev.pass::before{border-color:var(--green);background:#dff0e6;}
+.ev.rej::before{border-color:var(--red);background:#fbe3e0;}
+.ev.rerun::before{border-color:var(--amber);background:#fdf0d9;}
+.ev.ann::before{border-color:var(--blue);background:#e4f0f8;}
+.ev .h{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;font-size:16px;}
+.ev .lbl{font-weight:700;}
+.ev.pass .lbl{color:var(--green);}
+.ev.rej .lbl{color:var(--red);}
+.ev.rerun .lbl{color:var(--amber);}
+.ev.ann .lbl{color:var(--blue);}
+.ev .rev{font-family:ui-monospace,Menlo,monospace;font-size:11px;color:#9a917d;background:#efeadd;padding:1px 6px;border-radius:5px;}
+.ev .m{font-size:15px;color:var(--ink-soft);margin-top:1px;}
+.ev .by{font-size:13px;color:#9a917d;font-style:italic;}
+.foot{display:flex;justify-content:space-between;align-items:center;margin-top:20px;padding-top:12px;border-top:2px solid var(--paper-line);font-size:14px;color:var(--ink-soft);}
+.foot .brand{font-family:var(--marker);font-weight:700;font-size:22px;color:var(--ink);}
+.foot .tags{font-family:ui-monospace,Menlo,monospace;font-size:12px;}
+</style>
+</head>
+<body>
+<div class="card">
+  <span class="eyebrow">Tính năng · review gates</span>
+  <h1>Auto-review <span class="u">+ History</span></h1>
+  <p class="sub">Máy soát trước, người duyệt sau — và mọi lần reject / rerun / annotate đều ghi lại thành timeline.</p>
+
+  <p class="pline bad"><span class="tag">❌ Vấn đề:</span><span>Duyệt tay từng step, dễ bỏ sót artifact thiếu. Sửa qua vài vòng rồi chẳng ai nhớ đã reject vì lý do gì, ai rerun, sửa cái gì.</span></p>
+  <p class="pline good"><span class="tag">✅ AIDLC:</span><span>Auto-review chạy validator trước, mở gate cho human review. Mỗi hành động thành một entry có nội dung + người + thời gian.</span></p>
+
+  <div class="gates">
+    <div class="gate bot"><div class="t">🤖 Auto-review</div><div class="d">validator chạy trước</div></div>
+    <span class="gate-arrow">→</span>
+    <div class="gate hum"><div class="t">🧑 Human review</div><div class="d">Approve / Reject</div></div>
+  </div>
+  <p class="sub" style="text-align:center;font-size:15px;margin-top:6px;">Gate người chỉ mở <b>sau khi</b> máy pass — "tất cả artifact có mặt, coverage hooks thỏa mãn".</p>
+
+  <div class="tl-title">📜 History — 5 entries</div>
+  <div class="timeline">
+    <div class="ev pass">
+      <div class="h"><span class="lbl">🤖 Auto-review ✓ pass</span><span class="rev">rev 1</span></div>
+      <div class="m">Tất cả artifact có mặt; không vi phạm policy.</div>
+    </div>
+    <div class="ev rej">
+      <div class="h"><span class="lbl">✗ Rejected → step 3</span><span class="rev">rev 1</span></div>
+      <div class="m">CHANGES.md thiếu test coverage cho nhánh timeout — thêm unit test rồi gửi lại.</div>
+    </div>
+    <div class="ev rerun">
+      <div class="h"><span class="lbl">↻ Rerun</span><span class="rev">rev 2</span></div>
+      <div class="m">Thêm unit test cho nhánh timeout, resubmit.</div>
+    </div>
+    <div class="ev pass">
+      <div class="h"><span class="lbl">🤖 Auto-review ✓ pass</span><span class="rev">rev 2</span></div>
+      <div class="m">Đủ artifact; coverage hooks thỏa mãn.</div>
+    </div>
+    <div class="ev ann">
+      <div class="h"><span class="lbl">✎ Annotated · .md edited</span><span class="rev">rev 1</span></div>
+      <div class="m">Đổi chữ 'demo' → 'test' ở heading, blockquote, phase & body.</div>
+      <div class="by">by Meii &lt;mailt@creativeforce.io&gt;</div>
+    </div>
+  </div>
+
+  <div class="foot">
+    <span class="brand">— aidlc</span>
+    <span class="tags">gates · history · #aidlc</span>
+  </div>
+</div>
+</body>
+</html>

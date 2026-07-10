@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AIDLC · Feature Cards</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&family=Kalam:wght@400;700&display=swap');
+:root{--ink:#2b2b2b;--ink-soft:#555;--paper:#f6f4ec;--paper-line:#e5e0d2;--red:#d6493b;--green:#2f8f5b;--blue:#2f6f9f;--amber:#c98a2b;--box:#fffdf7;--hand:'Kalam','Comic Sans MS',cursive;--marker:'Caveat','Comic Sans MS',cursive;}
+*{box-sizing:border-box;}
+body{margin:0;font-family:var(--hand);color:var(--ink);background:repeating-linear-gradient(0deg,transparent 0 31px,var(--paper-line) 31px 32px),var(--paper);line-height:1.35;}
+.wrap{max-width:680px;margin:0 auto;padding:40px 30px;}
+.eyebrow{display:inline-block;font-weight:700;font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--red);border:2px solid var(--red);padding:2px 10px;border-radius:12px 7px 13px 6px/7px 13px 6px 12px;transform:rotate(-1.2deg);}
+h1{font-family:var(--marker);font-size:52px;line-height:.95;margin:14px 0 4px;}
+.sub{font-size:19px;color:var(--ink-soft);margin:0 0 26px;}
+a.card{display:block;text-decoration:none;color:inherit;background:var(--box);border:2px solid var(--ink);border-radius:16px 10px 17px 8px/10px 17px 8px 16px;padding:16px 20px;margin:0 0 16px;box-shadow:3px 4px 0 rgba(43,43,43,.15);transition:transform .08s;}
+a.card:hover{transform:translate(-1px,-2px);}
+a.card .n{font-family:var(--marker);font-size:22px;font-weight:700;color:var(--amber);}
+a.card h2{font-family:var(--marker);font-size:30px;margin:2px 0 4px;}
+a.card p{font-size:16px;color:var(--ink-soft);margin:0;}
+a.card.blue{border-left:8px solid var(--blue);}
+a.card.green{border-left:8px solid var(--green);}
+a.card.amber{border-left:8px solid var(--amber);}
+.foot{margin-top:24px;font-size:14px;color:var(--ink-soft);}
+.foot .brand{font-family:var(--marker);font-weight:700;font-size:22px;color:var(--ink);}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <span class="eyebrow">AIDLC v2.3 · tính năng mới</span>
+  <h1>Cái mới của AIDLC</h1>
+  <p class="sub">3 thẻ · mỗi thẻ một vấn đề → cách AIDLC giải quyết. Mở từng thẻ để xem / quay video.</p>
+
+  <a class="card green" href="1-annotation-loop.html">
+    <div class="n">01</div>
+    <h2>Artifact Annotation Loop</h2>
+    <p>Review artifact AI viết ngay trên trình duyệt — click vào chỗ sai, feedback ghi thẳng về .md.</p>
+  </a>
+
+  <a class="card blue" href="2-epic-memory.html">
+    <div class="n">02</div>
+    <h2>Epic Memory auto-load</h2>
+    <p>Mỗi epic có bộ nhớ gọn, tự nạp vào context — mở lại là nhớ ngay, không đốt token.</p>
+  </a>
+
+  <a class="card amber" href="3-review-history.html">
+    <div class="n">03</div>
+    <h2>Auto-review + History</h2>
+    <p>Máy soát trước, người duyệt sau — mọi reject / rerun / annotate thành timeline có tên & giờ.</p>
+  </a>
+
+  <div class="foot"><span class="brand">— aidlc</span> · #aidlc #annotron #memory</div>
+</div>
+</body>
+</html>

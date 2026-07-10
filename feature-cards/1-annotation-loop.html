@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AIDLC · Annotation Loop</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&family=Kalam:wght@400;700&display=swap');
+:root{--ink:#2b2b2b;--ink-soft:#555;--paper:#f6f4ec;--paper-line:#e5e0d2;--red:#d6493b;--green:#2f8f5b;--blue:#2f6f9f;--amber:#c98a2b;--box:#fffdf7;--hand:'Kalam','Comic Sans MS',cursive;--marker:'Caveat','Comic Sans MS',cursive;}
+*{box-sizing:border-box;}
+body{margin:0;font-family:var(--hand);color:var(--ink);background:repeating-linear-gradient(0deg,transparent 0 31px,var(--paper-line) 31px 32px),var(--paper);line-height:1.35;-webkit-font-smoothing:antialiased;}
+.card{max-width:680px;margin:0 auto;padding:34px 30px 28px;}
+.eyebrow{display:inline-block;font-weight:700;font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--red);border:2px solid var(--red);padding:2px 10px;border-radius:12px 7px 13px 6px/7px 13px 6px 12px;transform:rotate(-1.2deg);}
+h1{font-family:var(--marker);font-size:44px;line-height:.98;margin:14px 0 6px;}
+h1 .u{background:linear-gradient(transparent 62%,#ffe08a 62% 92%,transparent 92%);padding:0 2px;}
+.sub{font-size:18px;color:var(--ink-soft);margin:0;max-width:56ch;}
+.pline{display:flex;gap:8px;align-items:flex-start;font-size:17px;margin:10px 0 0;}
+.pline .tag{font-weight:700;white-space:nowrap;}
+.pline.bad .tag{color:var(--red);}
+.pline.good .tag{color:var(--green);}
+.cols{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:start;margin-top:22px;}
+@media(max-width:560px){.cols{grid-template-columns:1fr;}.vs{display:none;}}
+.col-head{font-family:var(--marker);font-size:26px;font-weight:700;margin:0 0 12px;display:flex;align-items:center;gap:8px;}
+.col.old .col-head{color:var(--ink-soft);}
+.col.new .col-head{color:var(--green);}
+.chip{font-size:12px;font-weight:700;padding:1px 8px;border-radius:9px 5px 10px 4px/5px 10px 4px 9px;transform:rotate(1deg);}
+.chip.old{background:#ece7da;color:#7a7364;border:1.5px solid #cfc7b4;}
+.chip.new{background:#dff0e6;color:var(--green);border:1.5px solid #9dccb1;}
+.vs{align-self:center;font-family:var(--marker);font-weight:700;font-size:22px;color:#b9b2a0;border:2px solid #cfc7b4;border-radius:50%;width:44px;height:44px;display:flex;align-items:center;justify-content:center;transform:rotate(-6deg);}
+.step{position:relative;background:var(--box);border:2px solid var(--ink);border-radius:14px 9px 15px 7px/9px 15px 7px 14px;padding:9px 12px 9px 14px;margin:0 0 12px;box-shadow:2px 3px 0 rgba(43,43,43,.14);font-size:16px;}
+.col.old .step{border-color:#b3aa97;box-shadow:2px 3px 0 rgba(120,110,90,.12);}
+.step .n{font-family:var(--marker);font-weight:700;font-size:15px;color:var(--red);margin-right:2px;}
+.col.old .step .n{color:#9a917d;}
+.step b{color:var(--ink);}
+.step .code{font-family:ui-monospace,Menlo,monospace;font-size:13px;background:#f0ece0;padding:1px 5px;border-radius:5px;color:#4a463c;}
+.step.pain{color:var(--red);font-weight:700;}
+.callout{margin-top:8px;border:2px dashed #b3aa97;border-radius:16px 10px 16px 9px/10px 16px 9px 16px;padding:14px 16px;background:rgba(255,253,247,.6);}
+.callout .files{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;}
+.file{font-family:ui-monospace,Menlo,monospace;font-size:12px;background:var(--box);border:2px solid var(--ink);border-radius:8px 5px 9px 4px/5px 9px 4px 8px;padding:4px 9px;box-shadow:1.5px 2px 0 rgba(43,43,43,.13);}
+.note{display:flex;gap:8px;font-size:15px;margin:6px 0;color:var(--ink-soft);}
+.note .k{font-weight:700;white-space:nowrap;}
+.note.g .k{color:var(--green);}
+.note.b .k{color:var(--blue);}
+.note.a .k{color:var(--amber);}
+.foot{display:flex;justify-content:space-between;align-items:center;margin-top:22px;padding-top:12px;border-top:2px solid var(--paper-line);font-size:14px;color:var(--ink-soft);}
+.foot .brand{font-family:var(--marker);font-weight:700;font-size:22px;color:var(--ink);}
+.foot .tags{font-family:ui-monospace,Menlo,monospace;font-size:12px;}
+</style>
+</head>
+<body>
+<div class="card">
+  <span class="eyebrow">Tính năng · annotron</span>
+  <h1>Artifact <span class="u">Annotation Loop</span></h1>
+  <p class="sub">Review artifact mà AI vừa viết — ngay trên trình duyệt, click thẳng vào chỗ sai để góp ý.</p>
+
+  <p class="pline bad"><span class="tag">❌ Vấn đề:</span><span>Đọc file <span style="font-family:ui-monospace">.md</span> thô trong editor rất khó review. Muốn xem đẹp thì convert tay, rồi lỡ sửa nhầm bản HTML → mất bản gốc, không ai biết ai sửa gì.</span></p>
+  <p class="pline good"><span class="tag">✅ AIDLC:</span><span>Render HTML kiểu Claude tự động, annotate point-and-click, feedback ghi ngược về <span style="font-family:ui-monospace">.md</span> — bản gốc luôn là nguồn sự thật.</span></p>
+
+  <div class="cols">
+    <div class="col old">
+      <div class="col-head"><span class="chip old">CŨ</span> Review thủ công</div>
+      <div class="step"><span class="n">1.</span> Agent viết xong <b>step.md</b></div>
+      <div class="step"><span class="n">2.</span> Đọc markdown thô trong editor — mỏi mắt, khó thấy tổng thể</div>
+      <div class="step"><span class="n">3.</span> Muốn xem đẹp? Convert tay, mở tool ngoài</div>
+      <div class="step pain"><span class="n">4.</span> Lỡ sửa thẳng bản HTML → mất bản gốc <b style="color:var(--red)">.md</b></div>
+      <div class="step pain"><span class="n">5.</span> ⚠ Không ai biết ai sửa gì, lúc nào, vòng mấy</div>
+    </div>
+
+    <div class="vs">vs</div>
+
+    <div class="col new">
+      <div class="col-head"><span class="chip new">MỚI</span> Annotation loop</div>
+      <div class="step"><span class="n">1.</span> Agent viết xong <b>step.md</b></div>
+      <div class="step"><span class="n">2.</span> Click artifact → popover: <b>Open HTML</b> / <b>Feedback</b></div>
+      <div class="step"><span class="n">3.</span> Render HTML kiểu Claude tự động — <span class="code">node</span>, không cần python/pip</div>
+      <div class="step"><span class="n">4.</span> Bấm <b>A</b> để Annotate → click thẳng vào đoạn cần sửa, thêm note</div>
+      <div class="step"><span class="n">5.</span> Feedback ghi ngược về <b>.md</b> — file gốc là nguồn sự thật</div>
+      <div class="step"><span class="n">6.</span> ✓ Áp dụng xong → tự re-render, snapshot lại</div>
+    </div>
+  </div>
+
+  <div class="callout">
+    <div class="files">
+      <span class="file">.revisions/&lt;artifact&gt;/</span>
+      <span class="file">rev-1 .md +.html</span>
+      <span class="file">rev-2 .md +.html</span>
+      <span class="file">rev-3 …</span>
+    </div>
+    <div class="note b"><span class="k">Attribution:</span> mỗi vòng gắn tên dev đã sửa (git identity, fallback hostname) + timestamp</div>
+    <div class="note g"><span class="k">Xem lại:</span> selector chọn revision cũ ngay trong HTML render + panel Pipeline History</div>
+    <div class="note a"><span class="k">Skip thông minh:</span> mở lại artifact chưa đổi → không re-render lại</div>
+  </div>
+
+  <div class="foot">
+    <span class="brand">— aidlc</span>
+    <span class="tags">/annotate-artifact · #aidlc #annotron</span>
+  </div>
+</div>
+</body>
+</html>

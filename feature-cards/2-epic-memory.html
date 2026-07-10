@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AIDLC · Epic Memory</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&family=Kalam:wght@400;700&display=swap');
+:root{--ink:#2b2b2b;--ink-soft:#555;--paper:#f6f4ec;--paper-line:#e5e0d2;--red:#d6493b;--green:#2f8f5b;--blue:#2f6f9f;--amber:#c98a2b;--box:#fffdf7;--hand:'Kalam','Comic Sans MS',cursive;--marker:'Caveat','Comic Sans MS',cursive;}
+*{box-sizing:border-box;}
+body{margin:0;font-family:var(--hand);color:var(--ink);background:repeating-linear-gradient(0deg,transparent 0 31px,var(--paper-line) 31px 32px),var(--paper);line-height:1.35;-webkit-font-smoothing:antialiased;}
+.card{max-width:680px;margin:0 auto;padding:34px 30px 28px;}
+.eyebrow{display:inline-block;font-weight:700;font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--blue);border:2px solid var(--blue);padding:2px 10px;border-radius:12px 7px 13px 6px/7px 13px 6px 12px;transform:rotate(-1.2deg);}
+h1{font-family:var(--marker);font-size:44px;line-height:.98;margin:14px 0 6px;}
+h1 .u{background:linear-gradient(transparent 62%,#bfe0f0 62% 92%,transparent 92%);padding:0 2px;}
+.sub{font-size:18px;color:var(--ink-soft);margin:0;max-width:56ch;}
+.pline{display:flex;gap:8px;align-items:flex-start;font-size:17px;margin:10px 0 0;}
+.pline .tag{font-weight:700;white-space:nowrap;}
+.pline.bad .tag{color:var(--red);}
+.pline.good .tag{color:var(--green);}
+.cols{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:start;margin-top:22px;}
+@media(max-width:560px){.cols{grid-template-columns:1fr;}.vs{display:none;}}
+.col-head{font-family:var(--marker);font-size:26px;font-weight:700;margin:0 0 12px;display:flex;align-items:center;gap:8px;}
+.col.old .col-head{color:var(--ink-soft);}
+.col.new .col-head{color:var(--green);}
+.chip{font-size:12px;font-weight:700;padding:1px 8px;border-radius:9px 5px 10px 4px/5px 10px 4px 9px;transform:rotate(1deg);}
+.chip.old{background:#ece7da;color:#7a7364;border:1.5px solid #cfc7b4;}
+.chip.new{background:#dff0e6;color:var(--green);border:1.5px solid #9dccb1;}
+.vs{align-self:center;font-family:var(--marker);font-weight:700;font-size:22px;color:#b9b2a0;border:2px solid #cfc7b4;border-radius:50%;width:44px;height:44px;display:flex;align-items:center;justify-content:center;transform:rotate(-6deg);}
+.step{position:relative;background:var(--box);border:2px solid var(--ink);border-radius:14px 9px 15px 7px/9px 15px 7px 14px;padding:9px 12px 9px 14px;margin:0 0 12px;box-shadow:2px 3px 0 rgba(43,43,43,.14);font-size:16px;}
+.col.old .step{border-color:#b3aa97;box-shadow:2px 3px 0 rgba(120,110,90,.12);}
+.step .n{font-family:var(--marker);font-weight:700;font-size:15px;color:var(--blue);margin-right:2px;}
+.col.old .step .n{color:#9a917d;}
+.step b{color:var(--ink);}
+.step .code{font-family:ui-monospace,Menlo,monospace;font-size:13px;background:#f0ece0;padding:1px 5px;border-radius:5px;color:#4a463c;}
+.step.pain{color:var(--red);font-weight:700;}
+.callout{margin-top:8px;border:2px dashed #a9c4d8;border-radius:16px 10px 16px 9px/10px 16px 9px 16px;padding:14px 16px;background:rgba(247,251,253,.6);}
+.callout h3{font-family:var(--marker);font-size:24px;margin:0 0 10px;color:var(--blue);}
+.mem{font-family:ui-monospace,Menlo,monospace;font-size:12.5px;background:var(--box);border:2px solid var(--ink);border-radius:10px 6px 11px 5px/6px 11px 5px 10px;padding:11px 13px;box-shadow:1.5px 2px 0 rgba(43,43,43,.13);color:#4a463c;line-height:1.5;white-space:pre-wrap;}
+.mem .key{color:var(--blue);font-weight:700;}
+.note{display:flex;gap:8px;font-size:15px;margin:8px 0 0;color:var(--ink-soft);}
+.note .k{font-weight:700;white-space:nowrap;}
+.note.g .k{color:var(--green);}
+.note.a .k{color:var(--amber);}
+.foot{display:flex;justify-content:space-between;align-items:center;margin-top:22px;padding-top:12px;border-top:2px solid var(--paper-line);font-size:14px;color:var(--ink-soft);}
+.foot .brand{font-family:var(--marker);font-weight:700;font-size:22px;color:var(--ink);}
+.foot .tags{font-family:ui-monospace,Menlo,monospace;font-size:12px;}
+</style>
+</head>
+<body>
+<div class="card">
+  <span class="eyebrow">Tính năng · epic memory</span>
+  <h1>Epic <span class="u">Memory</span> auto-load</h1>
+  <p class="sub">Mỗi epic có một "bộ nhớ" gọn — mở lại là agent nhớ ngay, không đốt token đọc lại từ đầu.</p>
+
+  <p class="pline bad"><span class="tag">❌ Vấn đề:</span><span>Quay lại một epic sau vài ngày (hoặc đổi agent), phải đọc lại toàn bộ artifact + git history mới hiểu context → tốn cả đống token, dễ quên quyết định cũ.</span></p>
+  <p class="pline good"><span class="tag">✅ AIDLC:</span><span>Một digest nhỏ <span style="font-family:ui-monospace">epic-memory.json</span> tự được nạp vào context mỗi khi prompt nhắc tới epic đó.</span></p>
+
+  <div class="cols">
+    <div class="col old">
+      <div class="col-head"><span class="chip old">CŨ</span> Mỗi lần đều đọc lại</div>
+      <div class="step"><span class="n">1.</span> Mở lại epic cũ — quên sạch context</div>
+      <div class="step"><span class="n">2.</span> Đọc lại từng <b>artifact.md</b> + lịch sử git</div>
+      <div class="step pain"><span class="n">3.</span> Đốt token khủng chỉ để "nhớ lại"</div>
+      <div class="step pain"><span class="n">4.</span> Đổi agent = mất hết, làm lại từ 0</div>
+      <div class="step pain"><span class="n">5.</span> Lặp lại sai lầm cũ vì không nhớ quyết định trước</div>
+    </div>
+
+    <div class="vs">vs</div>
+
+    <div class="col new">
+      <div class="col-head"><span class="chip new">MỚI</span> Nhớ tự động</div>
+      <div class="step"><span class="n">1.</span> Bật toggle <b>Memory auto-load: On</b> ở đầu list Epics</div>
+      <div class="step"><span class="n">2.</span> Hook <span class="code">UserPromptSubmit</span> theo dõi prompt của bạn</div>
+      <div class="step"><span class="n">3.</span> Prompt nhắc tới epic → tự chèn <b>epic-memory.json</b> vào context</div>
+      <div class="step"><span class="n">4.</span> Vừa làm vừa ghi thêm <b>decision / constraint</b> quan trọng</div>
+      <div class="step"><span class="n">5.</span> Annotation rounds cũng tự append context vào memory</div>
+      <div class="step"><span class="n">6.</span> ✓ Agent nào mở cũng hiểu ngay — cực rẻ token</div>
+    </div>
+  </div>
+
+  <div class="callout">
+    <h3>epic-memory.json — gọn mà đủ</h3>
+    <div class="mem"><span class="key">summary</span>   → 1 đoạn: epic này là gì + đang tới đâu
+<span class="key">entries[]</span> → decisions / constraints / context đã chốt
+<span class="key">reflections[]</span> → lần sau nên prompt / làm thế nào cho tốt hơn</div>
+    <div class="note g"><span class="k">Opt-in:</span> không bật thì không có gì chạy — toggle chỉ thêm/bớt 1 hook trong <span style="font-family:ui-monospace">settings.json</span></div>
+    <div class="note a"><span class="k">Terminal:</span> <span style="font-family:ui-monospace">aidlc globals memory-hook enable | disable | status</span></div>
+  </div>
+
+  <div class="foot">
+    <span class="brand">— aidlc</span>
+    <span class="tags">/epic-context · #aidlc #memory</span>
+  </div>
+</div>
+</body>
+</html>
