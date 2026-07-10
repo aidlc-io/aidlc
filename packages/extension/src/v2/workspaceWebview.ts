@@ -431,6 +431,8 @@ interface EpicSummaryUi {
   epicDir: string;
   existingArtifacts: string[];
   createdAt: string;
+  /** True for folders with no state.json/pipeline, synthesized from artifacts. */
+  artifactsOnly?: boolean;
   /** Aggregate token usage for the epic. */
   tokenUsage?: EpicTokenUsage;
 }
@@ -906,6 +908,7 @@ function toEpicSummaryUi(e: CoreEpicSummary): EpicSummaryUi {
     epicDir,
     existingArtifacts,
     createdAt: e.createdAt,
+    artifactsOnly: e.artifactsOnly,
     tokenUsage: e.tokenUsage
       ? { total: e.tokenUsage.total, hasOverlap: e.tokenUsage.hasOverlap }
       : undefined,

@@ -176,6 +176,14 @@ export function EpicCard({ epic, agentMeta, slashCommandsByAgent }: Props) {
                 Agent: <strong className="text-foreground">{epic.agent}</strong>
               </span>
             )}
+            {epic.artifactsOnly && (
+              <span
+                title="No pipeline binding — this epic's steps were derived from the .md files in its artifacts/ folder."
+                className="inline-flex items-center rounded-full border border-border px-2 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground"
+              >
+                Artifacts only
+              </span>
+            )}
             {total > 0 && (
               <span>
                 · <strong className="text-foreground">{done}/{total}</strong> steps done
@@ -1210,14 +1218,16 @@ function EpicActions({ epic, hasInputs }: { epic: EpicSummary; hasInputs: boolea
           Start pipeline run
         </button>
       )}
-      <button
-        type="button"
-        onClick={() => postMessage({ type: 'openEpicState', path: epic.statePath })}
-        className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground"
-      >
-        <FileText className="h-3 w-3" />
-        Open state.json
-      </button>
+      {epic.statePath && (
+        <button
+          type="button"
+          onClick={() => postMessage({ type: 'openEpicState', path: epic.statePath })}
+          className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground"
+        >
+          <FileText className="h-3 w-3" />
+          Open state.json
+        </button>
+      )}
       {hasInputs && (
         <button
           type="button"
