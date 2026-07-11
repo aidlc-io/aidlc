@@ -213,6 +213,28 @@ aidlc agent run <agentId> [--message …] [--context epic=ABC-123] [--dry-run]
 Both surfaces read and write the same files; the OS handles atomic renames so
 neither side ever sees a half-written run state.
 
+## Run-state backends (local file · git-native)
+
+Run state persists to local `.aidlc/runs/*.json` by default — single machine,
+no setup. To share runs across a team **without running a server**, switch to
+the git backend in `workspace.yaml`:
+
+```yaml
+persistence:
+  backend: git          # default: file
+  branch: aidlc-state   # branch that holds run state (default)
+  remote: origin        # remote to sync with (default)
+  auto_sync: true       # pull before reads, rebase + push on writes
+```
+
+Run state then lives on a dedicated `aidlc-state` branch, checked out into a
+hidden worktree (`.aidlc/.state`, auto-added to `.gitignore`) that never
+touches your code branch. Every `run` change is committed and pushed, so
+teammates on other machines converge through the git remote you already use.
+`git log aidlc-state` is a free, append-only audit trail. With no remote
+configured it degrades to local commit-only — still durable, just
+single-machine. The default file backend is unchanged; git is fully opt-in.
+
 ## Marketplace
 
 - **VS Code Marketplace**: [hueanmy.aidlc](https://marketplace.visualstudio.com/items?itemName=hueanmy.aidlc)

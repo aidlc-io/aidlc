@@ -1,5 +1,8 @@
 #!/usr/bin/env node
+import * as path from 'path';
 import { Command } from 'commander';
+import * as yaml from 'js-yaml';
+import { activateBackendFromWorkspace } from '@aidlc/core';
 import { registerValidate } from './commands/validate';
 import { registerList } from './commands/list';
 import { registerStatus } from './commands/status';
@@ -38,6 +41,12 @@ program
     // step-by-step chatter). Colour is left to chalk, which already disables
     // itself when stdout is not a TTY and honours NO_COLOR.
     if (thisCommand.opts().quiet) { setQuiet(true); }
+
+    // Select the run-state backend declared in workspace.yaml (`persistence`).
+    // Defensive: absent/invalid config leaves the default file backend in
+    // place — validation errors are surfaced by `aidlc validate`, not here.
+    const raw = thisCommand.opts().workspace ?? process.env.AIDLC_WORKSPACE ?? process.cwd();
+    activateBackendFromWorkspace(path.resolve(raw), (text) => yaml.load(text));
   });
 
 registerInit(program);

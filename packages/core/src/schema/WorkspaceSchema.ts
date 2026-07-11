@@ -451,6 +451,30 @@ const StateSchema = z.object({
   schema: z.record(z.string(), z.unknown()).optional(),
 });
 
+// ── Run-state persistence (optional) ───────────────────────────────
+
+/**
+ * Where pipeline **run state** is persisted. Distinct from {@link StateSchema}
+ * (domain-entity state). Defaults preserve the historical behaviour: run state
+ * is written to local `.aidlc/runs/*.json`.
+ *
+ * Set `backend: git` to sync run state through a dedicated branch on the git
+ * remote the team already uses — zero-server, multi-user. See
+ * `GitRunStateStore`.
+ */
+const PersistenceSchema = z.object({
+  /** `file` (default, local JSON) or `git` (shared branch, multi-user). */
+  backend: z.enum(['file', 'git']).default('file'),
+  /** Git backend: branch that holds run state. */
+  branch: z.string().min(1).default('aidlc-state'),
+  /** Git backend: remote to sync with. */
+  remote: z.string().min(1).default('origin'),
+  /** Git backend: pull before reads and rebase+push around writes. */
+  auto_sync: z.boolean().default(true),
+});
+
+export type PersistenceConfig = z.infer<typeof PersistenceSchema>;
+
 // ── Sidebar views (optional) ───────────────────────────────────────
 
 /**
@@ -511,6 +535,8 @@ export const WorkspaceSchema = z.object({
   recipes: z.array(RecipeSchema).default([]),
 
   state: StateSchema.optional(),
+  /** Where run state is persisted (file | git). Defaults to local file. */
+  persistence: PersistenceSchema.optional(),
   sidebar: SidebarSchema.optional(),
 });
 

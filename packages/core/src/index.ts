@@ -25,6 +25,7 @@ export type {
   RecipeConfig,
   NormalizedStep,
   StateConfig,
+  PersistenceConfig,
   SidebarConfig,
   SidebarView,
   WorkspaceRefIssue,
@@ -113,7 +114,15 @@ export type {
 } from './runner/types';
 
 // ── Pipeline runs (phase 1) ────────────────────────────────────────
-export { RunStateStore, RUN_ID_PATTERN } from './runs/RunStateStore';
+export { RunStateStore, FileRunStateStore, RUN_ID_PATTERN } from './runs/RunStateStore';
+export type { RunStateBackend } from './runs/RunStateStore';
+export { GitRunStateStore } from './runs/GitRunStateStore';
+export type { GitRunStateStoreOptions, GitExec } from './runs/GitRunStateStore';
+export {
+  resolveRunStateBackend,
+  activateRunStateBackend,
+  activateBackendFromWorkspace,
+} from './runs/resolveBackend';
 export {
   startRun,
   canStartStep,

@@ -16,6 +16,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { exec } from 'child_process';
+import * as yaml from 'js-yaml';
 
 import { registerV2WorkspaceCommands } from './v2/workspaceCommands';
 import { SidebarWebviewProvider } from './v2/sidebarWebview';
@@ -24,7 +25,19 @@ import { registerTokenMonitor } from './v2/tokenMonitor';
 import { registerAidlcMonitor } from './v2/aidlcMonitor';
 import { registerAstGraph } from './v2/astGraph';
 import { installAnnotationTools } from './v2/annotationToolsInstaller';
-import { WORKSPACE_DIR, WORKSPACE_FILENAME } from '@aidlc/core';
+import { WORKSPACE_DIR, WORKSPACE_FILENAME, activateBackendFromWorkspace } from '@aidlc/core';
+
+/**
+ * Select the run-state backend declared in the first workspace folder's
+ * `persistence` config. Safe to call repeatedly (on activate + on
+ * workspace.yaml change); absent/invalid config leaves the default file
+ * backend in place.
+ */
+function selectRunStateBackend(): void {
+  const folder = vscode.workspace.workspaceFolders?.[0];
+  if (!folder) { return; }
+  activateBackendFromWorkspace(folder.uri.fsPath, (text) => yaml.load(text));
+}
 
 export function activate(context: vscode.ExtensionContext): void {
   const output = vscode.window.createOutputChannel('AIDLC');
@@ -46,6 +59,10 @@ export function activate(context: vscode.ExtensionContext): void {
   } catch (e) {
     output.appendLine(`annotationTools: install failed — ${(e as Error).message}`);
   }
+
+  // Select the run-state backend declared in workspace.yaml (`persistence`)
+  // before anything reads or writes run state.
+  selectRunStateBackend();
 
   // Theme override manager — owns the persisted `auto|light|dark` choice
   // and broadcasts user toggles to every open webview.
@@ -71,7 +88,9 @@ export function activate(context: vscode.ExtensionContext): void {
   // a single watcher because the user can switch projects mid-session.
   const watcher = createWorkspaceYamlWatcher();
   if (watcher) {
-    const refresh = () => sidebar.refresh();
+    // Re-select the backend too: the user may have flipped `persistence.backend`
+    // or switched projects.
+    const refresh = () => { selectRunStateBackend(); sidebar.refresh(); };
     watcher.onDidChange(refresh, null, context.subscriptions);
     watcher.onDidCreate(refresh, null, context.subscriptions);
     watcher.onDidDelete(refresh, null, context.subscriptions);
