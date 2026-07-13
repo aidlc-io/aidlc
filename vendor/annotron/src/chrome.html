@@ -7,7 +7,6 @@
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-  /* ── Theme tokens ── */
   :root {
     --bar-h: 52px;
     --radius: 6px;
@@ -16,6 +15,7 @@
     --danger: #e74c3c;
     --danger-hover: #c0392b;
     --green: #2ecc71;
+    --orange: #f39c12;
   }
   [data-theme="dark"] {
     --bg: #1a1b1e;
@@ -32,6 +32,10 @@
     --iframe-bg: #fff;
     --kbd-bg: #373a40;
     --overlay-bg: rgba(0,0,0,0.6);
+    --thread-human-bg: #2c2d32;
+    --thread-agent-bg: #1e3a5f;
+    --ann-hover: #33353b;
+    --pending-border: var(--orange);
   }
   [data-theme="light"] {
     --bg: #f4f5f7;
@@ -48,195 +52,230 @@
     --iframe-bg: #fff;
     --kbd-bg: #e4e6ea;
     --overlay-bg: rgba(0,0,0,0.35);
+    --thread-human-bg: #f0f2f5;
+    --thread-agent-bg: #dbeafe;
+    --ann-hover: #f0f2f5;
+    --pending-border: var(--orange);
   }
 
-  html, body {
-    height: 100%;
-    background: var(--bg);
-    color: var(--text);
-    font-family: system-ui, -apple-system, sans-serif;
-    font-size: 14px;
-    transition: background 0.2s, color 0.2s;
-  }
+  html, body { height: 100%; background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, sans-serif; font-size: 14px; }
 
-  /* ── Topbar ── */
+  /* Topbar */
   #topbar {
     position: fixed; top: 0; left: 0; right: 0; height: var(--bar-h);
     background: var(--bar-bg); border-bottom: 1px solid var(--border);
     display: flex; align-items: center; gap: 8px; padding: 0 14px; z-index: 100;
-    transition: background 0.2s, border-color 0.2s;
   }
   #topbar .logo { font-weight: 700; font-size: 15px; letter-spacing: 0.5px; color: var(--accent); flex-shrink: 0; }
-  #file-label {
-    font-family: monospace; font-size: 12px; color: var(--text-dim);
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    min-width: 0; flex: 1; direction: rtl; text-align: left;
-  }
-  #status-dot {
-    width: 9px; height: 9px; border-radius: 50%;
-    background: var(--text-dim); flex-shrink: 0;
-    transition: background 0.3s;
-  }
+  #file-label { font-family: monospace; font-size: 12px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; direction: rtl; text-align: left; }
+  #status-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--text-dim); flex-shrink: 0; }
   #status-dot.live { background: var(--green); }
 
-  /* ── Buttons ── */
-  button {
-    border: none; border-radius: var(--radius); cursor: pointer; font-size: 13px;
-    padding: 6px 12px; font-weight: 500;
-    transition: background 0.15s, opacity 0.15s, color 0.15s;
-  }
+  button { border: none; border-radius: var(--radius); cursor: pointer; font-size: 13px; padding: 6px 12px; font-weight: 500; transition: background 0.15s, opacity 0.15s; }
   button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   button:disabled { opacity: 0.4; cursor: default; }
-
   .btn-neutral { background: var(--btn-neutral); color: var(--text); }
   .btn-neutral:hover:not(:disabled) { background: var(--btn-neutral-hover); }
-
   #btn-annotate { background: var(--btn-neutral); color: var(--text); }
   #btn-annotate.active { background: var(--accent); color: #fff; }
   #btn-annotate:hover:not(:disabled):not(.active) { background: var(--btn-neutral-hover); }
   #btn-annotate.active:hover { background: var(--accent-hover); }
-
   #btn-finalize { background: var(--danger); color: #fff; }
   #btn-finalize:hover:not(:disabled) { background: var(--danger-hover); }
-
-  /* Theme toggle */
-  #btn-theme {
-    background: var(--btn-neutral); color: var(--text);
-    padding: 6px 10px; font-size: 15px; line-height: 1;
-  }
+  #btn-theme { background: var(--btn-neutral); color: var(--text); padding: 6px 10px; font-size: 15px; line-height: 1; }
   #btn-theme:hover { background: var(--btn-neutral-hover); }
-
-  /* Shortcut help */
-  #btn-help {
-    background: none; color: var(--text-dim); font-size: 15px;
-    padding: 4px 8px; border-radius: 50%;
-  }
+  #btn-help { background: none; color: var(--text-dim); font-size: 15px; padding: 4px 8px; border-radius: 50%; }
   #btn-help:hover { background: var(--btn-neutral); color: var(--text); }
 
-  /* ── Undo toast ── */
-  #undo-toast {
-    position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%) translateY(12px);
-    background: var(--card-bg); color: var(--text); border: 1px solid var(--border);
-    border-radius: var(--radius); padding: 8px 16px; font-size: 13px;
-    display: flex; align-items: center; gap: 10px;
-    opacity: 0; pointer-events: none;
-    transition: opacity 0.2s, transform 0.2s;
-    z-index: 200; box-shadow: 0 4px 16px rgba(0,0,0,0.25);
-  }
+  /* Undo toast */
+  #undo-toast { position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%) translateY(12px); background: var(--card-bg); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 16px; font-size: 13px; display: flex; align-items: center; gap: 10px; opacity: 0; pointer-events: none; transition: opacity 0.2s, transform 0.2s; z-index: 200; box-shadow: 0 4px 16px rgba(0,0,0,0.25); }
   #undo-toast.visible { opacity: 1; transform: translateX(-50%) translateY(0); pointer-events: auto; }
   #undo-toast button { background: var(--accent); color: #fff; padding: 4px 10px; font-size: 12px; }
-  #undo-toast button:hover { background: var(--accent-hover); }
 
-  /* ── Keyboard shortcut overlay ── */
-  #kbd-overlay {
-    display: none; position: fixed; inset: 0; z-index: 300;
-    background: var(--overlay-bg); align-items: center; justify-content: center;
-  }
+  /* Keyboard overlay */
+  #kbd-overlay { display: none; position: fixed; inset: 0; z-index: 300; background: var(--overlay-bg); align-items: center; justify-content: center; }
   #kbd-overlay.open { display: flex; }
-  #kbd-panel {
-    background: var(--bar-bg); border: 1px solid var(--border); border-radius: 10px;
-    padding: 24px 28px; min-width: 300px; max-width: 90vw;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.3);
-  }
-  #kbd-panel h2 { font-size: 15px; font-weight: 700; margin-bottom: 16px; color: var(--text); }
+  #kbd-panel { background: var(--bar-bg); border: 1px solid var(--border); border-radius: 10px; padding: 24px 28px; min-width: 300px; max-width: 90vw; box-shadow: 0 8px 32px rgba(0,0,0,0.3); }
+  #kbd-panel h2 { font-size: 15px; font-weight: 700; margin-bottom: 16px; }
   .kbd-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border); gap: 16px; }
   .kbd-row:last-child { border-bottom: none; }
-  .kbd-desc { color: var(--text); font-size: 13px; }
+  .kbd-desc { font-size: 13px; }
   .kbd-keys { display: flex; gap: 4px; flex-shrink: 0; }
-  kbd {
-    background: var(--kbd-bg); color: var(--text); border: 1px solid var(--border);
-    border-radius: 4px; padding: 2px 7px; font-size: 12px; font-family: monospace;
-    white-space: nowrap;
-  }
+  kbd { background: var(--kbd-bg); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 2px 7px; font-size: 12px; font-family: monospace; white-space: nowrap; }
   #kbd-close { margin-top: 16px; width: 100%; background: var(--btn-neutral); color: var(--text); padding: 8px; }
-  #kbd-close:hover { background: var(--btn-neutral-hover); }
 
-  /* ── Layout ── */
+  /* Layout */
   #main { display: flex; height: calc(100vh - var(--bar-h)); margin-top: var(--bar-h); }
   #iframe-wrap { flex: 1; min-width: 0; position: relative; background: var(--iframe-bg); }
   iframe { width: 100%; height: 100%; border: none; display: block; }
 
-  #sidebar {
-    width: 340px; flex-shrink: 0; border-left: 1px solid var(--border);
-    display: flex; flex-direction: column; background: var(--bg); overflow: hidden;
-    transition: background 0.2s, border-color 0.2s;
-  }
+  #sidebar { width: 360px; flex-shrink: 0; border-left: 1px solid var(--border); display: flex; flex-direction: column; background: var(--bg); overflow: hidden; }
 
-  /* ── Conversation ── */
-  #conversation {
-    flex: 1; overflow-y: auto; padding: 12px;
-    display: flex; flex-direction: column; gap: 8px;
+  /* Sidebar tabs */
+  #sidebar-tabs { display: flex; border-bottom: 1px solid var(--border); background: var(--bar-bg); flex-shrink: 0; }
+  .stab { flex: 1; padding: 10px 8px; font-size: 12px; font-weight: 600; background: none; border: none; border-radius: 0; color: var(--text-dim); cursor: pointer; border-bottom: 2px solid transparent; transition: color 0.15s, border-color 0.15s; }
+  .stab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .stab:hover:not(.active) { color: var(--text); background: var(--btn-neutral); }
+  .stab .badge { display: inline-block; background: var(--accent); color: #fff; border-radius: 10px; font-size: 10px; padding: 1px 5px; margin-left: 4px; vertical-align: middle; }
+
+  /* Tab panels */
+  .tab-panel { display: none; flex: 1; overflow: hidden; flex-direction: column; }
+  .tab-panel.active { display: flex; }
+
+  /* Annotations list */
+  #annotations-list { flex: 1; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+
+  /* Annotation card (saved) */
+  .ann-card {
+    background: var(--card-bg); border-radius: var(--radius);
+    border: 1px solid var(--border); border-left: 3px solid var(--accent);
+    font-size: 12px; overflow: hidden;
+    animation: card-in 0.15s ease;
   }
-  .msg { border-radius: var(--radius); padding: 10px 12px; font-size: 13px; line-height: 1.5; }
-  .msg.human { background: var(--card-bg); align-self: flex-end; max-width: 100%; }
-  .msg.agent { background: var(--agent-msg-bg); align-self: flex-start; max-width: 100%; }
-  .msg .msg-label { font-size: 11px; font-weight: 600; color: var(--text-dim); margin-bottom: 4px; }
+  .ann-card.pending-new { border-left-color: var(--pending-border); }
+  .ann-card.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  @keyframes card-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+
+  .ann-card-header {
+    display: flex; align-items: center; gap: 6px; padding: 8px 10px;
+    cursor: pointer; user-select: none;
+  }
+  .ann-card-header:hover { background: var(--ann-hover); }
+  .ann-kind { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-dim); background: var(--btn-neutral); border-radius: 3px; padding: 1px 5px; flex-shrink: 0; }
+  .ann-label { color: var(--text); flex: 1; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ann-jump-icon { color: var(--text-dim); font-size: 13px; flex-shrink: 0; opacity: 0; transition: opacity 0.15s; }
+  .ann-card-header:hover .ann-jump-icon { opacity: 1; }
+  .ann-remove { background: none; padding: 0 2px; color: var(--text-dim); font-size: 14px; line-height: 1; flex-shrink: 0; }
+  .ann-remove:hover { color: var(--danger); background: none; }
+
+  /* Thread messages */
+  .ann-thread { display: flex; flex-direction: column; gap: 0; }
+  .thread-msg { padding: 6px 10px; font-size: 12px; line-height: 1.5; }
+  .thread-msg.human { background: var(--thread-human-bg); }
+  .thread-msg.agent { background: var(--thread-agent-bg); }
+  .thread-msg .tmsg-who { font-size: 10px; font-weight: 700; color: var(--text-dim); margin-bottom: 2px; }
+  .thread-msg.human .tmsg-who { color: var(--accent); }
+  .thread-msg.agent .tmsg-who { color: var(--agent-msg-label); }
+  .thread-msg .tmsg-body { color: var(--text); white-space: pre-wrap; word-break: break-word; }
+
+  /* Reply input area */
+  .ann-reply { padding: 6px 8px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 4px; }
+  .ann-reply-row { display: flex; gap: 4px; }
+  .ann-reply textarea { flex: 1; background: var(--input-bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-size: 12px; padding: 4px 6px; resize: none; height: 32px; font-family: inherit; overflow: hidden; }
+  .ann-reply textarea:focus { outline: none; border-color: var(--accent); }
+  .ann-reply textarea:hover { height: auto; min-height: 32px; overflow: auto; }
+  .ann-reply-send { background: var(--accent); color: #fff; padding: 4px 8px; font-size: 11px; white-space: nowrap; align-self: flex-end; }
+  .ann-reply-send:hover { background: var(--accent-hover); }
+
+  /* Note input for pending-new cards */
+  .ann-note { padding: 6px 10px; border-top: 1px solid var(--border); }
+  .ann-note textarea { width: 100%; background: var(--input-bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-size: 12px; padding: 5px 7px; resize: vertical; min-height: 48px; font-family: inherit; }
+  .ann-note textarea:focus { outline: none; border-color: var(--accent); }
+
+  /* Divider */
+  .ann-section-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-dim); padding: 8px 10px 4px; }
+
+  /* General conversation */
+  #conversation { padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+  .msg { border-radius: var(--radius); padding: 10px 12px; font-size: 12px; line-height: 1.5; }
+  .msg.human { background: var(--card-bg); }
+  .msg.agent { background: var(--agent-msg-bg); }
+  .msg .msg-label { font-size: 10px; font-weight: 700; color: var(--text-dim); margin-bottom: 4px; }
   .msg.human .msg-label { color: var(--accent); }
   .msg.agent .msg-label { color: var(--agent-msg-label); }
 
-  /* ── Pending cards ── */
-  #pending-cards { display: flex; flex-direction: column; gap: 6px; padding: 0 10px 6px; }
-  .card {
-    background: var(--card-bg); border-radius: var(--radius); padding: 10px;
-    border-left: 3px solid var(--accent); font-size: 12px;
-    transition: background 0.2s;
-    animation: card-in 0.15s ease;
-  }
-  @keyframes card-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
-  .card .card-kind { font-size: 10px; font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; }
-  .card .card-label { color: var(--text); margin: 2px 0 6px; word-break: break-all; }
-  .card textarea {
-    width: 100%; background: var(--input-bg); border: 1px solid var(--border);
-    border-radius: 4px; color: var(--text); font-size: 12px; padding: 5px 7px;
-    resize: vertical; min-height: 50px; font-family: inherit;
-    transition: background 0.2s, border-color 0.2s;
-  }
-  .card textarea:focus { outline: none; border-color: var(--accent); }
-  .card-remove {
-    float: right; background: none; border: none; color: var(--text-dim);
-    cursor: pointer; font-size: 16px; padding: 0 2px; line-height: 1;
-  }
-  .card-remove:hover { color: var(--danger); }
+  /* Thinking dots */
+  .thinking-dots { display: flex; gap: 5px; align-items: center; padding: 2px 0; }
+  .thinking-dots span { width: 7px; height: 7px; border-radius: 50%; background: var(--agent-msg-label); animation: thinking-bounce 1.2s ease-in-out infinite; }
+  .thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
+  .thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes thinking-bounce { 0%, 80%, 100% { transform: scale(0.6); opacity: 0.35; } 40% { transform: scale(1); opacity: 1; } }
 
-  /* ── Composer ── */
-  #composer { border-top: 1px solid var(--border); padding: 10px; display: flex; flex-direction: column; gap: 6px; }
-  #composer textarea {
-    width: 100%; background: var(--input-bg); border: 1px solid var(--border);
-    border-radius: var(--radius); color: var(--text); font-size: 13px;
-    padding: 8px 10px; resize: vertical; min-height: 56px; font-family: inherit;
-    transition: background 0.2s, border-color 0.2s;
-  }
+  /* History tab */
+  #history-list { flex: 1; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 8px; }
+  .round-card { background: var(--card-bg); border-radius: var(--radius); border: 1px solid var(--border); padding: 10px 12px; font-size: 12px; }
+  .round-card .round-id { font-size: 10px; font-weight: 700; color: var(--text-dim); margin-bottom: 4px; }
+  .round-card .round-count { color: var(--text); margin-bottom: 4px; }
+  .round-card .round-summary { color: var(--text-dim); font-size: 11px; font-style: italic; white-space: pre-wrap; }
+  .round-card .round-time { font-size: 10px; color: var(--text-dim); margin-top: 4px; }
+
+  /* Composer */
+  #composer { border-top: 1px solid var(--border); padding: 10px; display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; }
+  #composer textarea { width: 100%; background: var(--input-bg); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); font-size: 13px; padding: 8px 10px; resize: vertical; min-height: 56px; font-family: inherit; }
   #composer textarea:focus { outline: none; border-color: var(--accent); }
   #composer textarea::placeholder { color: var(--text-dim); }
-  #btn-send { background: var(--accent); color: #fff; width: 100%; padding: 8px; font-size: 13px; }
+  #composer-actions { display: flex; gap: 6px; align-items: stretch; }
+  #btn-send { background: var(--accent); color: #fff; flex: 1; padding: 8px; font-size: 13px; }
   #btn-send:hover:not(:disabled) { background: var(--accent-hover); }
+  #btn-attach { flex-shrink: 0; padding: 8px 10px; font-size: 13px; }
+  #btn-cancel-agent { background: var(--danger); color: #fff; flex-shrink: 0; padding: 8px 12px; font-size: 13px; }
+  #btn-cancel-agent:hover:not(:disabled) { background: var(--danger-hover); }
 
-  /* ── Shortcut hint strip ── */
-  #shortcut-hints {
-    padding: 4px 10px 6px; display: flex; gap: 8px; flex-wrap: wrap;
-    border-top: 1px solid var(--border);
-  }
+  /* Attached image previews */
+  .attach-previews { display: flex; flex-wrap: wrap; gap: 6px; }
+  .attach-previews:empty { display: none; }
+  .attach-thumb { position: relative; width: 56px; height: 56px; border-radius: var(--radius); border: 1px solid var(--border); overflow: hidden; background: var(--input-bg); flex-shrink: 0; }
+  .attach-previews.mini .attach-thumb { width: 40px; height: 40px; }
+  .attach-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .attach-thumb .attach-remove { position: absolute; top: 1px; right: 1px; width: 18px; height: 18px; border-radius: 50%; background: rgba(0,0,0,0.6); color: #fff; font-size: 13px; line-height: 16px; padding: 0; text-align: center; }
+  .attach-thumb .attach-remove:hover { background: var(--danger); }
+
+  /* Inline mini attach button (annotation reply/note) */
+  .mini-attach { background: var(--btn-neutral); color: var(--text); padding: 4px 7px; font-size: 12px; align-self: flex-end; flex-shrink: 0; }
+  .mini-attach:hover { background: var(--btn-neutral-hover); }
+
+  /* Copy button on agent messages */
+  .msg-copy { background: none; color: var(--text-dim); font-size: 10px; padding: 1px 6px; margin-top: 4px; border: 1px solid var(--border); border-radius: 4px; }
+  .msg-copy:hover { color: var(--text); background: var(--btn-neutral); }
+  .tmsg-copy { background: none; color: var(--text-dim); font-size: 10px; padding: 0 5px; margin-top: 3px; border: 1px solid var(--border); border-radius: 4px; align-self: flex-start; }
+  .tmsg-copy:hover { color: var(--text); background: var(--btn-neutral); }
+
+  /* Agent status bar */
+  #agent-statusbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 10px; border-top: 1px solid var(--border); background: var(--bar-bg); flex-shrink: 0; font-size: 12px; }
+  #agent-status { display: flex; align-items: center; gap: 6px; color: var(--text-dim); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .status-dot-sm { width: 8px; height: 8px; border-radius: 50%; background: var(--text-dim); flex-shrink: 0; }
+  #agent-status.working .status-dot-sm { background: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
+  #agent-status.idle .status-dot-sm { background: var(--green); }
+  #agent-status.needs-perm .status-dot-sm { background: var(--orange); }
+  #agent-status.needs-perm { color: var(--orange); font-weight: 600; }
+  @keyframes pulse { 0%,100% { opacity: 0.4; } 50% { opacity: 1; } }
+  #remote-approve-wrap { display: flex; align-items: center; gap: 5px; color: var(--text-dim); cursor: pointer; flex-shrink: 0; user-select: none; }
+  #remote-approve-wrap:hover { color: var(--text); }
+  #remote-approve { cursor: pointer; }
+
+  /* Permission request cards */
+  #perm-requests { display: flex; flex-direction: column; gap: 6px; padding: 0 8px; flex-shrink: 0; }
+  #perm-requests:empty { display: none; }
+  .perm-card { border: 1px solid var(--orange); border-left: 3px solid var(--orange); border-radius: var(--radius); background: var(--card-bg); padding: 10px; font-size: 12px; animation: card-in 0.15s ease; }
+  .perm-card .perm-head { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--orange); margin-bottom: 4px; }
+  .perm-card .perm-tool { color: var(--text); font-family: monospace; word-break: break-word; margin-bottom: 8px; }
+  .perm-card .perm-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+  .perm-card button { font-size: 11px; padding: 5px 10px; }
+  .perm-allow { background: var(--green); color: #fff; }
+  .perm-always { background: var(--btn-neutral); color: var(--text); }
+  .perm-always:hover { background: var(--btn-neutral-hover); }
+  .perm-deny { background: var(--danger); color: #fff; }
+
+  /* Agent working: live step log */
+  .work-steps { display: flex; flex-direction: column; gap: 2px; margin: 2px 0; }
+  .work-step { font-size: 11px; color: var(--text); line-height: 1.4; display: flex; gap: 5px; align-items: baseline; opacity: 0.9; }
+  .work-step::before { content: '›'; color: var(--agent-msg-label); flex-shrink: 0; }
+  .work-step.done { color: var(--text-dim); }
+  .work-step.done::before { content: '✓'; color: var(--green); }
+  .msg.cancelled { opacity: 0.7; }
+  .msg.cancelled .msg-label { color: var(--orange); }
+
+  #shortcut-hints { padding: 4px 10px 6px; display: flex; gap: 8px; flex-wrap: wrap; flex-shrink: 0; }
   .hint { font-size: 10px; color: var(--text-dim); display: flex; align-items: center; gap: 3px; }
   .hint kbd { font-size: 10px; padding: 1px 5px; }
 
-  /* ── Thinking indicator ── */
-  .thinking-dots { display: flex; gap: 5px; align-items: center; padding: 2px 0; }
-  .thinking-dots span {
-    width: 7px; height: 7px; border-radius: 50%;
-    background: var(--agent-msg-label);
-    animation: thinking-bounce 1.2s ease-in-out infinite;
-  }
-  .thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
-  .thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
-  @keyframes thinking-bounce {
-    0%, 80%, 100% { transform: scale(0.6); opacity: 0.35; }
-    40% { transform: scale(1); opacity: 1; }
-  }
+  /* Empty state */
+  .empty-state { text-align: center; color: var(--text-dim); font-size: 12px; padding: 24px 16px; line-height: 1.7; }
 
-  @media (prefers-reduced-motion: reduce) { *, .card { transition: none !important; animation: none !important; } }
+  @media (prefers-reduced-motion: reduce) { *, .ann-card { transition: none !important; animation: none !important; } }
   @media (max-width: 600px) {
-    #sidebar { width: 100%; position: fixed; bottom: 0; left: 0; right: 0; height: 50vh; border-left: none; border-top: 1px solid var(--border); }
-    #iframe-wrap { height: 50vh; }
+    #sidebar { width: 100%; position: fixed; bottom: 0; left: 0; right: 0; height: 55vh; border-left: none; border-top: 1px solid var(--border); }
+    #iframe-wrap { height: 45vh; }
   }
 </style>
 </head>
@@ -258,14 +297,47 @@
     <iframe id="artifact-frame" title="Artifact preview" sandbox="allow-scripts allow-same-origin allow-forms"></iframe>
   </div>
   <div id="sidebar">
-    <div id="conversation"></div>
-    <div id="pending-cards"></div>
+    <div id="sidebar-tabs">
+      <button class="stab active" data-tab="annotations">Annotations <span class="badge" id="ann-badge" style="display:none">0</span></button>
+      <button class="stab" data-tab="history">History <span class="badge" id="hist-badge" style="display:none">0</span></button>
+    </div>
+
+    <!-- Annotations tab -->
+    <div id="tab-annotations" class="tab-panel active">
+      <div id="annotations-list">
+        <div class="empty-state" id="ann-empty">No comments yet.<br>Select text, right-click, then choose <strong>Comment</strong>.</div>
+      </div>
+      <div id="conversation"></div>
+    </div>
+
+    <!-- History tab -->
+    <div id="tab-history" class="tab-panel">
+      <div id="history-list">
+        <div class="empty-state" id="hist-empty">No history yet.<br>Rounds appear after feedback is sent.</div>
+      </div>
+    </div>
+
+    <div id="perm-requests"></div>
+
+    <div id="agent-statusbar">
+      <span id="agent-status"><span class="status-dot-sm"></span><span id="agent-status-text">Idle</span></span>
+      <label id="remote-approve-wrap" title="Approve tool permissions from this browser instead of the terminal">
+        <input type="checkbox" id="remote-approve"> Remote approve
+      </label>
+    </div>
+
     <div id="composer">
-      <textarea id="free-text" placeholder="Message to agent… (Enter to send, Shift+Enter for newline)" rows="3"></textarea>
-      <button id="btn-send" title="Send feedback (Enter)">Send feedback</button>
+      <div id="attach-previews" class="attach-previews"></div>
+      <textarea id="free-text" placeholder="Message to agent… (Enter to send, Shift+Enter for newline, paste an image to attach)" rows="3"></textarea>
+      <div id="composer-actions">
+        <button id="btn-attach" class="btn-neutral" title="Attach image(s) from your computer">🖼️ Image</button>
+        <button id="btn-send" title="Send feedback (Enter)">Send feedback</button>
+        <button id="btn-cancel-agent" title="Cancel current agent work" style="display:none">Cancel</button>
+      </div>
+      <input type="file" id="file-input" accept="image/*" multiple hidden>
     </div>
     <div id="shortcut-hints">
-      <span class="hint"><kbd>A</kbd> Annotate</span>
+      <span class="hint">Select text → comment icon</span>
       <span class="hint"><kbd>Ctrl</kbd><kbd>Z</kbd> Undo</span>
       <span class="hint"><kbd>↵</kbd> Send</span>
       <span class="hint"><kbd>Esc</kbd> Off</span>
@@ -274,19 +346,17 @@
   </div>
 </div>
 
-<!-- Undo toast -->
 <div id="undo-toast" role="status" aria-live="polite">
   <span id="undo-msg">Card removed</span>
   <button id="btn-undo" title="Undo (Ctrl+Z)">Undo</button>
 </div>
 
-<!-- Keyboard shortcut overlay -->
 <div id="kbd-overlay" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
   <div id="kbd-panel">
     <h2>Keyboard shortcuts</h2>
-    <div class="kbd-row"><span class="kbd-desc">Toggle annotate mode</span><span class="kbd-keys"><kbd>A</kbd></span></div>
+    <div class="kbd-row"><span class="kbd-desc">Text comment</span><span class="kbd-keys">Select text + Right-click</span></div>
     <div class="kbd-row"><span class="kbd-desc">Exit annotate mode</span><span class="kbd-keys"><kbd>Esc</kbd></span></div>
-    <div class="kbd-row"><span class="kbd-desc">Undo last card removal</span><span class="kbd-keys"><kbd>Ctrl</kbd><kbd>Z</kbd></span></div>
+    <div class="kbd-row"><span class="kbd-desc">Undo last removal</span><span class="kbd-keys"><kbd>Ctrl</kbd><kbd>Z</kbd></span></div>
     <div class="kbd-row"><span class="kbd-desc">Send feedback</span><span class="kbd-keys"><kbd>Enter</kbd></span></div>
     <div class="kbd-row"><span class="kbd-desc">Download clean HTML</span><span class="kbd-keys"><kbd>D</kbd></span></div>
     <div class="kbd-row"><span class="kbd-desc">Toggle dark / light mode</span><span class="kbd-keys"><kbd>T</kbd></span></div>
@@ -304,50 +374,83 @@ const file = params.get('file') || '';
 document.getElementById('file-label').textContent = file || '(no file)';
 document.getElementById('file-label').title = file;
 
-const frame      = document.getElementById('artifact-frame');
+const frame       = document.getElementById('artifact-frame');
 const btnAnnotate = document.getElementById('btn-annotate');
 const btnDownload = document.getElementById('btn-download');
 const btnFinalize = document.getElementById('btn-finalize');
-const btnSend    = document.getElementById('btn-send');
-const btnTheme   = document.getElementById('btn-theme');
-const btnHelp    = document.getElementById('btn-help');
-const statusDot  = document.getElementById('status-dot');
-const convoEl    = document.getElementById('conversation');
-const pendingEl  = document.getElementById('pending-cards');
-const freeText   = document.getElementById('free-text');
-const undoToast  = document.getElementById('undo-toast');
-const undoMsg    = document.getElementById('undo-msg');
-const btnUndo    = document.getElementById('btn-undo');
-const kbdOverlay = document.getElementById('kbd-overlay');
-const kbdClose   = document.getElementById('kbd-close');
+const btnSend     = document.getElementById('btn-send');
+const btnAttach   = document.getElementById('btn-attach');
+const btnCancel   = document.getElementById('btn-cancel-agent');
+const fileInput   = document.getElementById('file-input');
+const attachPreviews = document.getElementById('attach-previews');
+const permRequests   = document.getElementById('perm-requests');
+const agentStatusEl  = document.getElementById('agent-status');
+const agentStatusText= document.getElementById('agent-status-text');
+const remoteApprove  = document.getElementById('remote-approve');
+const btnTheme    = document.getElementById('btn-theme');
+const btnHelp     = document.getElementById('btn-help');
+const statusDot   = document.getElementById('status-dot');
+const freeText    = document.getElementById('free-text');
+const undoToast   = document.getElementById('undo-toast');
+const undoMsg     = document.getElementById('undo-msg');
+const btnUndo     = document.getElementById('btn-undo');
+const kbdOverlay  = document.getElementById('kbd-overlay');
+const kbdClose    = document.getElementById('kbd-close');
+const annList     = document.getElementById('annotations-list');
+const annEmpty    = document.getElementById('ann-empty');
+const histList    = document.getElementById('history-list');
+const histEmpty   = document.getElementById('hist-empty');
+const convoEl     = document.getElementById('conversation');
+const annBadge    = document.getElementById('ann-badge');
+const histBadge   = document.getElementById('hist-badge');
 
+// ── State ──────────────────────────────────────────────────────────────────
 let annotating = false;
-let pendingItems = [];
-let undoStack = [];      // stack of {item, index} for removed cards
-let undoTimer = null;
 let sdkReady = false;
 let savedScroll = 0;
 let serializeResolvers = {};
 let serializeCounter = 0;
+let undoStack = [];
+let undoTimer = null;
+let agentWorking = false;
+let selectedAnnotationId = null;
+
+// Image staging (runtime only — never persisted to the sidecar).
+// Each entry is an array of { id, name, dataUrl }.
+const composerImages = [];       // main composer
+const replyImgStore = {};        // saved-annotation id -> images staged in its reply box
+const noteImgStore = {};         // pending-new id -> images staged in its note box
+
+// annotations: array of saved annotation objects (with threads)
+// Each: { id, kind, selector, label, text, thread: [{role,message,timestamp}], createdAt, status }
+let annotations = [];
+
+// pendingNew: new selections not yet sent (draft state)
+// Each: { id, kind, selector, label, text, note }
+let pendingNew = [];
 
 // ── Theme ──────────────────────────────────────────────────────────────────
 const savedTheme = localStorage.getItem('annotron-theme') || 'dark';
 setTheme(savedTheme);
-
 function setTheme(t) {
   document.documentElement.setAttribute('data-theme', t);
   btnTheme.textContent = t === 'dark' ? '🌙' : '☀️';
-  btnTheme.title = `Switch to ${t === 'dark' ? 'light' : 'dark'} mode (T)`;
   localStorage.setItem('annotron-theme', t);
 }
-
-function toggleTheme() {
-  const cur = document.documentElement.getAttribute('data-theme');
-  setTheme(cur === 'dark' ? 'light' : 'dark');
-}
+function toggleTheme() { setTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark'); }
 btnTheme.addEventListener('click', toggleTheme);
 
-// ── Keyboard shortcut overlay ──────────────────────────────────────────────
+// ── Sidebar tabs ───────────────────────────────────────────────────────────
+document.querySelectorAll('.stab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.stab').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+  });
+});
+
+// ── Help overlay ───────────────────────────────────────────────────────────
 function openHelp() { kbdOverlay.classList.add('open'); kbdClose.focus(); }
 function closeHelp() { kbdOverlay.classList.remove('open'); btnHelp.focus(); }
 btnHelp.addEventListener('click', openHelp);
@@ -361,26 +464,34 @@ function loadArtifact() {
   frame.src = '/artifact?file=' + encodeURIComponent(file);
 }
 loadArtifact();
-
 frame.addEventListener('load', () => { sdkReady = false; });
 
 // ── postMessage bridge ─────────────────────────────────────────────────────
 window.addEventListener('message', (e) => {
   const d = e.data;
   if (!d || !d[TAG]) return;
-
   if (d.type === 'sdk-ready') {
     sdkReady = true;
     frame.contentWindow.postMessage({ [TAG]: true, type: 'set-annotate', value: annotating }, '*');
+    syncAnnotationsToArtifact();
     if (savedScroll) frame.contentWindow.scrollTo(0, savedScroll);
     return;
   }
   if (d.type === 'element-selected') {
-    addCard({ kind: 'element', selector: d.selector, label: d.label, text: '', note: d.note || '' });
+    addPending({ kind: 'element', selector: d.selector, label: d.label, text: '', note: d.note || '' });
     return;
   }
   if (d.type === 'text-selected') {
-    addCard({ kind: 'text', selector: d.selector, label: d.label, text: d.text, note: d.note || '' });
+    addPending({
+      kind: 'text', selector: d.selector, label: d.label, text: d.text, note: d.note || '',
+      textStart: d.textStart, textEnd: d.textEnd,
+      textPrefix: d.textPrefix || '', textSuffix: d.textSuffix || '',
+    });
+    return;
+  }
+  if (d.type === 'annotation-selected') {
+    document.querySelector('.stab[data-tab=annotations]').click();
+    selectAnnotation(d.id);
     return;
   }
   if (d.type === 'serialized') {
@@ -403,123 +514,689 @@ function setAnnotate(val) {
   annotating = val;
   btnAnnotate.classList.toggle('active', annotating);
   btnAnnotate.setAttribute('aria-pressed', String(annotating));
-  // Always send — don't gate on sdkReady, SDK will handle messages whenever it's ready
   frame.contentWindow?.postMessage({ [TAG]: true, type: 'set-annotate', value: annotating }, '*');
 }
 btnAnnotate.addEventListener('click', () => setAnnotate(!annotating));
 
-// ── Undo stack ─────────────────────────────────────────────────────────────
+// ── Jump to element in iframe ──────────────────────────────────────────────
+function jumpToElement(selector) {
+  if (!selector || !sdkReady) return;
+  frame.contentWindow?.postMessage({ [TAG]: true, type: 'jump-to-element', selector }, '*');
+}
+
+function visibleAnnotations() {
+  return annotations.concat(pendingNew);
+}
+
+function syncAnnotationsToArtifact() {
+  if (!sdkReady) return;
+  frame.contentWindow?.postMessage({
+    [TAG]: true,
+    type: 'set-annotations',
+    annotations: visibleAnnotations(),
+    selectedId: selectedAnnotationId,
+  }, '*');
+}
+
+function selectAnnotation(id, shouldFocusArtifact = false) {
+  selectedAnnotationId = id;
+  renderAnnotations();
+  const card = annList.querySelector(`[data-id='${CSS.escape(id)}']`);
+  if (card) {
+    card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    card.querySelector('.ann-card-header')?.focus({ preventScroll: true });
+  }
+  const annotation = visibleAnnotations().find(item => item.id === id);
+  if (shouldFocusArtifact && annotation) {
+    frame.contentWindow?.postMessage({ [TAG]: true, type: 'focus-annotation', annotation }, '*');
+  } else {
+    syncAnnotationsToArtifact();
+  }
+}
+
+// ── Load annotations from server ──────────────────────────────────────────
+async function loadAnnotations() {
+  if (!file) return;
+  try {
+    const res = await fetch('/annotations?file=' + encodeURIComponent(file));
+    if (!res.ok) return;
+    const data = await res.json();
+    annotations = data.annotations || [];
+    renderAnnotations();
+    renderHistory(data.rounds || []);
+  } catch {}
+}
+
+// ── Save annotations to server ────────────────────────────────────────────
+async function saveAnnotations() {
+  if (!file) return;
+  try {
+    await fetch('/annotations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ file, annotations }),
+    });
+  } catch {}
+}
+
+// ── Render annotations list ────────────────────────────────────────────────
+function renderAnnotations() {
+  // Clear all ann-card children, keep empty state
+  annList.querySelectorAll('.ann-card, .ann-section-label').forEach(el => el.remove());
+  annEmpty.style.display = (annotations.length === 0 && pendingNew.length === 0) ? '' : 'none';
+
+  // Badge
+  const total = annotations.length + pendingNew.length;
+  annBadge.textContent = total;
+  annBadge.style.display = total > 0 ? '' : 'none';
+
+  // Saved annotations
+  annotations.forEach(ann => {
+    const el = buildAnnotationCard(ann, false);
+    annList.appendChild(el);
+  });
+
+  // Pending new (unsaved)
+  if (pendingNew.length > 0) {
+    const sep = document.createElement('div');
+    sep.className = 'ann-section-label';
+    sep.textContent = 'New selections (pending send)';
+    annList.appendChild(sep);
+    pendingNew.forEach(item => {
+      const el = buildAnnotationCard(item, true);
+      annList.appendChild(el);
+    });
+  }
+  syncAnnotationsToArtifact();
+}
+
+function buildAnnotationCard(ann, isPending) {
+  const card = document.createElement('div');
+  card.className = 'ann-card' + (isPending ? ' pending-new' : '') + (ann.id === selectedAnnotationId ? ' selected' : '');
+  card.dataset.id = ann.id;
+
+  // Header
+  const header = document.createElement('div');
+  header.className = 'ann-card-header';
+  header.tabIndex = 0;
+  header.title = ann.selector ? 'Click to jump to element in preview' : '';
+
+  const kind = document.createElement('span');
+  kind.className = 'ann-kind';
+  kind.textContent = ann.kind;
+
+  const label = document.createElement('span');
+  label.className = 'ann-label';
+  label.textContent = ann.label || ann.text || '(no label)';
+
+  const jumpIcon = document.createElement('span');
+  jumpIcon.className = 'ann-jump-icon';
+  jumpIcon.textContent = '↗';
+  jumpIcon.title = 'Jump to element';
+
+  const removeBtn = document.createElement('button');
+  removeBtn.className = 'ann-remove';
+  removeBtn.textContent = '×';
+  removeBtn.title = 'Remove';
+  removeBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (isPending) {
+      removePending(ann.id);
+    } else {
+      removeAnnotation(ann.id);
+    }
+  });
+
+  header.append(kind, label, jumpIcon, removeBtn);
+  if (ann.selector) {
+    header.style.cursor = 'pointer';
+    header.addEventListener('click', () => selectAnnotation(ann.id, true));
+    header.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        selectAnnotation(ann.id, true);
+      }
+    });
+  }
+  card.appendChild(header);
+
+  // Thread (saved annotations only)
+  if (!isPending) {
+    if (ann.thread && ann.thread.length > 0) {
+      const thread = document.createElement('div');
+      thread.className = 'ann-thread';
+      ann.thread.forEach(msg => {
+        const m = document.createElement('div');
+        m.className = 'thread-msg ' + msg.role;
+        const who = document.createElement('div');
+        who.className = 'tmsg-who';
+        who.textContent = msg.role === 'human' ? 'You' : 'Agent';
+        const body = document.createElement('div');
+        body.className = 'tmsg-body';
+        body.textContent = msg.message;
+        m.append(who, body);
+        if (msg.role === 'agent') m.append(makeCopyBtn(msg.message, 'tmsg-copy'));
+        thread.appendChild(m);
+      });
+      card.appendChild(thread);
+    }
+
+    // Reply input always shown for saved annotations
+    const replyArea = document.createElement('div');
+    replyArea.className = 'ann-reply';
+
+    const replyPreviews = document.createElement('div');
+    replyPreviews.className = 'attach-previews mini';
+    const replyStore = (replyImgStore[ann.id] = replyImgStore[ann.id] || []);
+    const replyAttach = createImageAttach(replyPreviews, replyStore);
+
+    const replyRow = document.createElement('div');
+    replyRow.className = 'ann-reply-row';
+    const replyImgBtn = document.createElement('button');
+    replyImgBtn.className = 'mini-attach';
+    replyImgBtn.textContent = '🖼️';
+    replyImgBtn.title = 'Attach image (or paste into the box)';
+    const replyInput = document.createElement('input');
+    replyInput.type = 'file'; replyInput.accept = 'image/*'; replyInput.multiple = true; replyInput.hidden = true;
+    replyImgBtn.addEventListener('click', () => replyInput.click());
+    replyInput.addEventListener('change', () => { for (const f of replyInput.files) replyAttach.add(f); replyInput.value = ''; });
+    const replyTa = document.createElement('textarea');
+    replyTa.placeholder = 'Reply to agent…';
+    replyTa.addEventListener('paste', (e) => replyAttach.handlePaste(e));
+    const replySend = document.createElement('button');
+    replySend.className = 'ann-reply-send';
+    replySend.textContent = 'Send';
+    replySend.addEventListener('click', () => sendAnnotationReply(ann, replyTa));
+    replyTa.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+        e.preventDefault();
+        sendAnnotationReply(ann, replyTa);
+      }
+    });
+    replyRow.append(replyImgBtn, replyTa, replySend, replyInput);
+    replyArea.append(replyPreviews, replyRow);
+    card.appendChild(replyArea);
+  }
+
+  // Note input for pending new
+  if (isPending) {
+    const noteArea = document.createElement('div');
+    noteArea.className = 'ann-note';
+
+    const notePreviews = document.createElement('div');
+    notePreviews.className = 'attach-previews mini';
+    const noteStore = (noteImgStore[ann.id] = noteImgStore[ann.id] || []);
+    const noteAttach = createImageAttach(notePreviews, noteStore);
+
+    const ta = document.createElement('textarea');
+    ta.placeholder = 'Add a note for the agent… (paste an image to attach)';
+    ta.value = ann.note || '';
+    ta.addEventListener('input', () => { ann.note = ta.value; });
+    ta.addEventListener('paste', (e) => noteAttach.handlePaste(e));
+
+    const noteBar = document.createElement('div');
+    noteBar.style.cssText = 'display:flex;gap:4px;margin-top:4px;';
+    const noteImgBtn = document.createElement('button');
+    noteImgBtn.className = 'mini-attach';
+    noteImgBtn.textContent = '🖼️ Image';
+    noteImgBtn.title = 'Attach image';
+    const noteInput = document.createElement('input');
+    noteInput.type = 'file'; noteInput.accept = 'image/*'; noteInput.multiple = true; noteInput.hidden = true;
+    noteImgBtn.addEventListener('click', () => noteInput.click());
+    noteInput.addEventListener('change', () => { for (const f of noteInput.files) noteAttach.add(f); noteInput.value = ''; });
+    noteBar.append(noteImgBtn, noteInput);
+
+    noteArea.append(notePreviews, ta, noteBar);
+    card.appendChild(noteArea);
+  }
+
+  return card;
+}
+
+// Send a reply to a specific saved annotation
+async function sendAnnotationReply(ann, textarea) {
+  const note = textarea.value.trim();
+  const staged = replyImgStore[ann.id] || [];
+  if (!note && !staged.length) return;
+  textarea.disabled = true;
+
+  try {
+    // Upload staged reply images first (before the re-render tears down state)
+    const images = await uploadImages(staged);
+
+    // Add to local thread immediately
+    ann.thread = ann.thread || [];
+    const shown = note || `(${images.length} image${images.length !== 1 ? 's' : ''} attached)`;
+    ann.thread.push({ role: 'human', message: shown, timestamp: new Date().toISOString() });
+    delete replyImgStore[ann.id];
+    renderAnnotations();
+
+    // Send to server as feedback targeting this annotation
+    await fetch('/feedback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        file,
+        items: [{ id: ann.id, kind: ann.kind, selector: ann.selector, label: ann.label, text: ann.text, note }],
+        message: '',
+        images,
+      }),
+    });
+    setAgentWorking(true);
+  } finally {
+    textarea.disabled = false;
+  }
+}
+
+// ── Render history ─────────────────────────────────────────────────────────
+function renderHistory(rounds) {
+  histList.querySelectorAll('.round-card').forEach(el => el.remove());
+  histEmpty.style.display = rounds.length === 0 ? '' : 'none';
+  histBadge.textContent = rounds.length;
+  histBadge.style.display = rounds.length > 0 ? '' : 'none';
+
+  rounds.slice().reverse().forEach(round => {
+    const card = document.createElement('div');
+    card.className = 'round-card';
+    const id = document.createElement('div');
+    id.className = 'round-id';
+    id.textContent = round.id || 'Round';
+    const cnt = document.createElement('div');
+    cnt.className = 'round-count';
+    cnt.textContent = `${round.annotationCount || 0} annotation${round.annotationCount !== 1 ? 's' : ''}`;
+    card.append(id, cnt);
+    if (round.agentSummary) {
+      const sum = document.createElement('div');
+      sum.className = 'round-summary';
+      sum.textContent = round.agentSummary;
+      card.appendChild(sum);
+    }
+    if (round.timestamp) {
+      const t = document.createElement('div');
+      t.className = 'round-time';
+      t.textContent = new Date(round.timestamp).toLocaleString();
+      card.appendChild(t);
+    }
+    histList.appendChild(card);
+  });
+}
+
+// ── Pending new items ──────────────────────────────────────────────────────
+function addPending(item) {
+  item.id = 'pending_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+  pendingNew.push(item);
+  selectedAnnotationId = item.id;
+  renderAnnotations();
+  // Switch to annotations tab
+  document.querySelector('.stab[data-tab="annotations"]').click();
+}
+
+function removePending(id) {
+  const idx = pendingNew.findIndex(c => c.id === id);
+  if (idx === -1) return;
+  const [item] = pendingNew.splice(idx, 1);
+  if (selectedAnnotationId === id) selectedAnnotationId = null;
+  undoStack.push({ type: 'pending', item, index: idx });
+  if (undoStack.length > 10) undoStack.shift();
+  renderAnnotations();
+  showUndoToast(item.label || item.kind);
+}
+
+function removeAnnotation(id) {
+  const idx = annotations.findIndex(a => a.id === id);
+  if (idx === -1) return;
+  const [ann] = annotations.splice(idx, 1);
+  if (selectedAnnotationId === id) selectedAnnotationId = null;
+  undoStack.push({ type: 'saved', item: ann, index: idx });
+  if (undoStack.length > 10) undoStack.shift();
+  renderAnnotations();
+  saveAnnotations();
+  showUndoToast(ann.label || ann.kind);
+}
+
+// ── Undo ───────────────────────────────────────────────────────────────────
 function showUndoToast(label) {
   undoMsg.textContent = `Removed: ${label}`;
   undoToast.classList.add('visible');
   clearTimeout(undoTimer);
-  undoTimer = setTimeout(() => {
-    undoToast.classList.remove('visible');
-  }, 4000);
+  undoTimer = setTimeout(() => undoToast.classList.remove('visible'), 4000);
 }
-
-function hideUndoToast() {
-  clearTimeout(undoTimer);
-  undoToast.classList.remove('visible');
-}
-
+function hideUndoToast() { clearTimeout(undoTimer); undoToast.classList.remove('visible'); }
 function undoRemove() {
   if (!undoStack.length) return;
-  const { item, index } = undoStack.pop();
-  pendingItems.splice(index, 0, item);
-  renderCards();
+  const { type, item, index } = undoStack.pop();
+  if (type === 'pending') pendingNew.splice(index, 0, item);
+  else { annotations.splice(index, 0, item); saveAnnotations(); }
+  selectedAnnotationId = item.id;
+  renderAnnotations();
   hideUndoToast();
 }
-
 btnUndo.addEventListener('click', undoRemove);
 
-// ── Cards ──────────────────────────────────────────────────────────────────
-function addCard(item) {
-  item.id = Date.now() + Math.random();
-  pendingItems.push(item);
-  renderCards();
-}
-
-function removeCard(id) {
-  const index = pendingItems.findIndex(c => c.id === id);
-  if (index === -1) return;
-  const [item] = pendingItems.splice(index, 1);
-  undoStack.push({ item, index });
-  // Keep undo stack to last 10
-  if (undoStack.length > 10) undoStack.shift();
-  renderCards();
-  showUndoToast(item.label || item.kind);
-}
-
-function renderCards() {
-  pendingEl.innerHTML = '';
-  pendingItems.forEach(item => {
-    const card = document.createElement('div');
-    card.className = 'card';
-
-    const removeBtn = document.createElement('button');
-    removeBtn.className = 'card-remove';
-    removeBtn.textContent = '×';
-    removeBtn.title = 'Remove card';
-    removeBtn.setAttribute('aria-label', 'Remove card');
-    removeBtn.addEventListener('click', () => removeCard(item.id));
-
-    const kind = document.createElement('div');
-    kind.className = 'card-kind';
-    kind.textContent = item.kind;
-
-    const label = document.createElement('div');
-    label.className = 'card-label';
-    label.textContent = item.label;
-
-    const ta = document.createElement('textarea');
-    ta.placeholder = 'Add a note…';
-    ta.value = item.note || '';
-    ta.addEventListener('input', () => { item.note = ta.value; });
-
-    card.append(removeBtn, kind, label, ta);
-    pendingEl.appendChild(card);
+// ── Image attachments (reusable) ────────────────────────────────────────────
+function fileToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = reject;
+    r.readAsDataURL(blob);
   });
 }
 
+// Upload staged images ([{name,dataUrl}]) to the server; returns [{name, path}].
+async function uploadImages(imgs) {
+  const out = [];
+  for (const img of imgs) {
+    try {
+      const res = await fetch('/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ file, name: img.name, dataUrl: img.dataUrl }),
+      });
+      if (res.ok) { const d = await res.json(); out.push({ name: d.name, path: d.path }); }
+    } catch {}
+  }
+  return out;
+}
+
+// Bind an image-attach controller to a preview element, backed by `imgs`
+// (an array that persists across re-renders so staged images survive).
+// Mutates `imgs` in place — never reassigns — so the backing reference holds.
+function createImageAttach(previewEl, imgs) {
+  function render() {
+    previewEl.innerHTML = '';
+    imgs.forEach(img => {
+      const thumb = document.createElement('div');
+      thumb.className = 'attach-thumb';
+      thumb.title = img.name;
+      const im = document.createElement('img');
+      im.src = img.dataUrl; im.alt = img.name;
+      const rm = document.createElement('button');
+      rm.className = 'attach-remove';
+      rm.textContent = '×'; rm.title = 'Remove image';
+      rm.addEventListener('click', () => {
+        const i = imgs.indexOf(img);
+        if (i >= 0) imgs.splice(i, 1);
+        render();
+      });
+      thumb.append(im, rm);
+      previewEl.appendChild(thumb);
+    });
+  }
+  async function add(blob) {
+    if (!blob || !blob.type || !blob.type.startsWith('image/')) return;
+    const dataUrl = await fileToDataUrl(blob);
+    imgs.push({
+      id: 'img_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+      name: blob.name || ('pasted.' + (blob.type.split('/')[1] || 'png')),
+      dataUrl,
+    });
+    render();
+  }
+  function handlePaste(e) {
+    const items = e.clipboardData?.items || [];
+    let handled = false;
+    for (const it of items) {
+      if (it.type && it.type.startsWith('image/')) {
+        const blob = it.getAsFile();
+        if (blob) { add(blob); handled = true; }
+      }
+    }
+    if (handled) e.preventDefault();
+  }
+  render();
+  return {
+    add, handlePaste, render,
+    upload: () => uploadImages(imgs),
+    clear() { imgs.length = 0; render(); },
+    count: () => imgs.length,
+  };
+}
+
+// Main composer attach
+const composerAttach = createImageAttach(attachPreviews, composerImages);
+btnAttach.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', () => {
+  for (const f of fileInput.files) composerAttach.add(f);
+  fileInput.value = '';
+});
+freeText.addEventListener('paste', (e) => composerAttach.handlePaste(e));
+
+// ── Agent working state (step log + cancel) ─────────────────────────────────
+function setAgentWorking(on) {
+  agentWorking = on;
+  btnCancel.style.display = on ? '' : 'none';
+  btnCancel.disabled = false;
+  btnSend.disabled = on;
+  setStatus(on ? 'working' : 'idle', on ? 'Agent working…' : 'Waiting for your feedback');
+}
+
+// ── Agent status bar ────────────────────────────────────────────────────────
+function setStatus(state, text) {
+  agentStatusEl.classList.remove('working', 'idle', 'needs-perm');
+  agentStatusEl.classList.add(state);
+  agentStatusText.textContent = text;
+}
+
+// ── Remote permission approval ──────────────────────────────────────────────
+remoteApprove.addEventListener('change', () => {
+  fetch('/permission/mode', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ file, enabled: remoteApprove.checked }),
+  }).catch(() => {});
+});
+
+function renderPermCard({ requestId, tool, summary }) {
+  if (permRequests.querySelector(`[data-req="${requestId}"]`)) return;
+  const card = document.createElement('div');
+  card.className = 'perm-card';
+  card.dataset.req = requestId;
+
+  const head = document.createElement('div');
+  head.className = 'perm-head';
+  head.textContent = '⚠ Permission needed';
+
+  const toolEl = document.createElement('div');
+  toolEl.className = 'perm-tool';
+  toolEl.textContent = summary || tool;
+
+  const actions = document.createElement('div');
+  actions.className = 'perm-actions';
+  const allow = document.createElement('button');
+  allow.className = 'perm-allow'; allow.textContent = 'Allow';
+  const always = document.createElement('button');
+  always.className = 'perm-always'; always.textContent = 'Allow always';
+  always.title = `Allow "${tool}" for the rest of this session without asking`;
+  const deny = document.createElement('button');
+  deny.className = 'perm-deny'; deny.textContent = 'Deny';
+
+  allow.addEventListener('click', () => decidePermission(requestId, 'allow', false));
+  always.addEventListener('click', () => decidePermission(requestId, 'allow', true));
+  deny.addEventListener('click', () => decidePermission(requestId, 'deny', false));
+
+  actions.append(allow, always, deny);
+  card.append(head, toolEl, actions);
+  permRequests.appendChild(card);
+  setStatus('needs-perm', 'Needs your permission');
+}
+
+function removePermCard(requestId) {
+  const card = permRequests.querySelector(`[data-req="${requestId}"]`);
+  if (card) card.remove();
+  if (!permRequests.children.length) {
+    setStatus(agentWorking ? 'working' : 'idle', agentWorking ? 'Agent working…' : 'Waiting for your feedback');
+  }
+}
+
+function decidePermission(requestId, decision, always) {
+  const card = permRequests.querySelector(`[data-req="${requestId}"]`);
+  if (card) card.querySelectorAll('button').forEach(b => b.disabled = true);
+  fetch('/permission/decision', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ file, requestId, decision, always }),
+  }).catch(() => {});
+  removePermCard(requestId);
+}
+
+function showWorking() {
+  let el = convoEl.querySelector('[data-working]');
+  if (el) return el;
+  el = document.createElement('div');
+  el.className = 'msg agent';
+  el.setAttribute('data-working', '1');
+  const lbl = document.createElement('div');
+  lbl.className = 'msg-label';
+  lbl.textContent = 'Agent';
+  const steps = document.createElement('div');
+  steps.className = 'work-steps';
+  const dots = document.createElement('div');
+  dots.className = 'thinking-dots';
+  dots.innerHTML = '<span></span><span></span><span></span>';
+  el.append(lbl, steps, dots);
+  convoEl.appendChild(el);
+  convoEl.scrollTop = convoEl.scrollHeight;
+  annList.scrollTop = annList.scrollHeight;
+  return el;
+}
+
+function addWorkStep(step, done) {
+  if (!step) return;
+  const el = showWorking();
+  const steps = el.querySelector('.work-steps');
+  // Mark the previously running step as done when a new one arrives
+  const prev = steps.querySelector('.work-step:not(.done)');
+  if (prev) prev.classList.add('done');
+  const line = document.createElement('div');
+  line.className = 'work-step' + (done ? ' done' : '');
+  line.textContent = step;
+  steps.appendChild(line);
+  convoEl.scrollTop = convoEl.scrollHeight;
+  annList.scrollTop = annList.scrollHeight;
+}
+
+function hideWorking() {
+  convoEl.querySelectorAll('[data-working]').forEach(el => el.remove());
+}
+
+async function cancelAgent() {
+  if (!agentWorking) return;
+  btnCancel.disabled = true;
+  addWorkStep('Cancelling…', false);
+  try {
+    await fetch('/cancel', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ file }),
+    });
+  } catch {}
+}
+btnCancel.addEventListener('click', cancelAgent);
+
 // ── Send feedback ──────────────────────────────────────────────────────────
 async function sendFeedback() {
-  const items = pendingItems.map(c => ({
-    kind: c.kind,
-    selector: c.selector || null,
-    text: c.text || null,
-    note: c.note || null,
-  }));
   const message = freeText.value.trim();
-  if (!items.length && !message) return;
+  const composerImgCount = composerAttach.count();
+  const noteImgCount = pendingNew.reduce((n, c) => n + (noteImgStore[c.id]?.length || 0), 0);
+  if (!pendingNew.length && !message && !composerImgCount && !noteImgCount) return;
 
   btnSend.disabled = true;
   try {
-    await fetch('/feedback', {
+    // Upload per-annotation note images and the composer's message images in parallel-ish
+    const items = await Promise.all(pendingNew.map(async c => ({
+      id: null,  // new annotations get id assigned by server
+      kind: c.kind,
+      selector: c.selector || null,
+      label: c.label || null,
+      text: c.text || null,
+      textStart: c.textStart ?? null,
+      textEnd: c.textEnd ?? null,
+      textPrefix: c.textPrefix || null,
+      textSuffix: c.textSuffix || null,
+      note: c.note || null,
+      images: noteImgStore[c.id] ? await uploadImages(noteImgStore[c.id]) : [],
+    })));
+    const images = await composerAttach.upload();
+    const totalImgs = images.length + items.reduce((n, it) => n + it.images.length, 0);
+    const res = await fetch('/feedback', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ file, items, message }),
+      body: JSON.stringify({ file, items, message, images }),
     });
-    const summary = items.length
-      ? `Sent ${items.length} annotation${items.length > 1 ? 's' : ''}${message ? ' + message' : ''}`
-      : 'Sent message';
-    addConvoMsg('human', summary + (message ? `\n\n${message}` : ''));
-    pendingItems = [];
-    undoStack = [];
-    hideUndoToast();
-    renderCards();
-    freeText.value = '';
+    if (res.ok) {
+      // Clear runtime image staging for the items we just sent
+      pendingNew.forEach(c => { delete noteImgStore[c.id]; });
+      pendingNew = [];
+      composerAttach.clear();
+      selectedAnnotationId = null;
+      freeText.value = '';
+      undoStack = [];
+      hideUndoToast();
+      // Reload sidecar to get server-assigned ids and persisted state
+      await loadAnnotations();
+      if (message || totalImgs) {
+        const suffix = totalImgs ? `  📎 ${totalImgs} image${totalImgs !== 1 ? 's' : ''}` : '';
+        addConvoMsg('human', (message || '(images attached)') + suffix);
+      }
+      setAgentWorking(true);
+    }
   } finally {
-    btnSend.disabled = false;
+    if (!agentWorking) btnSend.disabled = false;
   }
 }
 btnSend.addEventListener('click', sendFeedback);
 freeText.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
-    e.preventDefault();
-    sendFeedback();
-  }
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendFeedback(); }
 });
+
+// ── Copy helpers ────────────────────────────────────────────────────────────
+function fallbackCopy(text, done) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.cssText = 'position:fixed;top:-9999px;opacity:0;';
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand('copy'); if (done) done(); } catch {}
+  ta.remove();
+}
+function copyText(text, btn) {
+  const flash = () => {
+    if (!btn) return;
+    const orig = btn.textContent;
+    btn.textContent = 'Copied';
+    setTimeout(() => { btn.textContent = orig; }, 1200);
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(flash).catch(() => fallbackCopy(text, flash));
+  } else {
+    fallbackCopy(text, flash);
+  }
+}
+function makeCopyBtn(text, cls) {
+  const b = document.createElement('button');
+  b.className = cls;
+  b.textContent = 'Copy';
+  b.title = 'Copy message';
+  b.addEventListener('click', (e) => { e.stopPropagation(); copyText(text, b); });
+  return b;
+}
+
+// ── Conversation (general agent messages) ──────────────────────────────────
+function addConvoMsg(role, text) {
+  const el = document.createElement('div');
+  el.className = 'msg ' + role;
+  const label = document.createElement('div');
+  label.className = 'msg-label';
+  label.textContent = role === 'human' ? 'You' : 'Agent';
+  const body = document.createElement('div');
+  body.textContent = text;
+  el.append(label, body);
+  if (role === 'agent') el.append(makeCopyBtn(text, 'msg-copy'));
+  convoEl.appendChild(el);
+  convoEl.scrollTop = convoEl.scrollHeight;
+  annList.scrollTop = annList.scrollHeight;
+}
 
 // ── Download ───────────────────────────────────────────────────────────────
 async function doDownload() {
@@ -533,17 +1210,14 @@ async function doDownload() {
     a.download = file.split('/').pop() || 'artifact.html';
     a.click();
     URL.revokeObjectURL(a.href);
-  } finally {
-    btnDownload.disabled = false;
-  }
+  } finally { btnDownload.disabled = false; }
 }
 btnDownload.addEventListener('click', doDownload);
 
 // ── Finalize ───────────────────────────────────────────────────────────────
 btnFinalize.addEventListener('click', async () => {
   if (!sdkReady) return;
-  const ok = confirm('Write the current rendered artifact to disk? This overwrites the file.');
-  if (!ok) return;
+  if (!confirm('Write the current rendered artifact to disk? This overwrites the file.')) return;
   btnFinalize.disabled = true;
   try {
     const html = await requestSerialize();
@@ -552,29 +1226,10 @@ btnFinalize.addEventListener('click', async () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ file, html }),
     });
-    if (res.ok) {
-      addConvoMsg('human', 'Finalized — result written to disk.');
-    } else {
-      alert('Finalize failed: ' + res.statusText);
-    }
-  } finally {
-    btnFinalize.disabled = false;
-  }
+    if (res.ok) addConvoMsg('human', 'Finalized — result written to disk.');
+    else alert('Finalize failed: ' + res.statusText);
+  } finally { btnFinalize.disabled = false; }
 });
-
-// ── Conversation log ───────────────────────────────────────────────────────
-function addConvoMsg(role, text) {
-  const el = document.createElement('div');
-  el.className = 'msg ' + role;
-  const label = document.createElement('div');
-  label.className = 'msg-label';
-  label.textContent = role === 'human' ? 'You' : 'Agent';
-  const body = document.createElement('div');
-  body.textContent = text;
-  el.append(label, body);
-  convoEl.appendChild(el);
-  convoEl.scrollTop = convoEl.scrollHeight;
-}
 
 // ── SSE ────────────────────────────────────────────────────────────────────
 function connectSSE() {
@@ -584,33 +1239,60 @@ function connectSSE() {
     savedScroll = frame.contentWindow?.scrollY || 0;
     loadArtifact();
   });
-  function showThinking() {
-    if (convoEl.querySelector('[data-thinking]')) return;
-    const el = document.createElement('div');
-    el.className = 'msg agent';
-    el.setAttribute('data-thinking', '1');
-    const lbl = document.createElement('div');
-    lbl.className = 'msg-label';
-    lbl.textContent = 'Agent';
-    const dots = document.createElement('div');
-    dots.className = 'thinking-dots';
-    dots.innerHTML = '<span></span><span></span><span></span>';
-    el.append(lbl, dots);
-    convoEl.appendChild(el);
-    convoEl.scrollTop = convoEl.scrollHeight;
-  }
-  function hideThinking() {
-    convoEl.querySelectorAll('[data-thinking]').forEach(el => el.remove());
-  }
-  es.addEventListener('agent-thinking', showThinking);
-  es.addEventListener('agent-reply', (e) => {
-    hideThinking();
+  es.addEventListener('agent-thinking', () => { setAgentWorking(true); showWorking(); });
+  es.addEventListener('agent-progress', (e) => {
     try {
       const d = JSON.parse(e.data);
-      addConvoMsg('agent', d.message || e.data);
+      addWorkStep(d.step, d.done);
+    } catch {}
+  });
+  es.addEventListener('agent-progress-done', () => {
+    // mark the last running step as completed
+    const steps = convoEl.querySelector('[data-working] .work-steps');
+    const last = steps && steps.querySelector('.work-step:not(.done)');
+    if (last) last.classList.add('done');
+  });
+  es.addEventListener('agent-status', (e) => {
+    try {
+      const t = JSON.parse(e.data).type || '';
+      if (t === 'permission_prompt') setStatus('needs-perm', 'Needs your permission');
+      else if (t === 'idle' || t === 'idle_prompt') { if (!agentWorking) setStatus('idle', 'Waiting for your feedback'); }
+    } catch {}
+  });
+  es.addEventListener('permission-request', (e) => {
+    try { renderPermCard(JSON.parse(e.data)); } catch {}
+  });
+  es.addEventListener('permission-resolved', (e) => {
+    try { removePermCard(JSON.parse(e.data).requestId); } catch {}
+  });
+  es.addEventListener('permission-mode', (e) => {
+    try { remoteApprove.checked = !!JSON.parse(e.data).enabled; } catch {}
+  });
+  es.addEventListener('agent-cancelled', () => {
+    hideWorking();
+    setAgentWorking(false);
+    addConvoMsg('agent', '⛔ Cancellation requested — the agent will stop at its next checkpoint.');
+    const last = convoEl.lastElementChild;
+    if (last) last.classList.add('cancelled');
+  });
+  es.addEventListener('agent-reply', async (e) => {
+    hideWorking();
+    setAgentWorking(false);
+    try {
+      const d = JSON.parse(e.data);
+      const msg = d.message || e.data;
+      if (d.annotationId) {
+        // Reload annotations to get the updated thread from sidecar
+        await loadAnnotations();
+        // Scroll to that annotation card
+        const card = annList.querySelector(`[data-id="${d.annotationId}"]`);
+        if (card) card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      } else {
+        addConvoMsg('agent', msg);
+      }
     } catch { addConvoMsg('agent', e.data); }
   });
-  es.onopen = () => { statusDot.classList.add('live'); statusDot.title = 'Live'; hideThinking(); };
+  es.onopen = () => { statusDot.classList.add('live'); statusDot.title = 'Live'; };
   es.onerror = () => {
     statusDot.classList.remove('live');
     statusDot.title = 'Disconnected — reconnecting…';
@@ -620,32 +1302,20 @@ function connectSSE() {
 }
 connectSSE();
 
-// ── Global keyboard shortcuts ──────────────────────────────────────────────
+// ── Keyboard shortcuts ─────────────────────────────────────────────────────
 document.addEventListener('keydown', (e) => {
   const inInput = ['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName);
   const ctrl = e.ctrlKey || e.metaKey;
   const helpOpen = kbdOverlay.classList.contains('open');
-
-  // Always: Esc
   if (e.key === 'Escape') {
     if (helpOpen) { closeHelp(); return; }
     if (annotating) { setAnnotate(false); return; }
   }
-
-  // Always: Ctrl+Z undo
   if (ctrl && e.key === 'z' && !e.shiftKey) {
     if (undoStack.length) { e.preventDefault(); undoRemove(); }
     return;
   }
-
-  // In textarea: Ctrl+Enter to send
-  if (ctrl && e.key === 'Enter') {
-    e.preventDefault();
-    sendFeedback();
-    return;
-  }
-
-  // Non-input shortcuts
+  if (ctrl && e.key === 'Enter') { e.preventDefault(); sendFeedback(); return; }
   if (!inInput && !ctrl) {
     if (e.key === 'a' || e.key === 'A') { e.preventDefault(); setAnnotate(!annotating); return; }
     if (e.key === 'd' || e.key === 'D') { e.preventDefault(); doDownload(); return; }
@@ -653,6 +1323,9 @@ document.addEventListener('keydown', (e) => {
     if (e.key === '?') { e.preventDefault(); helpOpen ? closeHelp() : openHelp(); return; }
   }
 });
+
+// ── Init ───────────────────────────────────────────────────────────────────
+loadAnnotations();
 </script>
 </body>
 </html>
