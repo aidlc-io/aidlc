@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.4.0
+
+### Bundled annotron 0.3.0 → 0.6.0
+
+- chore(vendor): bump vendored [annotron](https://github.com/hueanmy/annotron) from 0.3.0 to 0.6.0. The browser review editor that drives the `/annotate-artifact` feedback loop gains several user-facing capabilities, available automatically the next time you open Feedback:
+  - **Annotation persistence** — every annotation is saved to a sidecar JSON beside the artifact and restored on reload/restart, so past context is never lost.
+  - **Per-annotation threads** — each annotation card shows its own conversation (your notes + agent replies); reply inline without leaving context. Clicking a card jumps to and highlights the corresponding element.
+  - **Annotations / History tabs** — the sidebar splits into an annotations view and a history of past feedback rounds with timestamps and counts.
+  - **Image attachments** — paste or upload images into the composer or any annotation note; they're saved to `.annotron-uploads/` beside the artifact so the agent can read them.
+  - **Live step log + cancel** — the agent's steps stream into the sidebar like a CLI, and a Cancel button stops an in-flight round.
+- note: the project continues to vendor only annotron's `bin/` + `src/` (not its stock `skills/`/`commands/`/`hooks/`) — the annotation loop is driven by AIDLC's own `/annotate-artifact` skill. The 0.6.0 headline features (live CLI activity mirror, turn-status bar, remote permission approval) are hook-driven and ship in annotron's unvendored `hooks/`, so they are **not yet active** here; their server endpoints (`/hook/*`, `/permission/*`) exist in the vendored binary but need agent/skill wiring — a follow-up.
+
 ## 2.3.0
 
 ### Annotron artifact menu: separate Open HTML and Feedback

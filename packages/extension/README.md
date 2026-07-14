@@ -11,6 +11,10 @@ Drive Claude through any pipeline you declare in a single `workspace.yaml` — v
 
 ![aidlc demo](https://raw.githubusercontent.com/aidlc-io/aidlc/main/packages/extension/media/demo.gif)
 
+### New in 2.4
+
+- 🆕 **annotron 0.6** — the bundled browser review editor jumps from 0.3 to 0.6. Annotations now **persist** to a sidecar beside the artifact (survive reload/restart), each annotation gets its own **conversation thread** with inline replies, clicking a card **jumps to and highlights** the element, and an **Annotations / History** tab split lists past feedback rounds. You can **paste or upload images** into the message box or any annotation note (saved to `.annotron-uploads/`), **copy** agent messages, watch a **live step log** stream the agent's work, and **cancel** an in-flight round.
+
 ### New in 2.3
 
 - 🖍️ **Open HTML vs. Feedback, split** — the artifact menu now has two distinct actions: **Open HTML** (appears once a render exists; opens the rendered page read-only in your browser) and **Feedback** (renders the HTML first if needed, then opens annotron for the review loop). The annotate terminal is also recreated when its previous session has exited, so Feedback always launches instead of re-focusing a dead terminal.
