@@ -1638,6 +1638,18 @@ export class WorkspaceWebview {
         }
         return;
       }
+      case 'startEpicPickProject': {
+        const picked = await vscode.window.showOpenDialog({
+          canSelectFolders: true, canSelectFiles: false, canSelectMany: false,
+          openLabel: 'Select project for epic',
+          title: 'Pick the project folder where the epic will be created',
+        });
+        if (!picked || picked.length === 0) { return; }
+        await vscode.commands.executeCommand(
+          'vscode.openFolder', picked[0], { forceNewWindow: false },
+        );
+        return;
+      }
       case 'loadEpicsFromFolder': {
         const picked = await vscode.window.showOpenDialog({
           canSelectFolders: true, canSelectFiles: false, canSelectMany: false,

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { FolderOpen } from 'lucide-react';
+import { FolderOpen, Plus, ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { WorkspaceState, WorkspaceView } from '@/lib/types';
 import { BuilderView } from './BuilderView';
@@ -170,7 +170,33 @@ function NoProjectEpicsView() {
           No project open — open a project to start epics, or load epics from an existing folder.
         </p>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-3 sm:grid-cols-3">
+        <button
+          type="button"
+          onClick={() => postMessage({ type: 'startEpicPickProject' })}
+          className="flex flex-col items-start gap-2 rounded-lg border border-primary/40 bg-primary/5 p-4 text-left transition-colors hover:border-primary/60 hover:bg-primary/10"
+        >
+          <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+            <Plus className="h-4 w-4 text-primary" />
+            Start Epic
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            Pick a project folder and start a new epic in it.
+          </p>
+        </button>
+        <button
+          type="button"
+          onClick={() => postMessage({ type: 'loadEpicsFromFolder' })}
+          className="flex flex-col items-start gap-2 rounded-lg border border-border bg-card p-4 text-left transition-colors hover:border-primary/40 hover:bg-accent/50"
+        >
+          <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+            <ExternalLink className="h-4 w-4 text-primary" />
+            Load Epics from Folder
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            Browse to an epics folder from another project to view existing epics.
+          </p>
+        </button>
         <button
           type="button"
           onClick={() => postMessage({ type: 'openProject' })}
@@ -181,20 +207,7 @@ function NoProjectEpicsView() {
             Open Project
           </div>
           <p className="text-[11px] text-muted-foreground">
-            Open a project folder to start building epics with full pipeline support.
-          </p>
-        </button>
-        <button
-          type="button"
-          onClick={() => postMessage({ type: 'loadEpicsFromFolder' })}
-          className="flex flex-col items-start gap-2 rounded-lg border border-border bg-card p-4 text-left transition-colors hover:border-primary/40 hover:bg-accent/50"
-        >
-          <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-            <FolderOpen className="h-4 w-4 text-primary" />
-            Load Epics from Folder
-          </div>
-          <p className="text-[11px] text-muted-foreground">
-            Browse to an epics folder from another project to view existing epics.
+            Open a project folder to start building agents and workflows.
           </p>
         </button>
       </div>
