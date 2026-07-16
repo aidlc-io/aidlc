@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { FolderOpen, Plus, ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { WorkspaceState, WorkspaceView } from '@/lib/types';
 import { BuilderView } from './BuilderView';
@@ -44,45 +45,49 @@ export function WorkspaceShell({ state }: { state: WorkspaceState | null }) {
       <div className="flex h-full flex-col">
         <TopBar view={view} onView={setView} workspaceName={state.workspaceName} />
         <div className="p-6">
-          <div className="rounded-md border border-dashed border-border bg-surface/50 p-6 text-center">
-            <h2 className="text-sm font-bold text-foreground">
-              {state.hasFolder ? 'No workspace.yaml' : 'No project open'}
-            </h2>
-            <p className="mt-2 text-xs text-muted-foreground">
-              {state.hasFolder
-                ? 'Start an epic — the workspace is created automatically when you pick a pipeline or let Auto detect one.'
-                : 'Open a folder in VS Code to get started.'}
-            </p>
-            <div className="mt-4 inline-flex flex-wrap justify-center gap-2">
-              {!state.hasFolder && (
-                <button
-                  type="button"
-                  onClick={() => postMessage({ type: 'openProject' })}
-                  className="rounded-md bg-primary px-3.5 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90"
-                >
-                  Open Project
-                </button>
-              )}
-              {state.hasFolder && (
-                <>
+          {view === 'epics' && !state.hasFolder ? (
+            <NoProjectEpicsView />
+          ) : (
+            <div className="rounded-md border border-dashed border-border bg-surface/50 p-6 text-center">
+              <h2 className="text-sm font-bold text-foreground">
+                {state.hasFolder ? 'No workspace.yaml' : 'No project open'}
+              </h2>
+              <p className="mt-2 text-xs text-muted-foreground">
+                {state.hasFolder
+                  ? 'Start an epic — the workspace is created automatically when you pick a pipeline or let Auto detect one.'
+                  : 'Open a folder in VS Code to get started.'}
+              </p>
+              <div className="mt-4 inline-flex flex-wrap justify-center gap-2">
+                {!state.hasFolder && (
                   <button
                     type="button"
-                    onClick={() => setStartEpicOpen(true)}
+                    onClick={() => postMessage({ type: 'openProject' })}
                     className="rounded-md bg-primary px-3.5 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90"
                   >
-                    Start Epic
+                    Open Project
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => postMessage({ type: 'loadDemoProject' })}
-                    className="rounded-md border border-border bg-card px-3.5 py-2 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
-                  >
-                    Load Demo Project
-                  </button>
-                </>
-              )}
+                )}
+                {state.hasFolder && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setStartEpicOpen(true)}
+                      className="rounded-md bg-primary px-3.5 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+                    >
+                      Start Epic
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => postMessage({ type: 'loadDemoProject' })}
+                      className="rounded-md border border-border bg-card px-3.5 py-2 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+                    >
+                      Load Demo Project
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
-          </div>
+          )}
         </div>
         {startEpicOpen && (
           <StartEpicModal
@@ -91,6 +96,8 @@ export function WorkspaceShell({ state }: { state: WorkspaceState | null }) {
             agentMeta={state.agentMeta}
             nextEpicId={state.nextEpicId}
             existingEpicIds={state.existingEpicIds}
+            epicsDir={state.epicsDir}
+            isFirstEpic={state.epics.length === 0}
             onSubmit={(draft) => postMessage({ type: 'startEpicInline', draft })}
             onClose={() => setStartEpicOpen(false)}
           />
@@ -149,6 +156,60 @@ function TopBar({
           </span>
         )}
         <ThemeToggle />
+      </div>
+    </div>
+  );
+}
+
+function NoProjectEpicsView() {
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-xl font-bold text-foreground">AIDLC Epics</h1>
+        <p className="mt-1 text-xs text-muted-foreground">
+          No project open — open a project to start epics, or load epics from an existing folder.
+        </p>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <button
+          type="button"
+          onClick={() => postMessage({ type: 'startEpicPickProject' })}
+          className="flex flex-col items-start gap-2 rounded-lg border border-primary/40 bg-primary/5 p-4 text-left transition-colors hover:border-primary/60 hover:bg-primary/10"
+        >
+          <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+            <Plus className="h-4 w-4 text-primary" />
+            Start Epic
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            Pick a project folder and start a new epic in it.
+          </p>
+        </button>
+        <button
+          type="button"
+          onClick={() => postMessage({ type: 'loadEpicsFromFolder' })}
+          className="flex flex-col items-start gap-2 rounded-lg border border-border bg-card p-4 text-left transition-colors hover:border-primary/40 hover:bg-accent/50"
+        >
+          <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+            <ExternalLink className="h-4 w-4 text-primary" />
+            Load Epics from Folder
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            Browse to an epics folder from another project to view existing epics.
+          </p>
+        </button>
+        <button
+          type="button"
+          onClick={() => postMessage({ type: 'openProject' })}
+          className="flex flex-col items-start gap-2 rounded-lg border border-border bg-card p-4 text-left transition-colors hover:border-primary/40 hover:bg-accent/50"
+        >
+          <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+            <FolderOpen className="h-4 w-4 text-primary" />
+            Open Project
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            Open a project folder to start building agents and workflows.
+          </p>
+        </button>
       </div>
     </div>
   );

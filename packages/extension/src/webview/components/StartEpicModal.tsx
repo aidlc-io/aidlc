@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ListOrdered, ChevronRight, FileUp, Loader2, Sparkles, Plus, Wand2, DownloadCloud } from 'lucide-react';
+import { ListOrdered, ChevronRight, FileUp, Loader2, Sparkles, Plus, Wand2, DownloadCloud, FolderOpen } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { AgentMeta, PipelineSummary, RecipeSummary } from '@/lib/types';
 import { Modal, ModalFooter, ModalCancelButton, ModalConfirmButton } from './Modal';
@@ -49,6 +49,8 @@ interface Props {
   agentMeta: Record<string, AgentMeta>;
   nextEpicId: string;
   existingEpicIds: string[];
+  epicsDir: string;
+  isFirstEpic: boolean;
   onSubmit: (draft: StartEpicDraft) => void;
   onClose: () => void;
 }
@@ -76,6 +78,8 @@ export function StartEpicModal({
   agentMeta,
   nextEpicId,
   existingEpicIds,
+  epicsDir,
+  isFirstEpic,
   onSubmit,
   onClose,
 }: Props) {
@@ -385,9 +389,44 @@ export function StartEpicModal({
     onClose();
   };
 
+  const [localEpicsDir, setLocalEpicsDir] = useState(epicsDir);
+
   return (
     <Modal title="Start epic" maxWidth="max-w-2xl" onClose={onClose} onSubmit={submit} closeOnBackdrop={false}>
       <div className="space-y-4">
+        {isFirstEpic && (
+          <div className="rounded-md border border-primary/30 bg-primary/5 p-3">
+            <label className="mb-1.5 flex items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-wider text-primary">
+              <FolderOpen className="h-3 w-3" />
+              Epics directory
+            </label>
+            <p className="mb-2 text-[11px] text-muted-foreground">
+              Where should epics be stored? You can change this later from the Epics view.
+            </p>
+            <div className="flex items-center gap-1.5">
+              <input
+                type="text"
+                value={localEpicsDir}
+                onChange={(e) => setLocalEpicsDir(e.target.value)}
+                onBlur={() => {
+                  const val = localEpicsDir.trim();
+                  if (val && val !== epicsDir) { postMessage({ type: 'changeEpicsDir', dir: val }); }
+                }}
+                spellCheck={false}
+                className="flex-1 rounded-md border border-border bg-input/50 px-2.5 py-1.5 font-mono text-[11px] text-foreground placeholder:text-muted-foreground/70 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/40"
+              />
+              <button
+                type="button"
+                onClick={() => postMessage({ type: 'browseEpicsDir' })}
+                title="Browse for a folder"
+                className="flex items-center gap-1 rounded-md border border-border bg-card px-2 py-1.5 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground"
+              >
+                <FolderOpen className="h-3 w-3" />
+                Browse
+              </button>
+            </div>
+          </div>
+        )}
         <div>
           <label className="mb-1 flex items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">
             <ListOrdered className="h-3 w-3" />

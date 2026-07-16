@@ -233,6 +233,7 @@ import {
 import { pickAndReadTextFile } from './pickAndReadTextFile';
 import { scaffoldRequirementAnalysis } from './requirementWizard';
 import { missingBundleHtml } from './webviewBundleGuard';
+import { writeEpicsDirToYaml, DEFAULT_EPICS_DIR } from './epicsDirSync';
 
 // ── Shared helper: open/reuse the Claude terminal and send a slash command ───
 
@@ -486,6 +487,8 @@ interface WorkspaceState {
   testAgentTargets?: { name: string; filePath: string; adapter?: string; url?: string }[];
   /** Whether the epic-memory auto-load hook is enabled in ~/.claude/settings.json. */
   epicMemoryHookEnabled: boolean;
+  /** Current epics directory (relative path from project root). */
+  epicsDir: string;
 }
 
 const SKILL_TEMPLATE_REFS: SkillTemplateRef[] = SKILL_TEMPLATES.map((t) => ({
@@ -546,6 +549,7 @@ function buildState(initialView: WorkspaceView): WorkspaceState {
       testAgentConfigExists: false,
       testAgentTargets: [],
       epicMemoryHookEnabled: isEpicMemoryHookEnabled(os.homedir()),
+      epicsDir: DEFAULT_EPICS_DIR,
     };
   }
 
@@ -626,6 +630,7 @@ function buildState(initialView: WorkspaceView): WorkspaceState {
       initialView,
       ...(() => { const ta = readTestAgentTargets(root); return { testAgentConfigExists: ta.exists, testAgentTargets: ta.targets }; })(),
       epicMemoryHookEnabled: isEpicMemoryHookEnabled(os.homedir()),
+      epicsDir: DEFAULT_EPICS_DIR,
     };
   }
 
@@ -687,6 +692,7 @@ function buildState(initialView: WorkspaceView): WorkspaceState {
     initialView,
     ...(() => { const ta = readTestAgentTargets(root); return { testAgentConfigExists: ta.exists, testAgentTargets: ta.targets }; })(),
     epicMemoryHookEnabled: isEpicMemoryHookEnabled(os.homedir()),
+    epicsDir: epicRoot,
   };
 }
 
@@ -1626,9 +1632,57 @@ export class WorkspaceWebview {
           openLabel: 'Open project',
         });
         if (picked && picked.length > 0) {
-          await vscode.commands.executeCommand(
-            'vscode.openFolder', picked[0], { forceNewWindow: false },
-          );
+          await openFolder(picked[0]);
+        }
+        return;
+      }
+      case 'startEpicPickProject': {
+        const picked = await vscode.window.showOpenDialog({
+          canSelectFolders: true, canSelectFiles: false, canSelectMany: false,
+          openLabel: 'Select project for epic',
+          title: 'Pick the project folder where the epic will be created',
+        });
+        if (!picked || picked.length === 0) { return; }
+        await openFolder(picked[0]);
+        return;
+      }
+      case 'loadEpicsFromFolder': {
+        const picked = await vscode.window.showOpenDialog({
+          canSelectFolders: true, canSelectFiles: false, canSelectMany: false,
+          openLabel: 'Select epics folder',
+          title: 'Select a folder containing epics (e.g. docs/epics from another project)',
+        });
+        if (!picked || picked.length === 0) { return; }
+        const epicsFolder = picked[0].fsPath;
+        // Walk up to find the project root (has .aidlc/workspace.yaml).
+        let projectRoot: string | null = null;
+        let dir = path.dirname(epicsFolder);
+        for (let i = 0; i < 10; i++) {
+          if (fs.existsSync(path.join(dir, WORKSPACE_DIR, WORKSPACE_FILENAME))) {
+            projectRoot = dir;
+            break;
+          }
+          const parent = path.dirname(dir);
+          if (parent === dir) { break; }
+          dir = parent;
+        }
+        if (projectRoot) {
+          // Found a project — open it and set the epics dir relative to it.
+          const rel = path.relative(projectRoot, epicsFolder);
+          // Pre-write the epics dir so it's ready when the project opens.
+          writeEpicsDirToYaml(projectRoot, rel);
+          await openFolder(vscode.Uri.file(projectRoot));
+        } else {
+          // No project found — open the epics folder's parent as the workspace
+          // and set the epics dir to point at the selected folder.
+          const parent = path.dirname(epicsFolder);
+          const rel = path.basename(epicsFolder);
+          await openFolder(vscode.Uri.file(parent));
+          // Note: the workspace.yaml may not exist yet; the setting will be
+          // picked up on next activation via the VS Code setting.
+          const EPICS_DIR_KEY = 'aidlc.workspace.epicsDirectory';
+          void vscode.workspace.getConfiguration()
+            .update(EPICS_DIR_KEY, rel, vscode.ConfigurationTarget.Workspace);
         }
         return;
       }
@@ -1726,6 +1780,39 @@ export class WorkspaceWebview {
         const epicDir = String(msg.epicDir ?? '');
         if (!epicDir) { return; }
         await this.openEpicMemory(epicDir);
+        return;
+      }
+      case 'changeEpicsDir': {
+        const newDir = String(msg.dir ?? '').trim();
+        if (!newDir) { return; }
+        const wsRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+        if (!wsRoot) { return; }
+        writeEpicsDirToYaml(wsRoot, newDir);
+        // Also update the VS Code setting so the bidirectional sync stays consistent.
+        const EPICS_DIR_KEY = 'aidlc.workspace.epicsDirectory';
+        void vscode.workspace.getConfiguration()
+          .update(EPICS_DIR_KEY, newDir, vscode.ConfigurationTarget.Workspace);
+        this.refresh();
+        return;
+      }
+      case 'browseEpicsDir': {
+        const wsRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+        if (!wsRoot) { return; }
+        const picked = await vscode.window.showOpenDialog({
+          canSelectFolders: true, canSelectFiles: false, canSelectMany: false,
+          defaultUri: vscode.Uri.file(wsRoot),
+          openLabel: 'Select epics directory',
+        });
+        if (!picked || picked.length === 0) { return; }
+        const abs = picked[0].fsPath;
+        // Use relative path when inside the workspace, absolute otherwise.
+        const rel = path.relative(wsRoot, abs);
+        const dir = rel.startsWith('..') || path.isAbsolute(rel) ? abs : rel;
+        writeEpicsDirToYaml(wsRoot, dir);
+        const EPICS_DIR_KEY = 'aidlc.workspace.epicsDirectory';
+        void vscode.workspace.getConfiguration()
+          .update(EPICS_DIR_KEY, dir, vscode.ConfigurationTarget.Workspace);
+        this.refresh();
         return;
       }
       case 'toggleEpicMemoryHook': {
@@ -4152,6 +4239,29 @@ window.__AIDLC_INITIAL_THEME__ = ${JSON.stringify(initialTheme)};
 </body>
 </html>`;
   }
+}
+
+/**
+ * Open a folder in VS Code. If a project is already open, ask whether to
+ * reuse the current window or open a new one; otherwise reuse silently.
+ */
+async function openFolder(uri: vscode.Uri): Promise<void> {
+  const hasProject = (vscode.workspace.workspaceFolders?.length ?? 0) > 0;
+  let forceNew = false;
+  if (hasProject) {
+    const choice = await vscode.window.showQuickPick(
+      [
+        { label: '$(window) Current window', value: 'current', description: 'Replace the current project' },
+        { label: '$(empty-window) New window', value: 'new', description: 'Keep the current project open' },
+      ],
+      { title: 'Open project in…', placeHolder: 'Current window or new window?' },
+    );
+    if (!choice) { return; } // cancelled
+    forceNew = choice.value === 'new';
+  }
+  await vscode.commands.executeCommand(
+    'vscode.openFolder', uri, forceNew ? { forceNewWindow: true } : { forceReuseWindow: true },
+  );
 }
 
 function makeNonce(): string {

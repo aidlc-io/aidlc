@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
-import { Plus, Brain } from 'lucide-react';
+import { Plus, Brain, FolderOpen, Pencil } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { WorkspaceState, EpicSummary, EpicFilter } from '@/lib/types';
 import { EpicCard } from './EpicCard';
@@ -48,17 +48,62 @@ export function EpicsView({ state }: { state: WorkspaceState }) {
     [state.epics, filter],
   );
 
+  const [editingDir, setEditingDir] = useState(false);
+  const [dirDraft, setDirDraft] = useState(state.epicsDir);
+
+  useEffect(() => { setDirDraft(state.epicsDir); }, [state.epicsDir]);
+
+  const commitDirChange = () => {
+    const val = dirDraft.trim();
+    if (val && val !== state.epicsDir) {
+      postMessage({ type: 'changeEpicsDir', dir: val });
+    }
+    setEditingDir(false);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-foreground">AIDLC Epics</h1>
           <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-            <span>Workflow runs</span>
-            <span>·</span>
-            <span>progress</span>
-            <span>·</span>
-            <span>inputs</span>
+            <FolderOpen className="h-3 w-3 shrink-0" />
+            {editingDir ? (
+              <span className="flex items-center gap-1">
+                <input
+                  type="text"
+                  value={dirDraft}
+                  autoFocus
+                  onChange={(e) => setDirDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') { e.preventDefault(); commitDirChange(); }
+                    if (e.key === 'Escape') { setEditingDir(false); setDirDraft(state.epicsDir); }
+                  }}
+                  onBlur={commitDirChange}
+                  className="w-40 rounded border border-border bg-input/50 px-1.5 py-0.5 font-mono text-[11px] text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/40"
+                />
+              </span>
+            ) : (
+              <span className="flex items-center gap-1">
+                <span className="font-mono text-[11px]">{state.epicsDir}</span>
+                <button
+                  type="button"
+                  onClick={() => setEditingDir(true)}
+                  title="Edit epics directory"
+                  className="rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+                >
+                  <Pencil className="h-2.5 w-2.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => postMessage({ type: 'browseEpicsDir' })}
+                  title="Browse for epics directory"
+                  className="rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+                >
+                  <FolderOpen className="h-2.5 w-2.5" />
+                </button>
+              </span>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -143,9 +188,10 @@ export function EpicsView({ state }: { state: WorkspaceState }) {
           agentMeta={state.agentMeta}
           nextEpicId={state.nextEpicId}
           existingEpicIds={state.existingEpicIds}
+          epicsDir={state.epicsDir}
+          isFirstEpic={state.epics.length === 0}
           onSubmit={(draft) => postMessage({ type: 'startEpicInline', draft })}
           onClose={() => setStartEpicOpen(false)}
-
         />
       )}
     </div>
