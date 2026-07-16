@@ -20,6 +20,7 @@ import * as yaml from 'js-yaml';
 
 import { registerV2WorkspaceCommands } from './v2/workspaceCommands';
 import { SidebarWebviewProvider } from './v2/sidebarWebview';
+import { WorkspaceWebview } from './v2/workspaceWebview';
 import { themeManager } from './v2/themeManager';
 import { registerTokenMonitor } from './v2/tokenMonitor';
 import { registerAidlcMonitor } from './v2/aidlcMonitor';
@@ -206,6 +207,11 @@ export function activate(context: vscode.ExtensionContext): void {
   // background, registers it as a Claude MCP server so Claude can read
   // structural code context cheaply instead of grep+read sweeps.
   registerAstGraph(context, output);
+
+  // Auto-open the workspace webview so the user sees the panel immediately.
+  // No folder → Epics tab (start epic / load from folder); folder → Builder.
+  const hasFolder = (vscode.workspace.workspaceFolders ?? []).length > 0;
+  WorkspaceWebview.show(context.extensionUri, hasFolder ? 'builder' : 'epics');
 
   output.appendLine('Activation complete.');
 }

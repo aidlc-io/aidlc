@@ -4,6 +4,19 @@
  * into the host. The types are stable enough to keep in sync manually.
  */
 
+export type ProjectMode = 'reference' | 'workspace' | 'clone';
+
+export interface ExtraProject {
+  type: 'local' | 'github';
+  ref: string;
+  label: string;
+  /** How the project is consumed:
+   *  - `reference` — agent reads via API / path, not opened in VS Code
+   *  - `workspace` — added to VS Code multi-root workspace (local only)
+   *  - `clone` — GitHub repo cloned locally, then added to workspace */
+  mode: ProjectMode;
+}
+
 export type ThemeMode = 'auto' | 'light' | 'dark';
 
 export type StepStatus =
@@ -359,6 +372,8 @@ export interface SidebarState {
   mcpServers: McpServerInfo[] | null;
   mcpLoading: boolean;
   mcpError: string | null;
+  /** Extra projects from any in-progress epic (for sidebar display). */
+  extraProjects?: ExtraProject[];
 }
 
 export type AssetScope = 'project' | 'aidlc' | 'global';

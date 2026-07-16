@@ -133,6 +133,8 @@ export interface ScaffoldEpicArgs {
   /** Resolved agent ids (pipeline step agents, or `[agentId]`). */
   agents: string[];
   inputs: Record<string, string>;
+  /** Extra projects attached to the epic (local folders / GitHub repos). */
+  extraProjects?: Array<{ type: 'local' | 'github'; ref: string; label: string; mode?: string }>;
   /** Required when `target.kind === 'pipeline'` — used to start the run. */
   pipeline?: PipelineConfig;
   /**
@@ -156,7 +158,7 @@ export interface ScaffoldEpicResult {
  */
 export function scaffoldEpic(args: ScaffoldEpicArgs): ScaffoldEpicResult {
   const {
-    workspaceRoot, doc, epicId, title, description, target, agents, inputs, pipeline,
+    workspaceRoot, doc, epicId, title, description, target, agents, inputs, extraProjects, pipeline,
   } = args;
 
   if (!epicId.trim()) { throw new EpicScaffoldError('Epic id is required.'); }
@@ -213,9 +215,13 @@ export function scaffoldEpic(args: ScaffoldEpicArgs): ScaffoldEpicResult {
     JSON.stringify(initialState, null, 2) + '\n',
     'utf8',
   );
+  const persistedInputs: Record<string, unknown> = { ...inputs };
+  if (extraProjects && extraProjects.length > 0) {
+    persistedInputs.extra_projects = extraProjects;
+  }
   fs.writeFileSync(
     path.join(epicDir, 'inputs.json'),
-    JSON.stringify(inputs, null, 2) + '\n',
+    JSON.stringify(persistedInputs, null, 2) + '\n',
     'utf8',
   );
 

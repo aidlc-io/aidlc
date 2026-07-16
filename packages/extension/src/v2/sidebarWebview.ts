@@ -128,6 +128,8 @@ interface SidebarState {
   /** Surfaced from the spawn so the user knows why the list is missing
    * (claude not on PATH, timeout, etc.). */
   mcpError: string | null;
+  /** Extra projects from the active/recent epic (GH-67). */
+  extraProjects?: Array<{ type: string; ref: string; label: string; mode?: string }>;
 }
 
 interface McpSnapshot {
@@ -181,6 +183,19 @@ function buildState(
     statePath: e.statePath,
   }));
 
+  // GH-67: read extra_projects from the most recent in-progress epic for sidebar display.
+  let sidebarExtraProjects: Array<{ type: string; ref: string; label: string; mode?: string }> | undefined;
+  const activeEpic = allEpics.find((e) => e.status === 'in_progress') ?? allEpics[0];
+  if (activeEpic) {
+    const raw = activeEpic.inputs?.extra_projects;
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) { sidebarExtraProjects = parsed; }
+      } catch { /* ignore */ }
+    }
+  }
+
   // Templates also live independent of workspace.yaml — surface them even
   // when the project hasn't been initialized yet, so the user can apply one
   // as their first action.
@@ -209,6 +224,7 @@ function buildState(
       mcpServers: mcp.servers,
       mcpLoading: mcp.loading,
       mcpError: mcp.error,
+      extraProjects: sidebarExtraProjects,
     };
   }
 
@@ -249,6 +265,7 @@ function buildState(
     mcpServers: mcp.servers,
     mcpLoading: mcp.loading,
     mcpError: mcp.error,
+    extraProjects: sidebarExtraProjects,
   };
 }
 
