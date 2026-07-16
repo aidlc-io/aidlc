@@ -25,7 +25,7 @@ export function EpicsView({ state }: { state: WorkspaceState }) {
 
   useEffect(() => {
     return onHostMessage((msg) => {
-      if (msg.type === 'triggerStartEpic') {
+      if (msg.type === 'triggerStartEpic' || msg.type === 'openStartEpicModal') {
         setStartEpicOpen(true);
       }
     });
@@ -190,6 +190,7 @@ export function EpicsView({ state }: { state: WorkspaceState }) {
           existingEpicIds={state.existingEpicIds}
           epicsDir={state.epicsDir}
           isFirstEpic={state.epics.length === 0}
+          workspaceName={state.workspaceName}
           onSubmit={(draft) => postMessage({ type: 'startEpicInline', draft })}
           onClose={() => setStartEpicOpen(false)}
         />

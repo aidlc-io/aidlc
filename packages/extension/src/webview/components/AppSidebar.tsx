@@ -18,6 +18,7 @@ import {
   Loader2,
   HelpCircle,
   ListTree,
+  Github,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type {
@@ -101,7 +102,7 @@ export function AppSidebar({ state }: { state: SidebarState | null }) {
           <EmptyNoFolder demoProjectExists={state.demoProjectExists} />
         ) : (
           <>
-            <ProjectBar workspaceName={state.workspaceName} configExists={state.configExists} />
+            <ProjectBar workspaceName={state.workspaceName} configExists={state.configExists} extraProjects={state.extraProjects} />
             {state.configExists && (
               <button
                 type="button"
@@ -220,53 +221,79 @@ function BrandIcon() {
 function ProjectBar({
   workspaceName,
   configExists,
+  extraProjects,
 }: {
   workspaceName: string;
   configExists: boolean;
+  extraProjects?: Array<{ type: string; ref: string; label: string; mode?: string }>;
 }) {
+  const hasExtras = extraProjects && extraProjects.length > 0;
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={() => postMessage({ type: 'openBuilder' })}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          postMessage({ type: 'openBuilder' });
-        }
-      }}
-      className="group flex cursor-pointer items-center gap-2 rounded-md border border-primary/30 bg-gradient-to-br from-primary/10 to-primary/5 px-3 py-2 transition-all hover:border-primary/40 hover:from-primary/20 hover:to-primary/10"
-      title="Click to open Builder"
-    >
-      <Layers className="h-3.5 w-3.5 shrink-0 text-primary" />
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-xs font-bold tracking-wide text-primary">{workspaceName}</div>
-        {!configExists && (
-          <div className="text-[10px] text-muted-foreground">no workspace.yaml</div>
-        )}
+    <div className="space-y-1">
+      {hasExtras && (
+        <div className="px-1 text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+          AIDLC Workspace
+        </div>
+      )}
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => postMessage({ type: 'openBuilder' })}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            postMessage({ type: 'openBuilder' });
+          }
+        }}
+        className="group flex cursor-pointer items-center gap-2 rounded-md border border-primary/30 bg-gradient-to-br from-primary/10 to-primary/5 px-3 py-2 transition-all hover:border-primary/40 hover:from-primary/20 hover:to-primary/10"
+        title="Click to open Builder"
+      >
+        <Layers className="h-3.5 w-3.5 shrink-0 text-primary" />
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-xs font-bold tracking-wide text-primary">{workspaceName}</div>
+          {!configExists && (
+            <div className="text-[10px] text-muted-foreground">no workspace.yaml</div>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            postMessage({ type: 'openProject' });
+          }}
+          title="Switch project"
+          className="grid h-6 w-6 shrink-0 place-items-center rounded text-muted-foreground hover:bg-primary/20 hover:text-primary"
+        >
+          <FolderOpen className="h-3.5 w-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            postMessage({ type: 'closeProject' });
+          }}
+          title="Close project"
+          className="grid h-6 w-6 shrink-0 place-items-center rounded text-muted-foreground hover:bg-destructive/20 hover:text-destructive"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
       </div>
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          postMessage({ type: 'openProject' });
-        }}
-        title="Switch project"
-        className="grid h-6 w-6 shrink-0 place-items-center rounded text-muted-foreground hover:bg-primary/20 hover:text-primary"
-      >
-        <FolderOpen className="h-3.5 w-3.5" />
-      </button>
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          postMessage({ type: 'closeProject' });
-        }}
-        title="Close project"
-        className="grid h-6 w-6 shrink-0 place-items-center rounded text-muted-foreground hover:bg-destructive/20 hover:text-destructive"
-      >
-        <X className="h-3.5 w-3.5" />
-      </button>
+      {hasExtras && extraProjects.map((p, i) => (
+        <div key={i} className="flex items-center gap-2 rounded-md border border-border bg-card/50 px-3 py-1.5 text-[10.5px]">
+          {p.type === 'github'
+            ? <Github className="h-3 w-3 shrink-0 text-muted-foreground" />
+            : <FolderOpen className="h-3 w-3 shrink-0 text-muted-foreground" />}
+          <span className="min-w-0 flex-1 truncate font-medium text-foreground" title={p.ref}>{p.label}</span>
+          <span className={cn(
+            'shrink-0 rounded-full px-1 py-0.5 text-[7px] font-bold uppercase',
+            p.mode === 'workspace' ? 'bg-green-500/15 text-green-600 dark:text-green-400'
+              : p.mode === 'clone' ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400'
+              : 'bg-muted text-muted-foreground',
+          )}>
+            {p.mode === 'workspace' ? 'ws' : p.mode === 'clone' ? 'clone' : 'ref'}
+          </span>
+        </div>
+      ))}
     </div>
   );
 }

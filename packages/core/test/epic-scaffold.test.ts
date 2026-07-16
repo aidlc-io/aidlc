@@ -91,6 +91,71 @@ describe('scaffoldEpic — on-disk layout', () => {
     expect(state.stepStates.map((s: { agent: string }) => s.agent)).toEqual(['po', 'developer']);
   });
 
+  // GH-67-UT01: extraProjects written to inputs.json
+  it('persists extraProjects in inputs.json when provided', () => {
+    const root = tmpRoot();
+    const extras = [
+      { type: 'local' as const, ref: '/home/user/frontend', label: 'frontend', mode: 'workspace' },
+      { type: 'github' as const, ref: 'acme/backend-api', label: 'backend-api', mode: 'reference' },
+    ];
+    scaffoldEpic({
+      workspaceRoot: root,
+      doc: null,
+      epicId: 'GH-67-A',
+      title: 'Multi-project',
+      description: 'test',
+      target: { kind: 'pipeline', id: PIPELINE.id },
+      agents: ['po', 'developer'],
+      inputs: { jira: 'GH-67' },
+      extraProjects: extras,
+      pipeline: PIPELINE,
+    });
+    const inputsPath = path.join(root, 'docs/epics', 'GH-67-A', 'inputs.json');
+    const inputs = JSON.parse(fs.readFileSync(inputsPath, 'utf8'));
+    expect(inputs.jira).toBe('GH-67');
+    expect(inputs.extra_projects).toEqual(extras);
+  });
+
+  // GH-67-UT02: no extraProjects → no extra_projects key
+  it('omits extra_projects from inputs.json when not provided', () => {
+    const root = tmpRoot();
+    scaffoldEpic({
+      workspaceRoot: root,
+      doc: null,
+      epicId: 'GH-67-B',
+      title: '',
+      description: '',
+      target: { kind: 'pipeline', id: PIPELINE.id },
+      agents: ['po'],
+      inputs: { jira: 'GH-67' },
+      pipeline: PIPELINE,
+    });
+    const inputsPath = path.join(root, 'docs/epics', 'GH-67-B', 'inputs.json');
+    const inputs = JSON.parse(fs.readFileSync(inputsPath, 'utf8'));
+    expect(inputs.jira).toBe('GH-67');
+    expect(inputs.extra_projects).toBeUndefined();
+  });
+
+  // GH-67-UT03: empty extraProjects array → no extra_projects key
+  it('omits extra_projects from inputs.json when array is empty', () => {
+    const root = tmpRoot();
+    scaffoldEpic({
+      workspaceRoot: root,
+      doc: null,
+      epicId: 'GH-67-C',
+      title: '',
+      description: '',
+      target: { kind: 'pipeline', id: PIPELINE.id },
+      agents: ['po'],
+      inputs: {},
+      extraProjects: [],
+      pipeline: PIPELINE,
+    });
+    const inputsPath = path.join(root, 'docs/epics', 'GH-67-C', 'inputs.json');
+    const inputs = JSON.parse(fs.readFileSync(inputsPath, 'utf8'));
+    expect(inputs.extra_projects).toBeUndefined();
+  });
+
   it('throws when the epic dir already exists', () => {
     const root = tmpRoot();
     fs.mkdirSync(path.join(root, 'docs/epics', 'CPD-2'), { recursive: true });

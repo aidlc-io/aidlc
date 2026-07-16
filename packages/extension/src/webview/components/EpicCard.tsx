@@ -15,6 +15,8 @@ import {
   Highlighter,
   Brain,
   Folder,
+  FolderOpen,
+  Github,
   Play,
   History,
   RefreshCw,
@@ -251,10 +253,13 @@ export function EpicCard({ epic, agentMeta, slashCommandsByAgent }: Props) {
                 Inputs
               </div>
               <div className="grid grid-cols-[140px_1fr] gap-x-4 gap-y-1 font-mono text-[11px]">
-                {inputKeys.map((k) => (
+                {inputKeys.filter((k) => k !== 'extra_projects').map((k) => (
                   <Frag key={k} keyName={k} value={epic.inputs[k]} />
                 ))}
               </div>
+              {epic.inputs.extra_projects && (
+                <ExtraProjectsList raw={epic.inputs.extra_projects} />
+              )}
             </div>
           )}
 
@@ -271,6 +276,40 @@ function Frag({ keyName, value }: { keyName: string; value: string }) {
       <span className="text-muted-foreground">{keyName}</span>
       <span className="break-all text-foreground">{value}</span>
     </>
+  );
+}
+
+function ExtraProjectsList({ raw }: { raw: string }) {
+  let projects: Array<{ type: string; ref: string; label: string; mode?: string }> = [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) { projects = parsed; }
+  } catch { /* raw JSON string — try wrapping */ }
+  if (projects.length === 0) { return null; }
+  return (
+    <div className="mt-2">
+      <div className="mb-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+        Extra Projects
+      </div>
+      <div className="space-y-1">
+        {projects.map((p, i) => (
+          <div key={i} className="flex items-center gap-2 rounded-md border border-border bg-card/50 px-2.5 py-1.5 text-[11px]">
+            {p.type === 'github'
+              ? <Github className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              : <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
+            <span className="font-mono text-[10.5px] text-foreground truncate" title={p.ref}>{p.ref}</span>
+            <span className={cn(
+              'ml-auto shrink-0 rounded-full px-1.5 py-0.5 text-[8px] font-bold uppercase',
+              p.mode === 'workspace' ? 'bg-green-500/15 text-green-600 dark:text-green-400'
+                : p.mode === 'clone' ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400'
+                : 'bg-muted text-muted-foreground',
+            )}>
+              {p.mode === 'workspace' ? 'workspace' : p.mode === 'clone' ? 'cloned' : 'ref'}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 

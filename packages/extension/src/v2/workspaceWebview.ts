@@ -545,7 +545,7 @@ function buildState(initialView: WorkspaceView): WorkspaceState {
       nextEpicId: 'EPIC-001',
       existingEpicIds: [],
       requirementRuns: [],
-      initialView,
+      initialView: 'epics',
       testAgentConfigExists: false,
       testAgentTargets: [],
       epicMemoryHookEnabled: isEpicMemoryHookEnabled(os.homedir()),
@@ -1526,6 +1526,22 @@ export class WorkspaceWebview {
       case 'initSdlcPreset':
         await vscode.commands.executeCommand('aidlc.applyPreset', 'sdlc-parallel-pipeline', true);
         return;
+      // GH-67: open a project folder first, then apply the SDLC preset.
+      case 'openProjectAndApplyPreset': {
+        const folderPath = String(msg.folderPath ?? '').trim();
+        if (!folderPath) { return; }
+        const uri = vscode.Uri.file(folderPath);
+        const existing = vscode.workspace.workspaceFolders ?? [];
+        if (!existing.some((f) => f.uri.fsPath === uri.fsPath)) {
+          vscode.workspace.updateWorkspaceFolders(existing.length, 0, { uri });
+        }
+        // Wait for workspace activation then apply the preset + refresh.
+        setTimeout(async () => {
+          await vscode.commands.executeCommand('aidlc.applyPreset', 'sdlc-parallel-pipeline', true);
+          this.refresh();
+        }, 300);
+        return;
+      }
       case 'savePreset':   await vscode.commands.executeCommand('aidlc.savePreset');    return;
       case 'startEpic':    await vscode.commands.executeCommand('aidlc.startEpic');     return;
       case 'addAgent':     await vscode.commands.executeCommand('aidlc.addAgent');      return;
@@ -1643,7 +1659,13 @@ export class WorkspaceWebview {
           title: 'Pick the project folder where the epic will be created',
         });
         if (!picked || picked.length === 0) { return; }
+        // Open folder, then auto-open Start Epic modal after workspace loads.
         await openFolder(picked[0]);
+        // Signal the webview to open the Start Epic modal once the view refreshes.
+        setTimeout(() => {
+          void this.panel.webview.postMessage({ type: 'setView', view: 'epics' });
+          void this.panel.webview.postMessage({ type: 'openStartEpicModal' });
+        }, 500);
         return;
       }
       case 'loadEpicsFromFolder': {
@@ -1999,6 +2021,61 @@ export class WorkspaceWebview {
         });
         const folderPath = picked && picked.length > 0 ? picked[0].fsPath : null;
         void this.panel.webview.postMessage({ type: 'pickFolder:reply', requestId, folderPath });
+        return;
+      }
+      // GH-67: add a local folder to VS Code's multi-root workspace.
+      case 'addProjectToWorkspace': {
+        const folderPath = String(msg.folderPath ?? '').trim();
+        if (!folderPath) { return; }
+        const uri = vscode.Uri.file(folderPath);
+        const existing = (vscode.workspace.workspaceFolders ?? []);
+        const alreadyOpen = existing.some((f) => f.uri.fsPath === uri.fsPath);
+        if (!alreadyOpen) {
+          vscode.workspace.updateWorkspaceFolders(existing.length, 0, { uri });
+        }
+        return;
+      }
+      // GH-67: clone a GitHub repo into a sibling folder, then add to workspace.
+      case 'cloneGithubProject': {
+        const ref = String(msg.ref ?? '').trim();
+        if (!ref) { return; }
+        const root = this.getRootOrWarn();
+        if (!root) { return; }
+        try {
+          const repoName = ref.split('/').pop() ?? ref;
+          const parentDir = require('path').dirname(root);
+          const cloneTarget = require('path').join(parentDir, repoName);
+          const fs = require('fs');
+          if (fs.existsSync(cloneTarget)) {
+            // Already cloned — just add to workspace.
+            const uri = vscode.Uri.file(cloneTarget);
+            const existing = (vscode.workspace.workspaceFolders ?? []);
+            if (!existing.some((f) => f.uri.fsPath === uri.fsPath)) {
+              vscode.workspace.updateWorkspaceFolders(existing.length, 0, { uri });
+            }
+            void this.panel.webview.postMessage({
+              type: 'cloneGithubProject:done', ref, localPath: cloneTarget,
+            });
+            return;
+          }
+          const cp = require('child_process');
+          cp.execSync(`git clone https://github.com/${ref}.git "${cloneTarget}"`, {
+            stdio: 'pipe', timeout: 120_000,
+          });
+          const uri = vscode.Uri.file(cloneTarget);
+          const existing = (vscode.workspace.workspaceFolders ?? []);
+          if (!existing.some((f) => f.uri.fsPath === uri.fsPath)) {
+            vscode.workspace.updateWorkspaceFolders(existing.length, 0, { uri });
+          }
+          void this.panel.webview.postMessage({
+            type: 'cloneGithubProject:done', ref, localPath: cloneTarget,
+          });
+        } catch (err) {
+          void this.panel.webview.postMessage({
+            type: 'cloneGithubProject:error', ref,
+            message: err instanceof Error ? err.message : String(err),
+          });
+        }
         return;
       }
       case 'startPipelineRunForEpic': {
@@ -3133,6 +3210,16 @@ export class WorkspaceWebview {
       if (typeof v === 'string' && v.trim()) { inputs[k] = v; }
     }
 
+    // GH-67: extra projects attached to the epic.
+    const extraProjectsRaw = Array.isArray(draft.extraProjects) ? draft.extraProjects : undefined;
+    const extraProjects = extraProjectsRaw?.filter(
+      (p): p is { type: 'local' | 'github'; ref: string; label: string; mode?: string } =>
+        typeof p === 'object' && p !== null
+        && (p.type === 'local' || p.type === 'github')
+        && typeof p.ref === 'string' && !!p.ref.trim()
+        && typeof p.label === 'string',
+    );
+
     let agents: string[] = [];
     if (targetKind === 'pipeline') {
       const p = (doc.pipelines as PipelineConfig[] | undefined)?.find(
@@ -3172,6 +3259,7 @@ export class WorkspaceWebview {
         target: { kind: targetKind as 'pipeline' | 'agent', id: targetId },
         agents,
         inputs,
+        extraProjects: extraProjects && extraProjects.length > 0 ? extraProjects : undefined,
         pipeline: pipelineCfg,
       });
     } catch (err) {
@@ -3183,6 +3271,24 @@ export class WorkspaceWebview {
         `Epic could not be scaffolded: ${err instanceof Error ? err.message : String(err)}`,
       );
       return;
+    }
+
+    // GH-67: add workspace-mode projects to VS Code via a named .code-workspace file.
+    const wsProjects = (extraProjects ?? []).filter(
+      (p) => (p.mode === 'workspace' || p.mode === 'clone') && p.ref,
+    );
+    if (wsProjects.length > 0) {
+      const fs = require('fs') as typeof import('fs');
+      const pathMod = require('path') as typeof import('path');
+      const folders = [
+        { path: root },
+        ...wsProjects.map((p) => ({ path: p.ref })),
+      ];
+      const wsFile = pathMod.join(root, 'aidlc.code-workspace');
+      const wsContent = JSON.stringify({ folders, settings: {} }, null, 2) + '\n';
+      fs.writeFileSync(wsFile, wsContent, 'utf8');
+      // Open the workspace file — VS Code reloads with the named workspace.
+      void vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(wsFile));
     }
 
     void vscode.window.showInformationMessage(

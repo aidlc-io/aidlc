@@ -16,6 +16,18 @@ function nextRequestId(): string {
   return `pf-${Date.now().toString(36)}-${counter}`;
 }
 
+export function pickFolder(): Promise<string | null> {
+  return new Promise((resolve) => {
+    const requestId = nextRequestId();
+    const off = onHostMessage((msg) => {
+      if (msg.type !== 'pickFolder:reply' || msg.requestId !== requestId) { return; }
+      off();
+      resolve(typeof msg.folderPath === 'string' && msg.folderPath ? msg.folderPath : null);
+    });
+    postMessage({ type: 'pickFolder', requestId });
+  });
+}
+
 export function pickAndReadFile(): Promise<PickFileResult | null> {
   // null = user cancelled the dialog. Errors throw.
   return new Promise((resolve, reject) => {

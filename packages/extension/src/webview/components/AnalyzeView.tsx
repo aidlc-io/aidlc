@@ -6,19 +6,13 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { postMessage, onHostMessage } from '@/lib/bridge';
-import { pickAndReadFile } from '@/lib/pickFile';
-import type { WorkspaceState, RequirementRunSummary } from '@/lib/types';
+import { pickAndReadFile, pickFolder } from '@/lib/pickFile';
+import type { WorkspaceState, RequirementRunSummary, ExtraProject } from '@/lib/types';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type SourceTab = 'text' | 'file' | 'url';
 export type AnalyzePlatform = 'jira' | 'github' | 'linear' | 'redmine' | 'local';
-
-interface ExtraProject {
-  type: 'local' | 'github';
-  ref: string;   // local path or GitHub owner/repo or URL
-  label: string; // display name
-}
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -39,21 +33,6 @@ const PARENT_META: Record<AnalyzePlatform, { placeholder: string; hint: string }
 const PLATFORM_ICON: Record<AnalyzePlatform, string> = {
   jira: 'J', github: 'GH', linear: 'L', redmine: 'R', local: '—',
 };
-
-// ── Webview-side pickFolder helper (mirrors pickAndReadFile pattern) ──────────
-
-let _pfCounter = 0;
-function pickFolder(): Promise<string | null> {
-  return new Promise((resolve) => {
-    const requestId = `pfolder-${Date.now().toString(36)}-${++_pfCounter}`;
-    const off = onHostMessage((msg) => {
-      if (msg.type !== 'pickFolder:reply' || msg.requestId !== requestId) { return; }
-      off();
-      resolve(typeof msg.folderPath === 'string' && msg.folderPath ? msg.folderPath : null);
-    });
-    postMessage({ type: 'pickFolder', requestId });
-  });
-}
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
@@ -168,7 +147,7 @@ function AnalyzeForm({ workspaceName }: { workspaceName: string }) {
       const folderPath = await pickFolder();
       if (!folderPath) { return; }
       const label = folderPath.split('/').filter(Boolean).pop() ?? folderPath;
-      setExtraProjects((prev) => [...prev, { type: 'local', ref: folderPath, label }]);
+      setExtraProjects((prev) => [...prev, { type: 'local', ref: folderPath, label, mode: 'reference' }]);
     } finally { setLoadingFolder(false); setAddingProjectType(null); }
   };
 
@@ -180,7 +159,7 @@ function AnalyzeForm({ workspaceName }: { workspaceName: string }) {
     const m = raw.match(/github\.com\/([^/]+\/[^/]+)/);
     if (m) { ref = m[1]; }
     const label = ref.split('/').pop() ?? ref;
-    setExtraProjects((prev) => [...prev, { type: 'github', ref, label }]);
+    setExtraProjects((prev) => [...prev, { type: 'github', ref, label, mode: 'reference' }]);
     setGithubInput(''); setAddingProjectType(null);
   };
 

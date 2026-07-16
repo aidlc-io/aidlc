@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ListOrdered, ChevronRight, FileUp, Loader2, Sparkles, Plus, Wand2, DownloadCloud, FolderOpen } from 'lucide-react';
+import { ListOrdered, ChevronRight, FileUp, Loader2, Sparkles, Plus, Wand2, DownloadCloud, FolderOpen, Github, Layers, X, GitBranch } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { AgentMeta, PipelineSummary, RecipeSummary } from '@/lib/types';
+import type { AgentMeta, ExtraProject, PipelineSummary, RecipeSummary } from '@/lib/types';
 import { Modal, ModalFooter, ModalCancelButton, ModalConfirmButton } from './Modal';
-import { pickAndReadFile } from '@/lib/pickFile';
+import { pickAndReadFile, pickFolder } from '@/lib/pickFile';
 import { postMessage, onHostMessage } from '@/lib/bridge';
 
 const ID_PATTERN = /^[A-Z][A-Z0-9-]*$/;
@@ -41,6 +41,7 @@ export interface StartEpicDraft {
   title: string;
   description: string;
   inputs: Record<string, string>;
+  extraProjects?: ExtraProject[];
 }
 
 interface Props {
@@ -51,6 +52,9 @@ interface Props {
   existingEpicIds: string[];
   epicsDir: string;
   isFirstEpic: boolean;
+  workspaceName: string;
+  /** When false (no folder open), the user must add at least one project. */
+  hasFolder?: boolean;
   onSubmit: (draft: StartEpicDraft) => void;
   onClose: () => void;
 }
@@ -80,6 +84,8 @@ export function StartEpicModal({
   existingEpicIds,
   epicsDir,
   isFirstEpic,
+  workspaceName,
+  hasFolder = true,
   onSubmit,
   onClose,
 }: Props) {
@@ -97,6 +103,15 @@ export function StartEpicModal({
   const [description, setDescription] = useState('');
   const [inputs, setInputs] = useState<Record<string, string>>({});
   const idInputRef = useRef<HTMLInputElement>(null);
+  // Extra projects (GH-67)
+  const [extraProjects, setExtraProjects] = useState<ExtraProject[]>([]);
+  const [addingGithub, setAddingGithub] = useState(false);
+  const [githubInput, setGithubInput] = useState('');
+  const [githubModeStep, setGithubModeStep] = useState(false); // true = show mode picker after entering repo
+  const [loadingFolder, setLoadingFolder] = useState(false);
+  const [cloningRepo, setCloningRepo] = useState(false);
+  const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null);
+
   const [descLoading, setDescLoading] = useState(false);
   const [descLoadInfo, setDescLoadInfo] = useState<{ kind: 'loaded' | 'error'; text: string } | null>(null);
   const [suggestion, setSuggestion] = useState<Suggestion | null>(null);
@@ -316,6 +331,89 @@ export function StartEpicModal({
     return () => clearTimeout(t);
   }, [selected, epicId, description, recipes.length, classifying, loadingExternal]);
 
+  // ── Extra project helpers (GH-67) ──────────────────────────────────────────
+  const isDuplicateProject = (ref: string) =>
+    extraProjects.some((p) => p.ref === ref);
+
+  const addLocalProject = async () => {
+    setLoadingFolder(true);
+    setDuplicateWarning(null);
+    try {
+      const folderPath = await pickFolder();
+      if (!folderPath) { return; }
+      if (isDuplicateProject(folderPath)) {
+        setDuplicateWarning('This project is already added.');
+        return;
+      }
+      const label = folderPath.split('/').filter(Boolean).pop() ?? folderPath;
+      setExtraProjects((prev) => [...prev, { type: 'local', ref: folderPath, label, mode: 'workspace' }]);
+    } finally {
+      setLoadingFolder(false);
+    }
+  };
+
+  const parseGithubRef = (raw: string): string => {
+    const m = raw.match(/github\.com\/([^/]+\/[^/]+)/);
+    return m ? m[1].replace(/\.git$/, '') : raw;
+  };
+
+  const confirmGithubRepo = () => {
+    const raw = githubInput.trim();
+    if (!raw) { return; }
+    setDuplicateWarning(null);
+    const ref = parseGithubRef(raw);
+    if (isDuplicateProject(ref)) {
+      setDuplicateWarning('This project is already added.');
+      return;
+    }
+    // Show mode picker
+    setGithubModeStep(true);
+  };
+
+  const addGithubWithMode = (mode: 'reference' | 'clone') => {
+    const ref = parseGithubRef(githubInput.trim());
+    const label = ref.split('/').pop() ?? ref;
+    if (mode === 'clone') {
+      setCloningRepo(true);
+      postMessage({ type: 'cloneGithubProject', ref });
+    } else {
+      setExtraProjects((prev) => [...prev, { type: 'github', ref, label, mode: 'reference' }]);
+      setGithubInput('');
+      setAddingGithub(false);
+      setGithubModeStep(false);
+    }
+  };
+
+  // Listen for clone result from host
+  useEffect(() => {
+    return onHostMessage((m) => {
+      if (m.type === 'cloneGithubProject:done') {
+        setCloningRepo(false);
+        const ref = String(m.ref ?? '');
+        const localPath = String(m.localPath ?? '');
+        const label = ref.split('/').pop() ?? ref;
+        if (localPath) {
+          setExtraProjects((prev) => [...prev, { type: 'github', ref, label, mode: 'clone' }]);
+        }
+        setGithubInput('');
+        setAddingGithub(false);
+        setGithubModeStep(false);
+        return;
+      }
+      if (m.type === 'cloneGithubProject:error') {
+        setCloningRepo(false);
+        setGithubModeStep(false);
+        setDuplicateWarning(String(m.message ?? 'Clone failed'));
+        return;
+      }
+    });
+  }, []);
+
+  const removeProject = (idx: number) => {
+    setExtraProjects((prev) => prev.filter((_, i) => i !== idx));
+    setDuplicateWarning(null);
+  };
+
   const effectiveRecipeId = selected.kind === 'auto' ? suggestion?.recipeId : undefined;
 
   const selectedAgents = useMemo<string[]>(() => {
@@ -367,7 +465,10 @@ export function StartEpicModal({
   const targetError = selected.kind === 'pipeline'
     ? (!selected.id ? 'Pick a pipeline' : null)
     : (!effectiveRecipeId ? 'Add a task description and click “Suggest recipe”, or pick a pipeline' : null);
-  const error = idError || targetError;
+  const projectError = !hasFolder && extraProjects.length === 0
+    ? 'Add at least one project to start an epic'
+    : null;
+  const error = idError || targetError || projectError;
 
   const submit = () => {
     if (error) { return; }
@@ -385,6 +486,7 @@ export function StartEpicModal({
       title: title.trim(),
       description: description.trim(),
       inputs: cleanInputs,
+      extraProjects: extraProjects.length > 0 ? extraProjects : undefined,
     });
     onClose();
   };
@@ -394,7 +496,7 @@ export function StartEpicModal({
   return (
     <Modal title="Start epic" maxWidth="max-w-2xl" onClose={onClose} onSubmit={submit} closeOnBackdrop={false}>
       <div className="space-y-4">
-        {isFirstEpic && (
+        {isFirstEpic && hasFolder && (
           <div className="rounded-md border border-primary/30 bg-primary/5 p-3">
             <label className="mb-1.5 flex items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-wider text-primary">
               <FolderOpen className="h-3 w-3" />
@@ -427,14 +529,132 @@ export function StartEpicModal({
             </div>
           </div>
         )}
+
+        {/* ── Project context (GH-67) ────────────────────────────────────── */}
+        <div>
+          <label className="mb-1.5 flex items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">
+            <Layers className="h-3 w-3" />
+            Project context
+          </label>
+          <div className="space-y-1.5">
+            {hasFolder && (
+              <div className="flex items-center gap-2 rounded-md border border-border bg-muted/30 px-2.5 py-2">
+                <Layers className="h-3.5 w-3.5 shrink-0 text-primary" />
+                <span className="flex-1 text-[11px] font-medium text-foreground">
+                  {workspaceName || 'Current workspace'}
+                </span>
+                <span className="rounded-full bg-primary/15 px-2 py-0.5 text-[9px] font-bold uppercase text-primary">current</span>
+              </div>
+            )}
+            {!hasFolder && extraProjects.length === 0 && (
+              <div className="rounded-md border border-dashed border-amber-500/50 bg-amber-500/5 px-3 py-2.5 text-[11px] text-amber-600 dark:text-amber-400">
+                No project open. Add at least one project below to start an epic.
+              </div>
+            )}
+
+            {extraProjects.map((p, i) => (
+              <div key={i} className="flex items-center gap-2 rounded-md border border-border bg-card px-2.5 py-2">
+                {p.type === 'github'
+                  ? <Github className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  : <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
+                <span className="flex-1 truncate font-mono text-[10.5px] text-foreground" title={p.ref}>{p.ref}</span>
+                <span className={cn(
+                  'rounded-full px-1.5 py-0.5 text-[8px] font-bold uppercase',
+                  p.mode === 'workspace' ? 'bg-green-500/15 text-green-600 dark:text-green-400'
+                    : p.mode === 'clone' ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400'
+                    : 'bg-muted text-muted-foreground',
+                )}>
+                  {p.mode === 'workspace' ? 'workspace' : p.mode === 'clone' ? 'cloned' : 'ref'}
+                </span>
+                <button type="button" onClick={() => removeProject(i)}
+                  className="rounded p-0.5 text-muted-foreground hover:text-destructive">
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            ))}
+
+            {addingGithub && !githubModeStep && (
+              <div className="flex gap-1.5">
+                <input value={githubInput} onChange={(e) => setGithubInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') { e.preventDefault(); confirmGithubRepo(); }
+                    if (e.key === 'Escape') { setAddingGithub(false); }
+                  }}
+                  autoFocus placeholder="owner/repo or github.com URL"
+                  className="flex-1 rounded-md border border-border bg-input/50 px-2.5 py-1.5 text-[12px] focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/40" />
+                <button type="button" onClick={confirmGithubRepo}
+                  disabled={!githubInput.trim()}
+                  className="rounded-md bg-primary px-2.5 py-1.5 text-[11px] font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-40">
+                  Next
+                </button>
+                <button type="button" onClick={() => { setAddingGithub(false); setDuplicateWarning(null); }}
+                  className="rounded-md border border-border px-2 py-1.5 text-[11px] text-muted-foreground hover:bg-accent">Cancel</button>
+              </div>
+            )}
+            {addingGithub && githubModeStep && (
+              <div className="rounded-md border border-primary/30 bg-primary/5 p-2.5">
+                <div className="mb-2 text-[10.5px] font-medium text-foreground">
+                  How to use <span className="font-mono text-primary">{parseGithubRef(githubInput)}</span>?
+                </div>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => addGithubWithMode('reference')}
+                    disabled={cloningRepo}
+                    className="flex-1 rounded-md border border-border bg-card px-3 py-2 text-left transition-colors hover:border-primary/40 hover:bg-accent/50 disabled:opacity-50">
+                    <div className="text-[11px] font-semibold text-foreground">Reference only</div>
+                    <div className="text-[10px] text-muted-foreground">Agent reads via GitHub API — no local clone</div>
+                  </button>
+                  <button type="button" onClick={() => addGithubWithMode('clone')}
+                    disabled={cloningRepo}
+                    className="flex-1 rounded-md border border-border bg-card px-3 py-2 text-left transition-colors hover:border-primary/40 hover:bg-accent/50 disabled:opacity-50">
+                    <div className="flex items-center gap-1.5 text-[11px] font-semibold text-foreground">
+                      {cloningRepo ? <Loader2 className="h-3 w-3 animate-spin" /> : <GitBranch className="h-3 w-3" />}
+                      Clone to workspace
+                    </div>
+                    <div className="text-[10px] text-muted-foreground">Git clone + open in VS Code for full access</div>
+                  </button>
+                </div>
+                {!cloningRepo && (
+                  <button type="button" onClick={() => { setGithubModeStep(false); }}
+                    className="mt-1.5 text-[10px] text-muted-foreground hover:text-foreground">Back</button>
+                )}
+              </div>
+            )}
+
+            {duplicateWarning && (
+              <div className="text-[10px] text-destructive">{duplicateWarning}</div>
+            )}
+
+            {!addingGithub && (
+              <div className="flex flex-wrap gap-1.5 pt-0.5">
+                <button type="button" onClick={addLocalProject} disabled={loadingFolder}
+                  className="flex items-center gap-1.5 rounded-md border border-dashed border-border px-3 py-1.5 text-[10.5px] text-muted-foreground hover:border-primary/40 hover:text-foreground disabled:opacity-50">
+                  {loadingFolder ? <Loader2 className="h-3 w-3 animate-spin" /> : <FolderOpen className="h-3 w-3" />}
+                  Add local project
+                </button>
+                <button type="button" onClick={() => { setAddingGithub(true); setDuplicateWarning(null); setGithubModeStep(false); }}
+                  className="flex items-center gap-1.5 rounded-md border border-dashed border-border px-3 py-1.5 text-[10.5px] text-muted-foreground hover:border-primary/40 hover:text-foreground">
+                  <Github className="h-3 w-3" />Add GitHub repo
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
         <div>
           <label className="mb-1 flex items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">
             <ListOrdered className="h-3 w-3" />
             Workflow
           </label>
           <div className="max-h-56 overflow-y-auto rounded-md border border-border">
-            {!hasWorkflows ? (
-              <NoPipelines onClose={onClose} />
+            {!hasFolder && !hasWorkflows && extraProjects.length === 0 ? (
+              <div className="px-3 py-4 text-center text-[11px] text-muted-foreground">
+                Add a project above first — pipelines load from the project's workspace.
+              </div>
+            ) : !hasWorkflows ? (
+              <NoPipelines
+                onClose={onClose}
+                projectPath={!hasFolder ? extraProjects.find((p) => p.type === 'local')?.ref : undefined}
+              />
             ) : (
               <>
                 {recipes.length > 0 && (
@@ -814,7 +1034,15 @@ function WorkflowRow({
   );
 }
 
-function NoPipelines({ onClose }: { onClose: () => void }) {
+function NoPipelines({ onClose, projectPath }: { onClose: () => void; projectPath?: string }) {
+  const loadPreset = () => {
+    if (projectPath) {
+      // No folder open yet — open the selected project first, then apply preset.
+      postMessage({ type: 'openProjectAndApplyPreset', folderPath: projectPath });
+    } else {
+      postMessage({ type: 'initSdlcPreset' });
+    }
+  };
   return (
     <div className="flex flex-col gap-2.5 p-3">
       <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
@@ -824,7 +1052,7 @@ function NoPipelines({ onClose }: { onClose: () => void }) {
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
-          onClick={() => postMessage({ type: 'initSdlcPreset' })}
+          onClick={loadPreset}
           title="Apply the built-in AIDLC SDLC pipeline (installs its agents + skills). It'll appear here once applied."
           className="inline-flex items-center gap-1.5 rounded-md border border-primary/40 bg-primary/15 px-3 py-1.5 text-[11px] font-semibold text-primary transition-colors hover:border-primary/60 hover:bg-primary/25"
         >

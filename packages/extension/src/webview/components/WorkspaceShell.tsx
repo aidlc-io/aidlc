@@ -18,9 +18,14 @@ export function WorkspaceShell({ state }: { state: WorkspaceState | null }) {
   // Host can switch the view at runtime via openBuilder/openEpicsList.
   useEffect(() => {
     return onHostMessage((msg) => {
-      if (msg.type !== 'setView') { return; }
-      const next = msg.view;
-      if (next === 'builder' || next === 'epics' || next === 'analyze' || next === 'tests') { setView(next); }
+      if (msg.type === 'setView') {
+        const next = msg.view;
+        if (next === 'builder' || next === 'epics' || next === 'analyze' || next === 'tests') { setView(next); }
+      }
+      if (msg.type === 'openStartEpicModal') {
+        setView('epics');
+        setStartEpicOpen(true);
+      }
     });
   }, []);
 
@@ -98,6 +103,8 @@ export function WorkspaceShell({ state }: { state: WorkspaceState | null }) {
             existingEpicIds={state.existingEpicIds}
             epicsDir={state.epicsDir}
             isFirstEpic={state.epics.length === 0}
+            workspaceName={state.workspaceName}
+            hasFolder={state.hasFolder}
             onSubmit={(draft) => postMessage({ type: 'startEpicInline', draft })}
             onClose={() => setStartEpicOpen(false)}
           />
