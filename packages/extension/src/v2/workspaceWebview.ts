@@ -1632,9 +1632,7 @@ export class WorkspaceWebview {
           openLabel: 'Open project',
         });
         if (picked && picked.length > 0) {
-          await vscode.commands.executeCommand(
-            'vscode.openFolder', picked[0], { forceReuseWindow: true },
-          );
+          await openFolder(picked[0]);
         }
         return;
       }
@@ -1645,9 +1643,7 @@ export class WorkspaceWebview {
           title: 'Pick the project folder where the epic will be created',
         });
         if (!picked || picked.length === 0) { return; }
-        await vscode.commands.executeCommand(
-          'vscode.openFolder', picked[0], { forceReuseWindow: true },
-        );
+        await openFolder(picked[0]);
         return;
       }
       case 'loadEpicsFromFolder': {
@@ -1675,17 +1671,13 @@ export class WorkspaceWebview {
           const rel = path.relative(projectRoot, epicsFolder);
           // Pre-write the epics dir so it's ready when the project opens.
           writeEpicsDirToYaml(projectRoot, rel);
-          await vscode.commands.executeCommand(
-            'vscode.openFolder', vscode.Uri.file(projectRoot), { forceReuseWindow: true },
-          );
+          await openFolder(vscode.Uri.file(projectRoot));
         } else {
           // No project found — open the epics folder's parent as the workspace
           // and set the epics dir to point at the selected folder.
           const parent = path.dirname(epicsFolder);
           const rel = path.basename(epicsFolder);
-          await vscode.commands.executeCommand(
-            'vscode.openFolder', vscode.Uri.file(parent), { forceReuseWindow: true },
-          );
+          await openFolder(vscode.Uri.file(parent));
           // Note: the workspace.yaml may not exist yet; the setting will be
           // picked up on next activation via the VS Code setting.
           const EPICS_DIR_KEY = 'aidlc.workspace.epicsDirectory';
@@ -4247,6 +4239,29 @@ window.__AIDLC_INITIAL_THEME__ = ${JSON.stringify(initialTheme)};
 </body>
 </html>`;
   }
+}
+
+/**
+ * Open a folder in VS Code. If a project is already open, ask whether to
+ * reuse the current window or open a new one; otherwise reuse silently.
+ */
+async function openFolder(uri: vscode.Uri): Promise<void> {
+  const hasProject = (vscode.workspace.workspaceFolders?.length ?? 0) > 0;
+  let forceNew = false;
+  if (hasProject) {
+    const choice = await vscode.window.showQuickPick(
+      [
+        { label: '$(window) Current window', value: 'current', description: 'Replace the current project' },
+        { label: '$(empty-window) New window', value: 'new', description: 'Keep the current project open' },
+      ],
+      { title: 'Open project in…', placeHolder: 'Current window or new window?' },
+    );
+    if (!choice) { return; } // cancelled
+    forceNew = choice.value === 'new';
+  }
+  await vscode.commands.executeCommand(
+    'vscode.openFolder', uri, forceNew ? { forceNewWindow: true } : { forceReuseWindow: true },
+  );
 }
 
 function makeNonce(): string {
