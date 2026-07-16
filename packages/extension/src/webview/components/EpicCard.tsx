@@ -162,11 +162,7 @@ export function EpicCard({ epic, agentMeta, slashCommandsByAgent }: Props) {
 
       {expanded && (
         <div className="space-y-4 border-t border-border px-5 py-4">
-          {epic.description && (
-            <p className="text-xs italic leading-relaxed text-muted-foreground">
-              {epic.description}
-            </p>
-          )}
+          <EpicDescription epic={epic} />
 
           <div className="flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
             {epic.pipeline && (
@@ -269,6 +265,38 @@ export function EpicCard({ epic, agentMeta, slashCommandsByAgent }: Props) {
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Epic description. When the full requirement lives in an `init-requirement.md`
+ * (or similarly named) artifact, keep the card concise by showing a link to
+ * open that file instead of dumping the text inline. Falls back to the plain
+ * description when no such file exists.
+ */
+function EpicDescription({ epic }: { epic: EpicSummary }) {
+  const reqFile = epic.existingArtifacts.find((f) =>
+    /init.?requirements?.*\.md$/i.test(f),
+  );
+  if (reqFile) {
+    return (
+      <button
+        type="button"
+        onClick={() =>
+          postMessage({ type: 'openArtifactFile', epicDir: epic.epicDir, filename: reqFile })
+        }
+        className="inline-flex w-fit items-center gap-1.5 rounded border border-primary/30 bg-primary/10 px-2 py-0.5 font-mono text-[11px] text-primary transition-colors hover:border-primary/50 hover:bg-primary/20"
+        title={`Open ${reqFile}`}
+      >
+        <FileText className="h-3 w-3" />
+        {reqFile}
+      </button>
+    );
+  }
+  const desc = (epic.description ?? '').trim();
+  if (!desc) { return null; }
+  return (
+    <p className="text-xs italic leading-relaxed text-muted-foreground">{desc}</p>
   );
 }
 
