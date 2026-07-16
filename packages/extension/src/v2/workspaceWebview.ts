@@ -233,6 +233,7 @@ import {
 import { pickAndReadTextFile } from './pickAndReadTextFile';
 import { scaffoldRequirementAnalysis } from './requirementWizard';
 import { missingBundleHtml } from './webviewBundleGuard';
+import { writeEpicsDirToYaml, DEFAULT_EPICS_DIR } from './epicsDirSync';
 
 // ── Shared helper: open/reuse the Claude terminal and send a slash command ───
 
@@ -486,6 +487,8 @@ interface WorkspaceState {
   testAgentTargets?: { name: string; filePath: string; adapter?: string; url?: string }[];
   /** Whether the epic-memory auto-load hook is enabled in ~/.claude/settings.json. */
   epicMemoryHookEnabled: boolean;
+  /** Current epics directory (relative path from project root). */
+  epicsDir: string;
 }
 
 const SKILL_TEMPLATE_REFS: SkillTemplateRef[] = SKILL_TEMPLATES.map((t) => ({
@@ -546,6 +549,7 @@ function buildState(initialView: WorkspaceView): WorkspaceState {
       testAgentConfigExists: false,
       testAgentTargets: [],
       epicMemoryHookEnabled: isEpicMemoryHookEnabled(os.homedir()),
+      epicsDir: DEFAULT_EPICS_DIR,
     };
   }
 
@@ -626,6 +630,7 @@ function buildState(initialView: WorkspaceView): WorkspaceState {
       initialView,
       ...(() => { const ta = readTestAgentTargets(root); return { testAgentConfigExists: ta.exists, testAgentTargets: ta.targets }; })(),
       epicMemoryHookEnabled: isEpicMemoryHookEnabled(os.homedir()),
+      epicsDir: DEFAULT_EPICS_DIR,
     };
   }
 
@@ -687,6 +692,7 @@ function buildState(initialView: WorkspaceView): WorkspaceState {
     initialView,
     ...(() => { const ta = readTestAgentTargets(root); return { testAgentConfigExists: ta.exists, testAgentTargets: ta.targets }; })(),
     epicMemoryHookEnabled: isEpicMemoryHookEnabled(os.homedir()),
+    epicsDir: epicRoot,
   };
 }
 
@@ -1726,6 +1732,39 @@ export class WorkspaceWebview {
         const epicDir = String(msg.epicDir ?? '');
         if (!epicDir) { return; }
         await this.openEpicMemory(epicDir);
+        return;
+      }
+      case 'changeEpicsDir': {
+        const newDir = String(msg.dir ?? '').trim();
+        if (!newDir) { return; }
+        const wsRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+        if (!wsRoot) { return; }
+        writeEpicsDirToYaml(wsRoot, newDir);
+        // Also update the VS Code setting so the bidirectional sync stays consistent.
+        const EPICS_DIR_KEY = 'aidlc.workspace.epicsDirectory';
+        void vscode.workspace.getConfiguration()
+          .update(EPICS_DIR_KEY, newDir, vscode.ConfigurationTarget.Workspace);
+        this.refresh();
+        return;
+      }
+      case 'browseEpicsDir': {
+        const wsRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+        if (!wsRoot) { return; }
+        const picked = await vscode.window.showOpenDialog({
+          canSelectFolders: true, canSelectFiles: false, canSelectMany: false,
+          defaultUri: vscode.Uri.file(wsRoot),
+          openLabel: 'Select epics directory',
+        });
+        if (!picked || picked.length === 0) { return; }
+        const abs = picked[0].fsPath;
+        // Use relative path when inside the workspace, absolute otherwise.
+        const rel = path.relative(wsRoot, abs);
+        const dir = rel.startsWith('..') || path.isAbsolute(rel) ? abs : rel;
+        writeEpicsDirToYaml(wsRoot, dir);
+        const EPICS_DIR_KEY = 'aidlc.workspace.epicsDirectory';
+        void vscode.workspace.getConfiguration()
+          .update(EPICS_DIR_KEY, dir, vscode.ConfigurationTarget.Workspace);
+        this.refresh();
         return;
       }
       case 'toggleEpicMemoryHook': {

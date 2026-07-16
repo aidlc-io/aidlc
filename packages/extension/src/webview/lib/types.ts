@@ -608,6 +608,8 @@ export interface WorkspaceState {
   testAgentTargets?: TestAgentTarget[];
   /** Whether the epic-memory auto-load hook is enabled in ~/.claude/settings.json. */
   epicMemoryHookEnabled?: boolean;
+  /** Current epics directory (relative path from project root). */
+  epicsDir: string;
 }
 
 export interface TestAgentTarget {
