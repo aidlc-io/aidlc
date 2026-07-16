@@ -1638,6 +1638,50 @@ export class WorkspaceWebview {
         }
         return;
       }
+      case 'loadEpicsFromFolder': {
+        const picked = await vscode.window.showOpenDialog({
+          canSelectFolders: true, canSelectFiles: false, canSelectMany: false,
+          openLabel: 'Select epics folder',
+          title: 'Select a folder containing epics (e.g. docs/epics from another project)',
+        });
+        if (!picked || picked.length === 0) { return; }
+        const epicsFolder = picked[0].fsPath;
+        // Walk up to find the project root (has .aidlc/workspace.yaml).
+        let projectRoot: string | null = null;
+        let dir = path.dirname(epicsFolder);
+        for (let i = 0; i < 10; i++) {
+          if (fs.existsSync(path.join(dir, WORKSPACE_DIR, WORKSPACE_FILENAME))) {
+            projectRoot = dir;
+            break;
+          }
+          const parent = path.dirname(dir);
+          if (parent === dir) { break; }
+          dir = parent;
+        }
+        if (projectRoot) {
+          // Found a project — open it and set the epics dir relative to it.
+          const rel = path.relative(projectRoot, epicsFolder);
+          // Pre-write the epics dir so it's ready when the project opens.
+          writeEpicsDirToYaml(projectRoot, rel);
+          await vscode.commands.executeCommand(
+            'vscode.openFolder', vscode.Uri.file(projectRoot), { forceNewWindow: false },
+          );
+        } else {
+          // No project found — open the epics folder's parent as the workspace
+          // and set the epics dir to point at the selected folder.
+          const parent = path.dirname(epicsFolder);
+          const rel = path.basename(epicsFolder);
+          await vscode.commands.executeCommand(
+            'vscode.openFolder', vscode.Uri.file(parent), { forceNewWindow: false },
+          );
+          // Note: the workspace.yaml may not exist yet; the setting will be
+          // picked up on next activation via the VS Code setting.
+          const EPICS_DIR_KEY = 'aidlc.workspace.epicsDirectory';
+          void vscode.workspace.getConfiguration()
+            .update(EPICS_DIR_KEY, rel, vscode.ConfigurationTarget.Workspace);
+        }
+        return;
+      }
       case 'loadDemoProject':
         await vscode.commands.executeCommand('aidlc.loadDemoProject');
         return;
