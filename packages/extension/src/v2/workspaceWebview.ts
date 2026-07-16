@@ -1633,7 +1633,7 @@ export class WorkspaceWebview {
         });
         if (picked && picked.length > 0) {
           await vscode.commands.executeCommand(
-            'vscode.openFolder', picked[0], { forceNewWindow: false },
+            'vscode.openFolder', picked[0], { forceReuseWindow: true },
           );
         }
         return;
@@ -1646,7 +1646,7 @@ export class WorkspaceWebview {
         });
         if (!picked || picked.length === 0) { return; }
         await vscode.commands.executeCommand(
-          'vscode.openFolder', picked[0], { forceNewWindow: false },
+          'vscode.openFolder', picked[0], { forceReuseWindow: true },
         );
         return;
       }
@@ -1676,7 +1676,7 @@ export class WorkspaceWebview {
           // Pre-write the epics dir so it's ready when the project opens.
           writeEpicsDirToYaml(projectRoot, rel);
           await vscode.commands.executeCommand(
-            'vscode.openFolder', vscode.Uri.file(projectRoot), { forceNewWindow: false },
+            'vscode.openFolder', vscode.Uri.file(projectRoot), { forceReuseWindow: true },
           );
         } else {
           // No project found — open the epics folder's parent as the workspace
@@ -1684,7 +1684,7 @@ export class WorkspaceWebview {
           const parent = path.dirname(epicsFolder);
           const rel = path.basename(epicsFolder);
           await vscode.commands.executeCommand(
-            'vscode.openFolder', vscode.Uri.file(parent), { forceNewWindow: false },
+            'vscode.openFolder', vscode.Uri.file(parent), { forceReuseWindow: true },
           );
           // Note: the workspace.yaml may not exist yet; the setting will be
           // picked up on next activation via the VS Code setting.
