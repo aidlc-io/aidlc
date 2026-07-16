@@ -55,6 +55,7 @@ import {
   runReportCommand,
   openRunStateCommand,
   deleteRunCommand,
+  deleteEpicCommand,
 } from './runCommands';
 
 /**
@@ -474,6 +475,16 @@ export function registerV2WorkspaceCommands(
         skipConfirm === true,
       ),
   );
+  const deleteEpicCmd = vscode.commands.registerCommand(
+    'aidlc.deleteEpic',
+    (epicId?: unknown, runId?: unknown, deleteFolder?: unknown, skipConfirm?: unknown) =>
+      deleteEpicCommand(
+        typeof epicId === 'string' ? epicId : '',
+        typeof runId === 'string' ? runId : undefined,
+        deleteFolder === true,
+        skipConfirm === true,
+      ),
+  );
 
   return {
     disposables: [
@@ -510,6 +521,7 @@ export function registerV2WorkspaceCommands(
       runReportCmd,
       openRunStateCmd,
       deleteRunCmd,
+      deleteEpicCmd,
     ],
     presetStore,
   };

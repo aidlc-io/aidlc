@@ -1889,6 +1889,21 @@ export class WorkspaceWebview {
         );
         return;
       }
+      case 'deleteEpic': {
+        const epicId = String(msg.epicId ?? '');
+        if (!epicId) { return; }
+        const runId = typeof msg.runId === 'string' && msg.runId ? msg.runId : undefined;
+        // confirmed: DeleteEpicModal already gated this (checkbox + type-to-
+        // confirm), so skip the host warning dialog.
+        await vscode.commands.executeCommand(
+          'aidlc.deleteEpic',
+          epicId,
+          runId,
+          msg.deleteFolder === true,
+          msg.confirmed === true,
+        );
+        return;
+      }
       case 'rejectStepInline': {
         const runId = String(msg.runId ?? '');
         const reason = String(msg.reason ?? '');

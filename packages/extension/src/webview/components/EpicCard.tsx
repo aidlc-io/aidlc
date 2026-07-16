@@ -24,6 +24,7 @@ import {
   AlertTriangle,
   ShieldCheck,
   ClipboardList,
+  Trash2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type {
@@ -39,6 +40,7 @@ import { RejectModal } from './RejectModal';
 import { RerunModal } from './RerunModal';
 import { RunWithFeedbackModal } from './RunWithFeedbackModal';
 import { RequestUpdateModal } from './RequestUpdateModal';
+import { DeleteEpicModal } from './DeleteEpicModal';
 import { postMessage } from '@/lib/bridge';
 
 function fmtCost(c: number): string {
@@ -1239,6 +1241,7 @@ function GateButton({
 }
 
 function EpicActions({ epic, hasInputs }: { epic: EpicSummary; hasInputs: boolean }) {
+  const [deleteOpen, setDeleteOpen] = useState(false);
   return (
     <div className="flex flex-wrap items-center gap-2 border-t border-border pt-4">
       {!epic.runId && epic.pipeline && (
@@ -1294,6 +1297,32 @@ function EpicActions({ epic, hasInputs }: { epic: EpicSummary; hasInputs: boolea
         <Brain className="h-3 w-3" />
         Memory
       </button>
+      <button
+        type="button"
+        onClick={() => setDeleteOpen(true)}
+        className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-1.5 text-[11px] text-destructive hover:border-destructive/60 hover:bg-destructive/15"
+        title="Delete this epic — removes the run state, optionally the docs/epics folder too"
+      >
+        <Trash2 className="h-3 w-3" />
+        Delete
+      </button>
+      {deleteOpen && (
+        <DeleteEpicModal
+          epicId={epic.id}
+          epicDir={epic.epicDir}
+          hasRun={!!epic.runId}
+          onConfirm={(deleteFolder) =>
+            postMessage({
+              type: 'deleteEpic',
+              epicId: epic.id,
+              runId: epic.runId ?? undefined,
+              deleteFolder,
+              confirmed: true,
+            })
+          }
+          onClose={() => setDeleteOpen(false)}
+        />
+      )}
     </div>
   );
 }

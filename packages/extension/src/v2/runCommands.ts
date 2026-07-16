@@ -21,6 +21,9 @@
  * resulting state.
  */
 
+import * as fs from 'fs';
+import * as path from 'path';
+
 import * as vscode from 'vscode';
 
 import {
@@ -43,7 +46,7 @@ import {
 import type { PipelineConfig, RunState } from '@aidlc/core';
 
 import { readYaml } from './yamlIO';
-import { mirrorRunStateToEpic } from './epicsList';
+import { mirrorRunStateToEpic, epicsRoot } from './epicsList';
 
 /**
  * Save the runtime RunState file AND mirror its display fields + per-step
@@ -646,6 +649,67 @@ export async function deleteRunCommand(
   }
   RunStateStore.delete(root, runId);
   void vscode.window.showInformationMessage(`Deleted run "${runId}".`);
+}
+
+// ── deleteEpic ───────────────────────────────────────────────────────────
+
+/**
+ * Delete an epic. Always removes the live run-state JSON
+ * (`.aidlc/runs/<runId>.json`) when the epic has one. When `deleteFolder` is
+ * true, ALSO removes the epic's on-disk folder `<state.root>/<epicId>`
+ * (state.json, inputs.json, and every reviewed artifact) — irreversible, so
+ * the webview gates that flag behind a type-to-confirm dialog.
+ *
+ * `epicId` is the folder name (equals the runId for pipeline-scaffolded
+ * epics). We recompute the folder from `state.root` on the host rather than
+ * trusting a webview-supplied path, and refuse anything that isn't a direct
+ * child of the epics root.
+ */
+export async function deleteEpicCommand(
+  epicId: string,
+  runId?: string,
+  deleteFolder = false,
+  /** Webview already showed its own confirm dialog — skip the VS Code one. */
+  skipConfirm = false,
+): Promise<void> {
+  const root = requireRoot('Delete Epic');
+  if (!root) { return; }
+  if (!epicId) { return; }
+
+  const epicsBase = path.resolve(root, epicsRoot(root, readYaml(root)));
+  const epicDir = path.resolve(epicsBase, epicId);
+  if (path.dirname(epicDir) !== epicsBase) {
+    void vscode.window.showErrorMessage(
+      `AIDLC: refusing to delete "${epicId}" — not a valid epic folder under ${path.relative(root, epicsBase) || epicsBase}.`,
+    );
+    return;
+  }
+  const rel = path.relative(root, epicDir) || epicDir;
+
+  if (!skipConfirm) {
+    const detail = deleteFolder
+      ? `Delete epic "${epicId}"? This removes the run state AND permanently deletes the folder ${rel} (state, inputs, and all artifacts). This cannot be undone.`
+      : `Delete epic "${epicId}"? The run state is removed; the folder ${rel} and its artifacts are kept.`;
+    const choice = await vscode.window.showWarningMessage(detail, { modal: true }, 'Delete');
+    if (choice !== 'Delete') { return; }
+  }
+
+  if (runId) { RunStateStore.delete(root, runId); }
+  if (deleteFolder) {
+    try {
+      fs.rmSync(epicDir, { recursive: true, force: true });
+    } catch (err) {
+      void vscode.window.showErrorMessage(
+        `AIDLC: removed run state but failed to delete folder ${rel} — ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return;
+    }
+  }
+  void vscode.window.showInformationMessage(
+    deleteFolder
+      ? `Deleted epic "${epicId}" and its folder.`
+      : `Deleted epic "${epicId}" (folder kept).`,
+  );
 }
 
 // ── verifyRun ────────────────────────────────────────────────────────────
