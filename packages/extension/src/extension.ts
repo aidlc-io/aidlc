@@ -25,6 +25,7 @@ import { registerTokenMonitor } from './v2/tokenMonitor';
 import { registerAidlcMonitor } from './v2/aidlcMonitor';
 import { registerAstGraph } from './v2/astGraph';
 import { installAnnotationTools } from './v2/annotationToolsInstaller';
+import { readEpicsDirFromYaml, writeEpicsDirToYaml, DEFAULT_EPICS_DIR } from './v2/epicsDirSync';
 import { WORKSPACE_DIR, WORKSPACE_FILENAME, activateBackendFromWorkspace } from '@aidlc/core';
 
 /**
@@ -68,6 +69,34 @@ export function activate(context: vscode.ExtensionContext): void {
   // and broadcasts user toggles to every open webview.
   themeManager.init(context);
 
+  // Epics-directory setting: sync VS Code setting ↔ workspace.yaml state.root.
+  // On activation, read YAML → update setting. On setting change, write YAML.
+  const EPICS_DIR_KEY = 'aidlc.workspace.epicsDirectory';
+  let _epicsDirSyncing = false;
+  const syncYamlToSetting = () => {
+    const wsRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (!wsRoot) { return; }
+    const dir = readEpicsDirFromYaml(wsRoot);
+    const current = vscode.workspace.getConfiguration().get<string>(EPICS_DIR_KEY, DEFAULT_EPICS_DIR);
+    if (current !== dir) {
+      _epicsDirSyncing = true;
+      void vscode.workspace.getConfiguration()
+        .update(EPICS_DIR_KEY, dir, vscode.ConfigurationTarget.Workspace)
+        .then(() => { _epicsDirSyncing = false; }, () => { _epicsDirSyncing = false; });
+    }
+  };
+  syncYamlToSetting();
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      if (_epicsDirSyncing) { return; }
+      if (!e.affectsConfiguration(EPICS_DIR_KEY)) { return; }
+      const wsRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      if (!wsRoot) { return; }
+      const newDir = vscode.workspace.getConfiguration().get<string>(EPICS_DIR_KEY, DEFAULT_EPICS_DIR);
+      writeEpicsDirToYaml(wsRoot, newDir);
+    }),
+  );
+
   // Commands (Show Workspace Config, Init, Add Skill/Agent/Pipeline, Open
   // Builder, Open Claude CLI). All under `aidlc.*` namespace.
   const { disposables, presetStore } = registerV2WorkspaceCommands(context, output);
@@ -90,7 +119,7 @@ export function activate(context: vscode.ExtensionContext): void {
   if (watcher) {
     // Re-select the backend too: the user may have flipped `persistence.backend`
     // or switched projects.
-    const refresh = () => { selectRunStateBackend(); sidebar.refresh(); };
+    const refresh = () => { selectRunStateBackend(); syncYamlToSetting(); sidebar.refresh(); };
     watcher.onDidChange(refresh, null, context.subscriptions);
     watcher.onDidCreate(refresh, null, context.subscriptions);
     watcher.onDidDelete(refresh, null, context.subscriptions);

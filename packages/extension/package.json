@@ -269,6 +269,12 @@
           "default": 90,
           "minimum": 5,
           "description": "Timeout (seconds) for `claude mcp list` in the MCP Servers panel. Claude health-checks every configured server, so raise this if you have many remote/unauthenticated servers and see a timeout."
+        },
+        "aidlc.workspace.epicsDirectory": {
+          "type": "string",
+          "default": "docs/epics",
+          "description": "Relative path (from the project root) where epics are stored. Changing this updates `state.root` in workspace.yaml. The epic list and Start Epic wizard use this directory immediately.",
+          "scope": "resource"
         }
       }
     },
