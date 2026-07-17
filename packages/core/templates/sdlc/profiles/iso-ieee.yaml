@@ -1,0 +1,67 @@
+# SDLC compliance profile — `iso-ieee` (GH-69)
+#
+# Full section coverage per ISO/IEC/IEEE 29148 (requirements) / 1016+42010
+# (design) / 29119 (testing), plus a mandatory RTM. For audit / compliance
+# teams that must certify artifacts against a named standard.
+#
+# NOTE: mirrors the embedded manifest in
+# packages/core/src/profiles/StandardProfile.ts — keep the two in sync.
+id: iso-ieee
+name: ISO/IEC/IEEE
+description: >-
+  Full section coverage per 29148 / 1016 / 29119 plus a mandatory RTM. For
+  audit / compliance teams.
+anchors:
+  plan: ISO/IEC/IEEE 29148
+  design: ISO/IEC/IEEE 1016 / 42010
+  test-plan: ISO/IEC/IEEE 29119
+traceability:
+  enforce: true
+  rules:
+    - ac-testable
+    - ac-has-test
+    - tc-has-result
+    - rtm-no-dangling
+    - mandatory-sections # each present artifact carries the profile's required sections
+artifacts:
+  PRD:
+    mandatory_sections:
+      - Problem & Goal
+      - User Flow
+      - Acceptance Criteria
+      - Non-Functional Requirements
+      - Dependencies
+    id_scheme:
+      req: REQ
+      ac: AC
+  TECH-DESIGN:
+    mandatory_sections:
+      - Architecture
+      - API
+      - Data Model
+    id_scheme:
+      des: DES
+  TEST-CASES:
+    mandatory_sections:
+      - Test Cases
+    id_scheme:
+      tc: TC
+phases:
+  plan:
+    persona: po
+    skills: [prd]
+  design:
+    persona: tech-lead
+    skills: [tech-design]
+  test-plan:
+    persona: qa
+    skills: [test-plan]
+  implement:
+    persona: developer
+    skills: [implement, unit-test]
+  generate-test-cases:
+    persona: qa
+    skills: [generate-test-cases]
+  execute-test:
+    persona: qa
+    skills: [execute-test, test-report]

@@ -219,6 +219,12 @@
         "title": "Re-register AST Graph MCP Server",
         "icon": "$(plug)",
         "category": "AIDLC"
+      },
+      {
+        "command": "aidlc.selectStandard",
+        "title": "Select SDLC Standard",
+        "icon": "$(law)",
+        "category": "AIDLC"
       }
     ],
     "configuration": {
@@ -309,6 +315,11 @@
           "command": "aidlc.openMonitor",
           "when": "view == aidlcSidebar",
           "group": "navigation@4"
+        },
+        {
+          "command": "aidlc.selectStandard",
+          "when": "view == aidlcSidebar",
+          "group": "navigation@6"
         }
       ]
     },

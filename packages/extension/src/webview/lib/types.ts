@@ -649,9 +649,30 @@ export interface RequirementRunSummary {
   hasRequirements?: boolean;
 }
 
+/** SDLC compliance-standard picker webview (GH-69 P3). */
+export interface StandardProfileVM {
+  id: string;
+  name: string;
+  description: string;
+  /** Standard anchors as [phase, standardName] pairs, for display. */
+  anchors: Array<[string, string]>;
+  /** Whether this profile enforces any traceability rules. */
+  enforce: boolean;
+  /** The rule ids this profile runs (empty when enforce is false). */
+  rules: string[];
+}
+
+export interface StandardPickerState {
+  profiles: StandardProfileVM[];
+  /** Currently-active profile id (from workspace.yaml `standard:`). */
+  current: string;
+  /** Set briefly after a successful apply so the UI can confirm. */
+  justApplied?: string;
+}
+
 declare global {
   interface Window {
-    __AIDLC_INITIAL_STATE__?: SidebarState | WorkspaceState;
+    __AIDLC_INITIAL_STATE__?: SidebarState | WorkspaceState | StandardPickerState;
     __AIDLC_INITIAL_THEME__?: ThemeMode;
     __AIDLC_MONITOR_TAB__?: MonitorTab;
     BRAND_ICON_URI?: string;

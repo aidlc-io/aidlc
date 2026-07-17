@@ -1,0 +1,29 @@
+# SDLC compliance profile — `agile-lite` (GH-69)
+#
+# Lightweight rigor: user stories + testable acceptance criteria + every AC
+# covered by at least one test case. No full section coverage, no RTM.
+#
+# NOTE: mirrors the embedded manifest in
+# packages/core/src/profiles/StandardProfile.ts — keep the two in sync.
+id: agile-lite
+name: Agile-lite
+description: >-
+  Lightweight: user stories + testable acceptance criteria + every AC covered
+  by ≥1 test case. No full section coverage.
+anchors:
+  plan: User stories / ACs
+traceability:
+  enforce: true
+  rules:
+    - ac-testable   # ACs must be testable, not vague prose
+    - ac-has-test   # every AC covered by ≥1 test case (once test cases exist)
+phases:
+  plan:
+    persona: po
+    skills: [prd]
+  implement:
+    persona: developer
+    skills: [implement, unit-test]
+  execute-test:
+    persona: qa
+    skills: [execute-test, test-report]

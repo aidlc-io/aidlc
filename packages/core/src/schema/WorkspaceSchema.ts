@@ -525,6 +525,19 @@ export const WorkspaceSchema = z.object({
   /** Human-readable workspace name. Shown in the sidebar header. */
   name: z.string().min(1),
 
+  /**
+   * The active SDLC compliance profile (GH-69). Selects, in one value, the
+   * enforced artifact sections + validator rules + per-phase persona/skill.
+   * Built-ins: `none` | `agile-lite` | `hybrid` | `iso-ieee`; a custom value
+   * must have a manifest at `.aidlc/profiles/<value>.yaml`. Unset ⇒ `none`
+   * (backward-compatible — nothing enforced, no opinion composed).
+   *
+   * Kept a free string (not an enum) so custom profiles validate here; the
+   * value is checked against built-ins + on-disk manifests at resolution time
+   * (see `resolveStandard`), which throws on an unknown id.
+   */
+  standard: z.string().min(1).optional(),
+
   agents: z.array(AgentSchema).default([]),
   skills: z.array(SkillSchema).default([]),
   /** Workspace-wide environment, layered under per-agent env. */
