@@ -73,9 +73,16 @@ describe('Start Epic → recipe materialization (built-in workspace)', () => {
     // getBuiltinRecipeSummaries() is exactly what the modal renders + what the
     // no-workspace classifier falls back to. Each id must map to a workspace
     // recipe that assembles — otherwise the Auto pick would dead-end on submit.
-    const config = builtinWorkspace();
-    const recipeIds = new Set(config.recipes.map((r) => r.id));
+    // Summaries span every built-in workflow (each carries its source pipeline
+    // via `from`), and Start materializes the owning workflow on submit
+    // (startEpicInline), so resolve each summary against ITS workflow's
+    // workspace, not the default one.
+    const byPipelineId = new Map(BUILTIN_WORKFLOWS.map((wf) => [wf.pipelineId, wf]));
     for (const summary of getBuiltinRecipeSummaries()) {
+      const wf = byPipelineId.get(summary.from);
+      expect(wf, `recipe "${summary.id}" points at unknown pipeline "${summary.from}"`).toBeDefined();
+      const config = builtinWorkspace(wf);
+      const recipeIds = new Set(config.recipes.map((r) => r.id));
       expect(recipeIds.has(summary.id)).toBe(true);
     }
   });

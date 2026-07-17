@@ -274,6 +274,106 @@ const SDLC_RECIPES: RecipeDef[] = [
   },
 ];
 
+/**
+ * Spec Kit workflow — the spec-driven-development flow from GitHub Spec Kit
+ * (github/spec-kit) mapped onto AIDLC phases:
+ *
+ *     specify → clarify → plan → tasks → analyze → implement
+ *
+ * "Constitution" (project-level principles) is intentionally NOT a per-epic
+ * phase — it belongs to the workspace SDLC standard / profile, matching Spec
+ * Kit's own `.specify/memory/constitution.md` which is written once per repo.
+ * The `analyze` phase is a consistency cross-check (spec ↔ plan ↔ tasks) and
+ * uses `autoReview` so it can gate mechanically before implement.
+ */
+const SPECKIT_PHASES: PhaseDef[] = [
+  {
+    id: 'specify', name: 'Specify', persona: 'analyst', skillFiles: ['specify'], model: 'claude-opus-4-7',
+    description: 'Turn a feature description into a structured, testable spec.',
+    inputs: 'Feature description, business context, Jira ticket, Figma designs',
+    outputs: 'SPEC.md — user scenarios, functional requirements, testable acceptance criteria',
+    artifact: 'SPEC.md',
+    humanReview: true, autoReview: false,
+    capabilities: ['jira', 'figma', 'core-business', 'web'],
+  },
+  {
+    id: 'clarify', name: 'Clarify', persona: 'analyst', skillFiles: ['clarify'], model: 'claude-opus-4-7',
+    description: 'Surface and resolve underspecified areas of the spec.',
+    inputs: 'SPEC.md, open questions',
+    outputs: 'SPEC.md updated with a Clarifications section (Q/A pairs resolved)',
+    artifact: 'SPEC.md',
+    humanReview: true, autoReview: false,
+    capabilities: ['core-business', 'web'],
+    dependsOn: ['specify'],
+  },
+  {
+    // persona/skill filenames are prefixed `speckit-` where they'd otherwise
+    // collide with the SDLC bundle's globals (developer/qa/tech-lead/implement).
+    // Global install keys files by source filename, so a bare `tech-lead.md`
+    // here would overwrite SDLC's when both workflows are installed.
+    id: 'plan', name: 'Plan', persona: 'speckit-tech-lead', skillFiles: ['plan'], model: 'claude-opus-4-7',
+    description: 'Derive the technical implementation plan from the spec.',
+    inputs: 'SPEC.md, existing code, dependency graph, constitution (workspace standard)',
+    outputs: 'PLAN.md — architecture, data model, contracts, tech choices honoring the constitution',
+    artifact: 'PLAN.md',
+    humanReview: true, autoReview: false,
+    capabilities: ['files', 'github', 'core-business'],
+    dependsOn: ['clarify'],
+  },
+  {
+    id: 'tasks', name: 'Tasks', persona: 'speckit-tech-lead', skillFiles: ['tasks'], model: 'claude-sonnet-4-6',
+    description: 'Break the plan into an ordered, dependency-aware task list.',
+    inputs: 'PLAN.md, SPEC.md acceptance criteria',
+    outputs: 'TASKS.md — numbered tasks with dependencies, each traceable to a requirement',
+    artifact: 'TASKS.md',
+    humanReview: true, autoReview: false,
+    capabilities: ['files'],
+    dependsOn: ['plan'],
+  },
+  {
+    id: 'analyze', name: 'Analyze', persona: 'speckit-qa', skillFiles: ['analyze'], model: 'claude-sonnet-4-6',
+    description: 'Cross-check spec ↔ plan ↔ tasks for consistency and coverage before build.',
+    inputs: 'SPEC.md, PLAN.md, TASKS.md',
+    outputs: 'ANALYSIS.md — coverage matrix, gaps, contradictions, go/no-go',
+    artifact: 'ANALYSIS.md',
+    humanReview: true, autoReview: true, autoReviewRunner: '.aidlc/validators/ci.mjs',
+    capabilities: ['files'],
+    dependsOn: ['tasks'],
+  },
+  {
+    id: 'implement', name: 'Implement', persona: 'speckit-developer', skillFiles: ['speckit-implement'], model: 'claude-sonnet-4-6',
+    description: 'Execute the task list on a feature branch.',
+    inputs: 'TASKS.md, PLAN.md, SPEC.md, project coding rules',
+    outputs: 'Code on feature branch, PR opened, tasks checked off',
+    artifact: 'feature/<EPIC>-<slug>',
+    humanReview: true, autoReview: true, autoReviewRunner: '.aidlc/validators/ci.mjs',
+    capabilities: ['files', 'github'],
+    dependsOn: ['analyze'],
+  },
+];
+
+/**
+ * Recipes for the Spec Kit workflow, keyed by task type. Each lists a subset
+ * of the Spec Kit phase ids in execution order.
+ */
+const SPECKIT_RECIPES: RecipeDef[] = [
+  {
+    id: 'quick-spec',
+    description: 'Spec then build — skip formal clarify/analyze for small, well-understood work.',
+    steps: ['specify', 'plan', 'tasks', 'implement'],
+  },
+  {
+    id: 'full-spec-driven',
+    description: 'Full Spec Kit flow: specify → clarify → plan → tasks → analyze → implement.',
+    steps: ['specify', 'clarify', 'plan', 'tasks', 'analyze', 'implement'],
+  },
+  {
+    id: 'spec-only',
+    description: 'Produce a clarified spec and plan without implementing.',
+    steps: ['specify', 'clarify', 'plan'],
+  },
+];
+
 export const BUILTIN_WORKFLOWS: BuiltinWorkflow[] = [
   {
     id: 'sdlc-parallel-pipeline',
@@ -284,6 +384,16 @@ export const BUILTIN_WORKFLOWS: BuiltinWorkflow[] = [
       'Parallel SDLC pipeline ending at execute-test: Plan → (Design → Implement+UnitTest) ∥ (Test Plan → Generate Test Cases) → Execute Test+Report. PO / Tech Lead / Developer / QA. QA runs concurrently with engineering.',
     phases: PHASES,
     recipes: SDLC_RECIPES,
+  },
+  {
+    id: 'speckit-pipeline',
+    pipelineId: 'speckit-full',
+    name: 'Spec Kit',
+    templatesDir: 'speckit',
+    description:
+      'Spec-driven development (GitHub Spec Kit): Specify → Clarify → Plan → Tasks → Analyze → Implement. Constitution lives in the workspace SDLC standard. Analyst / Tech Lead / QA / Developer.',
+    phases: SPECKIT_PHASES,
+    recipes: SPECKIT_RECIPES,
   },
 ];
 
