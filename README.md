@@ -9,9 +9,12 @@
 
 AI-driven SDLC + agent workflow runner — drives Claude through any pipeline you
 declare in `.aidlc/workspace.yaml`. Use it through the VS Code Builder UI or
-straight from the terminal. The built-in **AIDLC Monitor** shows token usage,
-live agent observability, and a native session-insights dashboard built from
-the Claude Code transcript.
+straight from the terminal. Pick a **selectable SDLC compliance standard**
+(`none` · `agile-lite` · `hybrid` · `iso-ieee`) that governs enforced artifact
+sections, a requirements-**traceability** validator, and per-phase persona/skill
+in one selector. The built-in **AIDLC Monitor** shows token usage, live agent
+observability, and a native session-insights dashboard built from the Claude
+Code transcript.
 
 ![aidlc demo](packages/extension/media/demo.gif)
 

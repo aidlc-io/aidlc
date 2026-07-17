@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.5.0
+
+### Selectable SDLC compliance standard (GH-69)
+
+- feat: a single `standard:` selector in `workspace.yaml` — `none` · `agile-lite` · `hybrid` · `iso-ieee` (or a custom `.aidlc/profiles/<name>.yaml`) — governs, in one value, the enforced artifact sections, the requirements-traceability validator rules, and the per-phase persona/skill. Default is `none` (nothing enforced) so existing projects are unaffected.
+- feat(extension): pick the standard from a card-based **webview picker** (sidebar ⚖️ button or the **“AIDLC: Select SDLC Standard”** command), from a dropdown at **Start Epic** (asked once, skippable → `none`), or by hand-editing `workspace.yaml`.
+- feat(core): phase-progressive **traceability validator** (`templates/sdlc/validators/traceability.mjs`) enforcing FR → AC → test case → result and RTM integrity — a rule only fires once the artifact it checks exists, so early phases are never blocked. Wires into the existing `auto_review` gate.
+- feat(core): `standard` is validated when the workspace loads — an unknown profile is rejected with the list of valid values instead of silently running undefined.
+
+### Two-layer command model (GH-71)
+
+- feat: generate a fixed set of shortcut phase commands (`/plan`, `/design`, `/implement`, `/unit-test`, `/benchmark`, `/test-plan`, `/generate-test-cases`, `/execute-test`) plus a single **`/aidlc <epic> [phase]`** dispatcher. Composition resolves at runtime from the epic’s bound pipeline (two pipelines reusing a phase name no longer collide), and `/aidlc <epic>` with no phase runs the next eligible step. Emitted alongside the existing per-pipeline commands (backward-compatible).
+
 ## 2.4.0
 
 ### Bundled annotron 0.3.0 → 0.6.0
