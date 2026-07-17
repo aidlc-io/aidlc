@@ -1,0 +1,43 @@
+# SDLC compliance profile — `hybrid` (GH-69, recommended default for new projects)
+#
+# Anchors artifacts to standard names and enforces the full traceability chain
+# (AC → test case → result, RTM references resolve), but keeps presentation
+# lean — no mandatory ISO section coverage.
+#
+# NOTE: mirrors the embedded manifest in
+# packages/core/src/profiles/StandardProfile.ts — keep the two in sync.
+id: hybrid
+name: Hybrid (recommended)
+description: >-
+  Anchors artifacts to standard names and enforces the full traceability chain,
+  but keeps presentation lean.
+anchors:
+  plan: ISO/IEC/IEEE 29148
+  design: ISO/IEC/IEEE 1016 / 42010
+  test-plan: ISO/IEC/IEEE 29119
+traceability:
+  enforce: true
+  rules:
+    - ac-testable
+    - ac-has-test
+    - tc-has-result   # every test case has a recorded result (once report exists)
+    - rtm-no-dangling # RTM references resolve (once traceability.md exists)
+phases:
+  plan:
+    persona: po
+    skills: [prd]
+  design:
+    persona: tech-lead
+    skills: [tech-design]
+  test-plan:
+    persona: qa
+    skills: [test-plan]
+  implement:
+    persona: developer
+    skills: [implement, unit-test]
+  generate-test-cases:
+    persona: qa
+    skills: [generate-test-cases]
+  execute-test:
+    persona: qa
+    skills: [execute-test, test-report]

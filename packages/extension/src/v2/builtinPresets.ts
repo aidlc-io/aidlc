@@ -33,5 +33,10 @@ export {
   writeBuiltinAutoReviewValidators,
   BUILTIN_PRESET_IDS,
   isBuiltinPreset,
+  // GH-71 two-layer command model.
+  writeTwoLayerCommands,
+  unprovisionedPhases,
+  provisionShortcutDocs,
+  CANONICAL_PHASE_IDS,
 } from '@aidlc/core';
 export type { BuiltinWorkflow } from '@aidlc/core';

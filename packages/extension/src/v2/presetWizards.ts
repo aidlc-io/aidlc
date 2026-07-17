@@ -25,6 +25,7 @@ import {
   builtinClaudeCommand,
   pipelineCommandId,
   writeBuiltinAutoReviewValidators,
+  writeTwoLayerCommands,
   type BuiltinWorkflow,
 } from './builtinPresets';
 import {
@@ -401,6 +402,13 @@ function writeBuiltinClaudeCommands(
     const skillBody = preset.skillContents[phase.id] ?? `# ${phase.name}\n\n${phase.description}\n`;
     fs.writeFileSync(commandFile, builtinClaudeCommand(phase, skillBody, epicRoot), 'utf8');
   }
+
+  // GH-71: also emit the pipeline-agnostic two-layer command set — the fixed
+  // shortcut phases (`/plan`, `/design`, …) + the `/aidlc <epic> [phase]`
+  // backbone dispatcher. These resolve composition at runtime from the epic's
+  // pipeline binding, so they're written once (not per pipeline) and left
+  // alongside the namespaced files above for back-compat. Idempotent.
+  writeTwoLayerCommands(root, { epicRoot, overwrite });
 }
 
 interface MergeReport {

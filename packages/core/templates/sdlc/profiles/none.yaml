@@ -1,0 +1,21 @@
+# SDLC compliance profile — `none` (GH-69)
+#
+# Backward-compatible default. Nothing is enforced and no AIDLC persona/skill
+# opinion is composed. The structural/context layer (epic id + input paths +
+# artifact output path + gate contract) is STILL injected regardless of
+# profile, so artifacts land in docs/epics/<epic>/artifacts/ and the gate works.
+#
+# A workspace with no `standard:` key behaves exactly like this profile.
+#
+# NOTE: the built-in profiles are also embedded in
+# packages/core/src/profiles/StandardProfile.ts — keep the two in sync.
+id: none
+name: None (backward-compatible)
+description: >-
+  No opinion enforced and no AIDLC persona/skill composed. The
+  structural/context layer is still injected so artifacts land correctly.
+  Nothing is validated.
+traceability:
+  enforce: false
+  rules: []
+phases: {}

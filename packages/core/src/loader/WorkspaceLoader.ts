@@ -25,6 +25,7 @@ import {
 import { EnvResolver } from './EnvResolver';
 import { SkillLoader } from './SkillLoader';
 import { RunnerRegistry } from '../runner/RunnerRegistry';
+import { resolveStandard } from '../profiles/StandardProfile';
 
 export const WORKSPACE_FILENAME = 'workspace.yaml';
 export const WORKSPACE_DIR = '.aidlc';
@@ -112,6 +113,12 @@ export class WorkspaceLoader {
     }
 
     const config = validateWorkspace(parsed, configPath);
+
+    // Fail fast on an unknown `standard:` value (GH-69-AC03). Built-in ids and
+    // an unset key resolve without touching disk; only a custom id is checked
+    // against `.aidlc/profiles/<id>.yaml`, throwing UnknownStandardError if
+    // absent — never silently running with an undefined profile.
+    resolveStandard(config, { root: workspaceRoot });
 
     return {
       config,

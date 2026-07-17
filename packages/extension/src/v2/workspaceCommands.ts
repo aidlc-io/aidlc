@@ -38,6 +38,7 @@ import {
 import { loadAllBuiltinPresets, BUILTIN_WORKFLOWS } from './builtinPresets';
 import { installWorkflowGlobalsCommand } from './installWorkflowGlobalsCommand';
 import { uninstallWorkflowGlobalsCommand } from './uninstallWorkflowGlobalsCommand';
+import { StandardPickerWebview } from './standardPickerWebview';
 import { startEpicCommand } from './epicWizard';
 import { analyzeRequirementsCommand } from './requirementWizard';
 import { registerAskCommand } from './askCommand';
@@ -257,6 +258,12 @@ export function registerV2WorkspaceCommands(
   const analyzeRequirementsCmd = vscode.commands.registerCommand(
     'aidlc.analyzeRequirements',
     () => analyzeRequirementsCommand(context.extensionPath),
+  );
+
+  // GH-69 P3: pick the SDLC compliance standard for this workspace (webview).
+  const selectStandardCmd = vscode.commands.registerCommand(
+    'aidlc.selectStandard',
+    () => StandardPickerWebview.show(context.extensionUri),
   );
 
   const openEpicsListCmd = vscode.commands.registerCommand(
@@ -508,6 +515,7 @@ export function registerV2WorkspaceCommands(
       migrateEpicsCmd,
       startEpicCmd,
       analyzeRequirementsCmd,
+      selectStandardCmd,
       openEpicsListCmd,
       insertDemoEpicCmd,
       loadDemoProjectCmd,

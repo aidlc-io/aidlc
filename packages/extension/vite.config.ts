@@ -26,6 +26,7 @@ export default defineConfig({
         workspace: resolve(__dirname, 'src/webview/workspace/main.tsx'),
         tokenReport: resolve(__dirname, 'src/webview/report/main.tsx'),
         monitor: resolve(__dirname, 'src/webview/monitor/main.tsx'),
+        standardPicker: resolve(__dirname, 'src/webview/standard/main.tsx'),
       },
       output: {
         format: 'es',

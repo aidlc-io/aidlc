@@ -189,6 +189,29 @@ export {
   DEFAULT_GLOBAL_WORKFLOW_IDS,
 } from './presets/globalDefaults';
 export { renderTemplate } from './presets/templateRenderer';
+
+// ── Two-layer command model (GH-71) ────────────────────────────────
+export {
+  CANONICAL_PHASES,
+  CANONICAL_PHASE_IDS,
+  BACKBONE_COMMAND_ID,
+  isCanonicalPhase,
+  getCanonicalPhase,
+  shortcutCommandId,
+  resolveComposition,
+  nextEligiblePhase,
+  unprovisionedPhases,
+  backboneCommandDoc,
+  shortcutCommandDoc,
+  writeTwoLayerCommands,
+  provisionShortcutDocs,
+} from './presets/commandModel';
+export type {
+  CanonicalPhase,
+  PhaseComposition,
+  EligiblePhase,
+  WriteCommandsResult,
+} from './presets/commandModel';
 // Annotation + epic-memory tooling install (shared by ext + CLI).
 export {
   installAnnotationTools,
@@ -196,6 +219,30 @@ export {
   setEpicMemoryHook,
 } from './presets/annotationTools';
 export type { AnnotationToolsReport } from './presets/annotationTools';
+
+// ── Compliance profiles / SDLC standard (GH-69) ────────────────────
+export {
+  BUILTIN_PROFILE_IDS,
+  DEFAULT_PROFILE_ID,
+  PROFILES_DIR,
+  TRACE_RULES,
+  ProfileSchema,
+  isBuiltinProfileId,
+  workspaceStandard,
+  resolveStandard,
+  listProfileManifests,
+  loadProfile,
+  loadActiveProfile,
+  builtinProfiles,
+  UnknownStandardError,
+  ProfileLoadError,
+} from './profiles/StandardProfile';
+export type {
+  BuiltinProfileId,
+  StandardProfile,
+  TraceRule,
+  ResolveStandardOptions,
+} from './profiles/StandardProfile';
 
 // Shared help/knowledge content for `ask` + `guide` (CLI + extension).
 export { AIDLC_KNOWLEDGE, AIDLC_CLI_GUIDE_TEXT } from './help/aidlcGuide';

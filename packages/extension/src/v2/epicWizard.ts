@@ -34,6 +34,8 @@ import {
   assemblePipeline,
   PipelineAssembleError,
   heuristicClassify,
+  builtinProfiles,
+  DEFAULT_PROFILE_ID,
   WORKSPACE_FILENAME,
   type TaskTypeVerdict,
   type RecipeConfig,
@@ -125,6 +127,16 @@ export async function startEpicCommand(): Promise<void> {
 
   let target = await pickTarget(doc);
   if (!target) { return; }
+
+  // Scaffold-tier SDLC standard pick (GH-69 P3): only when the workspace hasn't
+  // chosen one yet, so it's asked once at scaffold time (like the recipe pick),
+  // never nags on later epics. Whatever is chosen — including `none` on skip —
+  // is persisted to workspace.yaml so the question isn't repeated.
+  if (doc.standard === undefined) {
+    const std = await pickScaffoldStandard();
+    doc.standard = std; // chosen id, or 'none' when skipped/dismissed
+    writeYaml(root, doc);
+  }
 
   const epicRoot = readEpicRoot(doc);
   const epicId = await pickEpicId(root, epicRoot);
@@ -238,6 +250,28 @@ export async function startEpicCommand(): Promise<void> {
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────
+
+/**
+ * Scaffold-tier SDLC-standard dropdown (GH-69 P3). Returns the chosen profile
+ * id; a dismissed picker (Escape) resolves to the default (`none`) per the
+ * agreed "Escape = none" behavior, so the caller persists a decision either way
+ * and never re-asks. `hybrid` is pre-marked as recommended.
+ */
+async function pickScaffoldStandard(): Promise<string> {
+  const items: Array<vscode.QuickPickItem & { id: string }> = builtinProfiles().map((p) => ({
+    label: p.id === 'hybrid' ? `${p.name} $(star-full)` : p.name,
+    description: p.id === 'hybrid' ? `${p.id} · recommended` : p.id,
+    detail: p.description,
+    id: p.id,
+  }));
+  const picked = await vscode.window.showQuickPick(items, {
+    placeHolder: 'Which SDLC standard for this workspace? (Esc = none — nothing enforced)',
+    matchOnDescription: true,
+    matchOnDetail: true,
+    ignoreFocusOut: true,
+  });
+  return picked?.id ?? DEFAULT_PROFILE_ID;
+}
 
 async function pickTarget(doc: YamlDocument): Promise<RunTarget | undefined> {
   const items: Array<vscode.QuickPickItem & { target: RunTarget }> = [];
