@@ -81,6 +81,8 @@ export interface EpicSummary {
     rejectCount: number;
     /** Carried feedback (from cascade reject or manual rerun feedback). */
     feedback?: string;
+    /** Branch-artifact info (branch name + PR for implement/branch-based steps, parsed from artifact summary). */
+    branchInfo?: { branch: string; prUrl?: string };
     /** Token usage attributed to this step (filled by `enrichEpicsWithUsage`). */
     tokenUsage?: StepUsage;
   }>;
@@ -241,6 +243,30 @@ function sortByLifecycle(files: string[]): string[] {
     const rb = lifecycleRank(b);
     return ra !== rb ? ra - rb : a.localeCompare(b);
   });
+}
+
+/**
+ * Parse branch name and PR URL from IMPLEMENT-SUMMARY.md (GH-74 Part 2).
+ * Looks for pattern: `feature/...` — PR: https://...
+ * Returns { branch, prUrl? } or undefined if not found.
+ */
+function parseBranchInfoFromSummary(summaryPath: string): { branch: string; prUrl?: string } | undefined {
+  if (!fs.existsSync(summaryPath)) { return undefined; }
+  try {
+    const content = fs.readFileSync(summaryPath, 'utf8');
+    // Match pattern: `feature/...` — PR: https://...
+    // Examples: `feature/GH-68-epics-dir-setting` — PR: https://github.com/aidlc-io/aidlc/pull/70
+    const branchMatch = content.match(/`(feature\/[^`]+)`/);
+    if (!branchMatch) { return undefined; }
+
+    const branch = branchMatch[1];
+    const prMatch = content.match(/PR:\s*(\S+)/);
+    const prUrl = prMatch?.[1];
+
+    return { branch, ...(prUrl && { prUrl }) };
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -518,6 +544,12 @@ export function listEpics(workspaceRoot: string, doc: YamlDocument | null): Epic
           || runStatus === 'awaiting_review'
           ? ('in_progress' as const)
           : asStatus(s.status);
+
+      // GH-74 Part 2: Parse branch info from artifact summary (for implement/branch-artifact steps)
+      const branchInfo = artifactForStep?.toUpperCase() === 'IMPLEMENT-SUMMARY.MD'
+        ? parseBranchInfoFromSummary(path.join(epicDir, 'artifacts', 'IMPLEMENT-SUMMARY.md'))
+        : undefined;
+
       return {
         agent,
         name: stepNameByIdx.get(i),
@@ -536,6 +568,7 @@ export function listEpics(workspaceRoot: string, doc: YamlDocument | null): Epic
         history,
         rejectCount,
         feedback: runFeedbackByIdx.get(i),
+        ...(branchInfo && { branchInfo }),
       };
     });
 
