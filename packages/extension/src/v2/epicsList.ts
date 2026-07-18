@@ -416,6 +416,39 @@ export function listEpics(workspaceRoot: string, doc: YamlDocument | null): Epic
           if (basename) { stepArtifactByIdx.set(i, basename); }
         }
       });
+
+      // GH-TBD: Fall back to detecting artifacts from disk for steps that
+      // don't declare `produces`. This handles cases where a step runs and
+      // creates an artifact file (e.g. IMPLEMENT-SUMMARY.md) but the pipeline
+      // config doesn't list it in `produces`. Without this, the artifact won't
+      // display even though it exists on disk.
+      const artifactsDir = path.join(epicDir, 'artifacts');
+      if (fs.existsSync(artifactsDir)) {
+        try {
+          const onDiskFiles = new Set(
+            fs.readdirSync(artifactsDir)
+              .filter((n) => !n.startsWith('.') && /\.md$/i.test(n))
+              .map((n) => n.replace(/\.md$/i, '').toUpperCase())
+          );
+          // Reverse-map step names to indices to detect which step produced each artifact
+          const stepNameToIdx = new Map<string, number>();
+          pipelineCfg.steps.forEach((raw, i) => {
+            const norm = normalizeStep(raw as PipelineStepConfig);
+            if (norm.name) { stepNameToIdx.set(norm.name.toUpperCase(), i); }
+          });
+          // For each on-disk artifact not yet mapped, try to find its step by convention
+          for (const fileBase of onDiskFiles) {
+            // Check if already mapped
+            if (Array.from(stepArtifactByIdx.values()).some((v) =>
+              v.replace(/\.md$/i, '').toUpperCase() === fileBase)) { continue; }
+            // Try to match by step name (e.g., "IMPLEMENT" → implement step)
+            const stepIdx = stepNameToIdx.get(fileBase);
+            if (stepIdx !== undefined) {
+              stepArtifactByIdx.set(stepIdx, fileBase + '.md');
+            }
+          }
+        } catch { /* Ignore read errors */ }
+      }
     }
 
     // Resolve each step's slash command from workspace.yaml `slash_commands`
