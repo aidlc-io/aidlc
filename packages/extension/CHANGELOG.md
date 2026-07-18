@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.6.0
+
+### Discovery gate (GH-76)
+
+- feat(sdlc): a new **`discovery-gate`** skill, shipped as an AIDLC default — the mirror image of `/annotate-artifact`. Where that reviews a *finished* artifact, this runs at the **start** of a phase: when the agent has open questions before it can write a good artifact, it turns them into a point-and-click questionnaire (`DISCOVERY.md`), opens it in annotron, blocks until you finalize, and applies your answers **back to the Markdown** (canonical), then resumes the phase from the confirmed choices.
+- feat(sdlc): the **Plan** phase runs the gate up front and writes a `## Discovery decisions` section into `PRD.md`; **Design** runs it when open questions surface while writing the plan. Discovery is a **gate, not a phase** — no new pipeline node or slash command, and `DISCOVERY.md` is a working doc, never a `produces:` / `depends_on` artifact. Fires only when there are ≥ 3 open questions or a single high-impact one; a small, clear epic writes the artifact directly.
+- feat(sdlc): `TECH-DESIGN.md` (Design phase) now carries a **complete implementation plan** — ordered tasks, per-file checklist, and tests-to-write — not just a bare file-impact list.
+- feat(vendor/annotron): the review editor now captures **form-control changes** (checkbox / radio / select / text inputs), so questionnaire ticks are picked up automatically, not just text annotations.
+
+### Spec Kit workflow
+
+- feat(workflow): add **Spec Kit** (spec-driven development, from GitHub Spec Kit) as a built-in workflow: Specify → Clarify → Plan → Tasks → Analyze → Implement. The project "constitution" lives in the workspace SDLC standard rather than a per-epic phase.
+
 ## 2.5.0
 
 ### Selectable SDLC compliance standard (GH-69)
