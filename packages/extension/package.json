@@ -1,8 +1,8 @@
 {
   "name": "aidlc",
   "displayName": "AIDLC",
-  "description": "Drive Claude through any pipeline declared in workspace.yaml — agents, skills, pipelines, and epics with approve/reject/rerun runs and a selectable SDLC compliance standard (requirements traceability), plus an AIDLC Monitor with token usage, live agent observability, and a native session-insights dashboard, all from VS Code.",
-  "version": "2.6.0",
+  "description": "AI-driven SDLC pipeline runner for VS Code. Plan → Prototype → Design ∥ Test → Implement → Release. Discovery gates for human-in-the-loop questions, prototype phase for visual UI design, requirements traceability, AIDLC Monitor with token usage & live observability. Supports Spec Kit (spec-driven development), recipe-based task classification, multi-pipeline workspaces.",
+  "version": "3.0.0",
   "publisher": "hueanmy",
   "license": "MIT",
   "sponsor": {

@@ -1,6 +1,6 @@
-# AIDLC
+# AIDLC v3.0 🚀
 
-**See what AI is building. Drive Claude through any pipeline you declare — and track every run, step, and token.**
+**AI-driven SDLC pipeline runner. Plan → Prototype → Design ∥ Test → Implement → Release. See what Claude is building, control every step, track every token.**
 
 [![VS Code Marketplace](https://img.shields.io/badge/VS%20Code%20Marketplace-Install-2b6cb0)](https://marketplace.visualstudio.com/items?itemName=hueanmy.aidlc)
 [![Open VSX](https://img.shields.io/open-vsx/v/hueanmy/aidlc?label=Open%20VSX&color=a259e6)](https://open-vsx.org/extension/hueanmy/aidlc)
@@ -17,6 +17,14 @@ observability, and a native session-insights dashboard built from the Claude
 Code transcript.
 
 ![aidlc demo](packages/extension/media/demo.gif)
+
+## ✨ What's New in v3.0
+
+- **🎨 Prototype Phase** — Designers propose multiple UI options (HTML, Figma, lo-fi) before tech design. Users pick a preferred approach, which feeds into Design.
+- **🚪 Discovery Gate** — Human-in-the-loop questionnaire for open decisions. When a phase has unresolved questions, it opens a point-and-click form, confirms choices, and resumes.
+- **📋 Spec Kit Workflow** — Spec-driven development pipeline (GitHub Spec Kit): Specify → Clarify → Plan → Tasks → Analyze → Implement.
+- **🎯 Recipe System** — Pre-built recipes (bugfix, ui-feature, feature-parallel, large-feature, spike) with auto-classifier for task type.
+- **🔧 Configurable Git Behavior** — Per-step branch naming, push, auto-PR settings. Survives re-apply.
 
 This is a **monorepo** managed with [pnpm workspaces](https://pnpm.io/workspaces).
 

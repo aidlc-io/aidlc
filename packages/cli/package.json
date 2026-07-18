@@ -1,7 +1,7 @@
 {
   "name": "aidlc",
-  "version": "0.9.1",
-  "description": "AIDLC terminal CLI — drive workspace.yaml pipelines with Claude from any terminal.",
+  "version": "3.0.0",
+  "description": "AIDLC terminal CLI — AI-driven SDLC pipeline runner. Plan → Prototype → Design ∥ Test → Implement → Release with discovery gates, prototype phase, requirements traceability, and Spec Kit support.",
   "license": "MIT",
   "funding": "https://github.com/sponsors/hueanmy",
   "repository": {
