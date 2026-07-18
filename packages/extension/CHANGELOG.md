@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.4.1
+
+### Bundled annotron 0.6.0 → 1.0.0: Loop Engineering & AI Agent Integration
+
+- chore(vendor): bump vendored [annotron](https://github.com/hueanmy/annotron) from 0.6.0 to **1.0.0** — a major release bringing **loop engineering** as a first-class feature, enabling tight human-AI feedback cycles:
+  - **Integrated agent feedback loop** — `annotron --agent` automates feedback application (no manual polling)
+  - **Live activity mirror** — watch agent's tool calls (Read/Edit/Bash) stream into sidebar in real-time
+  - **Auto-apply feedback** — structured feedback (CSS selectors, text, images) sent directly to Claude Code
+  - **Continuous cycle** — agent applies changes → browser reloads → you see updates instantly → repeat
+  - **Outline navigation for Markdown** — auto-generated sidebar with h1–h4 headings, one-click jump, visual hierarchy
+  - **Agent environment fixes** — better handling of Electron/VS Code vars, prevents spawned `claude` processes from hanging
+  - **35 new NPM keywords** — loop engineering, agent loop, feedback loop, auto-apply, human-in-the-loop, and more
+  - **VS Code extension built-in** — annotron now includes VS Code extension capabilities (context menu: "Open in annotron", bundled server, auto-agent launch, settings panel)
+- note: AIDLC vendors the full annotron 1.0.0 package including new `commands/`, `hooks/`, `skills/`, `editors/` directories. The `/annotate-artifact` skill continues to drive the feedback loop; new loop engineering features will be exposed in follow-up work.
+- chore(cli): `aidlc` CLI bumped 0.9.1 → **0.9.2** in lockstep so the terminal install ships annotron 1.0.0 too.
+
 ## 2.4.0
 
 ### Bundled annotron 0.3.0 → 0.6.0

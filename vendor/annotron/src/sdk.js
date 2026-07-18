@@ -112,7 +112,7 @@
     for (const rect of range.getClientRects()) {
       if (rect.width <= 0 || rect.height <= 0) continue;
       const m = document.createElement('div');
-      m.style.cssText = `position:absolute;left:${rect.left}px;top:${rect.top}px;width:${rect.width}px;height:${rect.height}px;background:rgba(44,214,199,.28);border-radius:2px;box-shadow:0 0 0 1.5px rgba(26,176,162,.65);pointer-events:none;`;
+      m.style.cssText = `position:absolute;left:${rect.left}px;top:${rect.top}px;width:${rect.width}px;height:${rect.height}px;background:rgba(39,65,241,.11);border-bottom:1.5px solid rgba(39,65,241,.45);border-radius:2px;pointer-events:none;`;
       overlay.appendChild(m);
     }
   }
@@ -122,7 +122,7 @@
     clearHighlights();
     const r = el.getBoundingClientRect();
     const m = document.createElement('div');
-    m.style.cssText = `position:absolute;left:${r.left}px;top:${r.top}px;width:${r.width}px;height:${r.height}px;outline:2px solid #4f8ef7;outline-offset:2px;pointer-events:none;`;
+    m.style.cssText = `position:absolute;left:${r.left}px;top:${r.top}px;width:${r.width}px;height:${r.height}px;outline:2px solid #2741F1;outline-offset:2px;border-radius:3px;pointer-events:none;`;
     overlay.appendChild(m);
   }
 
@@ -219,11 +219,15 @@
     };
   }
 
+  // Open the inline "New comment" composer anchored right under the selection.
+  // On submit it hands the note to the chrome, which stores the annotation.
   function openTextCommentCard(selected) {
     if (!selected) return;
+    clearTextContextMenu();
+    clearQuickCommentButton();
     showCard({
-      heading: 'Text: ' + selected.text.slice(0, 50) + (selected.text.length > 50 ? '…' : ''),
-      placeholder: 'What should change about this text?',
+      quote: selected.text,
+      placeholder: 'Add your comment…',
       anchorRect: selected.anchorRect,
       onAdd: note => {
         window.parent.postMessage({
@@ -238,6 +242,7 @@
           textPrefix: selected.textPrefix,
           textSuffix: selected.textSuffix,
         }, '*');
+        try { const s = window.getSelection(); s && s.removeAllRanges(); } catch {}
       },
     });
   }
@@ -249,28 +254,28 @@
     btn.setAttribute('data-annotron-ui', 'quick-comment-button');
     btn.setAttribute('aria-label', 'Add comment to selected text');
     btn.title = 'Comment on selected text';
-    btn.textContent = '💬';
+    btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span>Comment</span>';
     btn.style.cssText = [
       'position:fixed',
       'z-index:2147483647',
-      'width:26px',
-      'height:26px',
-      'border:1px solid #2f6fd5',
-      'border-radius:7px 7px 7px 0',
-      'background:#4f8ef7',
+      'height:34px',
+      'padding:0 13px',
+      'border:none',
+      'border-radius:9px',
+      'background:#1B1A3D',
       'color:#fff',
-      'padding:0',
-      'font:14px/1 system-ui,-apple-system,sans-serif',
-      'display:grid',
-      'place-items:center',
+      "font:600 12.5px 'Inter',system-ui,-apple-system,sans-serif",
+      'display:inline-flex',
+      'align-items:center',
+      'gap:6px',
       'cursor:pointer',
-      'box-shadow:0 3px 10px rgba(0,0,0,.35)',
+      'box-shadow:0 8px 22px rgba(27,26,61,.34)',
       'pointer-events:auto',
     ].join(';');
 
     const rect = selected.anchorRect;
-    const left = Math.max(8, Math.min(window.innerWidth - 34, rect.right + 6));
-    const top = Math.max(8, Math.min(window.innerHeight - 34, rect.top - 8));
+    const left = Math.max(8, Math.min(window.innerWidth - 110, rect.left + rect.width / 2 - 45));
+    const top = Math.max(8, Math.min(window.innerHeight - 42, rect.top - 42));
     btn.style.left = `${left}px`;
     btn.style.top = `${top}px`;
 
@@ -304,33 +309,36 @@
     menu.style.cssText = [
       'position:fixed',
       'z-index:2147483647',
-      'min-width:140px',
-      'background:#25262b',
-      'color:#c9cdd4',
-      'border:1px solid #4f8ef7',
-      'border-radius:8px',
-      'padding:6px',
-      'box-shadow:0 12px 36px rgba(0,0,0,.45)',
+      'min-width:168px',
+      'background:#fff',
+      'color:#1B1A3D',
+      'border:1px solid rgba(27,26,61,.1)',
+      'border-radius:12px',
+      'padding:5px',
+      'box-shadow:0 12px 34px rgba(27,26,61,.2)',
       'pointer-events:auto',
     ].join(';');
 
     const item = document.createElement('button');
     item.type = 'button';
-    item.textContent = 'Comment';
+    item.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#2741F1" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span>Comment</span>';
     item.setAttribute('role', 'menuitem');
     item.style.cssText = [
+      'display:flex',
+      'align-items:center',
+      'gap:9px',
       'width:100%',
       'text-align:left',
       'border:0',
-      'border-radius:6px',
-      'padding:6px 10px',
-      'background:#25262b',
-      'color:#c9cdd4',
+      'border-radius:8px',
+      'padding:8px 12px',
+      'background:#fff',
+      'color:#1B1A3D',
       'cursor:pointer',
-      'font:600 12px system-ui,-apple-system,sans-serif',
+      "font:500 13px 'Inter',system-ui,-apple-system,sans-serif",
     ].join(';');
-    item.addEventListener('mouseenter', () => { item.style.background = '#373a40'; });
-    item.addEventListener('mouseleave', () => { item.style.background = '#25262b'; });
+    item.addEventListener('mouseenter', () => { item.style.background = '#F3F3F8'; });
+    item.addEventListener('mouseleave', () => { item.style.background = '#fff'; });
     item.addEventListener('click', e => {
       e.preventDefault();
       e.stopPropagation();
@@ -364,53 +372,108 @@
     return lastThread || annotation.note || annotation.text || '';
   }
 
+  // ── Hover preview popup (shows a comment's content on highlight hover) ──────
+  let hoverPopupEl = null;
+  let hoverHideTimer = null;
+  const HOVER_FONT = "'Inter',system-ui,-apple-system,sans-serif";
+
+  function clearHoverPopup() {
+    clearTimeout(hoverHideTimer);
+    if (hoverPopupEl) { hoverPopupEl.remove(); hoverPopupEl = null; }
+  }
+
+  function showHoverPopup(annotation, rect) {
+    clearTimeout(hoverHideTimer);
+    clearHoverPopup();
+    const msg = latestMessage(annotation);
+    if (!msg) return;
+    const resolved = annotation.status === 'resolved';
+    const accent = resolved ? '#1c8a4e' : '#2741F1';
+    const pop = document.createElement('div');
+    pop.setAttribute('data-annotron-ui', 'hover-popup');
+    pop.style.cssText = [
+      'position:fixed', 'z-index:2147483647', 'pointer-events:none',
+      'width:max-content', 'max-width:300px',
+      'background:#fff', 'color:#1B1A3D',
+      'border:1px solid rgba(27,26,61,.1)', 'border-radius:12px',
+      'padding:10px 12px', 'box-shadow:0 10px 30px rgba(27,26,61,.18)',
+      `font:12px/1.5 ${HOVER_FONT}`, 'animation:none',
+    ].join(';');
+
+    const title = document.createElement('div');
+    title.style.cssText = `display:flex;align-items:center;gap:5px;font:600 10px ${HOVER_FONT};letter-spacing:.09em;text-transform:uppercase;color:${accent};margin-bottom:5px;`;
+    title.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span>${resolved ? 'Resolved' : (annotation.kind === 'text' ? 'Text comment' : 'Element comment')}</span>`;
+
+    const body = document.createElement('div');
+    body.style.cssText = 'color:rgba(27,26,61,.82);white-space:pre-wrap;word-break:break-word;';
+    body.textContent = makeSnippet(msg, 240);
+
+    const foot = document.createElement('div');
+    const replies = annotation.thread?.length || 0;
+    foot.style.cssText = `margin-top:6px;font:500 11px ${HOVER_FONT};color:rgba(27,26,61,.45);`;
+    foot.textContent = replies > 1 ? `${replies} messages · click to open` : 'Click to open';
+
+    pop.append(title, body, foot);
+    document.documentElement.appendChild(pop);
+
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const b = pop.getBoundingClientRect();
+    let left = Math.min(vw - b.width - 10, Math.max(10, rect.left));
+    let top = rect.bottom + 8;
+    if (top + b.height > vh - 10) top = Math.max(10, rect.top - b.height - 8);
+    pop.style.left = `${left}px`;
+    pop.style.top = `${top}px`;
+    hoverPopupEl = pop;
+  }
+
   function showCommentPopup(annotation, anchorRect) {
     clearCommentPopup();
     const popup = document.createElement('div');
     popup.setAttribute('data-annotron-ui', 'comment-popup');
     popup.setAttribute('role', 'dialog');
     popup.setAttribute('aria-label', 'Annotation comment');
+    const resolved = annotation.status === 'resolved';
     popup.style.cssText = [
       'position:fixed',
       'z-index:2147483647',
       'width:min(320px,calc(100vw - 24px))',
-      'background:#25262b',
-      'color:#c9cdd4',
-      'border:1px solid #4f8ef7',
-      'border-radius:8px',
-      'padding:10px 12px',
-      'box-shadow:0 12px 36px rgba(0,0,0,.45)',
-      'font:12px/1.4 system-ui,-apple-system,sans-serif',
+      'background:#fff',
+      'color:#1B1A3D',
+      'border:1px solid rgba(27,26,61,.1)',
+      'border-radius:14px',
+      'padding:13px',
+      'box-shadow:0 12px 34px rgba(27,26,61,.2)',
+      "font:12px/1.45 'Inter',system-ui,-apple-system,sans-serif",
       'display:flex',
       'flex-direction:column',
-      'gap:8px',
+      'gap:9px',
       'pointer-events:auto',
     ].join(';');
 
     const title = document.createElement('div');
-    title.style.cssText = 'font-size:11px;font-weight:700;color:#8f97a6;text-transform:uppercase;letter-spacing:.45px;';
-    title.textContent = annotation.kind === 'text' ? 'Text Comment' : 'Element Comment';
+    title.style.cssText = `font-size:11px;font-weight:600;color:${resolved ? '#1c8a4e' : '#2741F1'};text-transform:uppercase;letter-spacing:.09em;`;
+    title.textContent = resolved ? 'Resolved' : (annotation.kind === 'text' ? 'Text comment' : 'Element comment');
 
     const label = document.createElement('div');
-    label.style.cssText = 'font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+    label.style.cssText = 'font-size:12px;font-weight:600;color:#1B1A3D;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
     label.textContent = annotation.label || '(annotation)';
 
     const body = document.createElement('div');
-    body.style.cssText = 'font-size:12px;color:#d7dbe2;white-space:pre-wrap;word-break:break-word;';
+    body.style.cssText = 'font-size:13px;color:rgba(27,26,61,.82);white-space:pre-wrap;word-break:break-word;';
     body.textContent = makeSnippet(latestMessage(annotation));
 
     const row = document.createElement('div');
-    row.style.cssText = 'display:flex;justify-content:flex-end;gap:6px;';
+    row.style.cssText = 'display:flex;justify-content:flex-end;gap:8px;';
 
     const close = document.createElement('button');
     close.type = 'button';
     close.textContent = 'Close';
-    close.style.cssText = 'border:0;border-radius:6px;padding:5px 10px;background:#373a40;color:#c9cdd4;cursor:pointer;font:600 11px system-ui,-apple-system,sans-serif;';
+    close.style.cssText = "border:1px solid rgba(27,26,61,.14);border-radius:8px;padding:6px 12px;background:#fff;color:rgba(27,26,61,.7);cursor:pointer;font:600 11.5px 'Inter',system-ui,sans-serif;";
 
     const open = document.createElement('button');
     open.type = 'button';
     open.textContent = 'Open thread';
-    open.style.cssText = 'border:0;border-radius:6px;padding:5px 10px;background:#4f8ef7;color:#fff;cursor:pointer;font:600 11px system-ui,-apple-system,sans-serif;';
+    open.style.cssText = "border:0;border-radius:8px;padding:6px 13px;background:#2741F1;color:#fff;cursor:pointer;font:600 11.5px 'Inter',system-ui,sans-serif;";
 
     close.addEventListener('click', () => clearCommentPopup());
     open.addEventListener('click', () => {
@@ -448,18 +511,20 @@
     button.setAttribute('aria-label', `Open comment for ${annotation.label || annotation.text || annotation.kind}`);
     button.title = annotation.thread?.at(-1)?.message || annotation.note || 'Open comment';
     const selected = annotation.id === selectedAnnotationId;
-    button.textContent = '◆';
+    const resolved = annotation.status === 'resolved';
+    const bg = resolved ? '#2fbf71' : (selected ? '#1B1A3D' : '#2741F1');
+    button.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
     button.style.cssText = [
       'position:absolute',
-      `left:${Math.max(2, Math.min(window.innerWidth - 24, rect.right - 9))}px`,
-      `top:${Math.max(2, rect.top - 9)}px`,
+      `left:${Math.max(2, Math.min(window.innerWidth - 24, rect.right - 10))}px`,
+      `top:${Math.max(2, rect.top - 10)}px`,
       'width:22px', 'height:22px', 'padding:0',
       'display:grid', 'place-items:center',
-      'border-radius:6px 6px 6px 0',
-      `border:1px solid ${selected ? '#fff' : '#2f6fd5'}`,
-      `background:${selected ? '#245ec1' : '#4f8ef7'}`,
-      'color:#fff', 'font:9px/1 system-ui,sans-serif',
-      'box-shadow:0 2px 6px rgba(0,0,0,.3)',
+      'border-radius:8px 8px 8px 2px',
+      'border:none',
+      `background:${bg}`,
+      'color:#fff',
+      'box-shadow:0 3px 10px rgba(27,26,61,.32)',
       'cursor:pointer', 'pointer-events:auto',
     ].join(';');
     button.addEventListener('click', e => {
@@ -477,6 +542,7 @@
     const overlay = ensureAnnotationsOverlay();
     overlay.innerHTML = '';
     clearCommentPopup();
+    clearHoverPopup();
     for (const annotation of annotations) {
       if (!annotation.selector) continue;
       let target;
@@ -492,15 +558,39 @@
         if (rect.width > 0 && rect.height > 0) rects = [rect];
       }
       if (!rects.length) continue;
-      for (const rect of rects) {
+      const selected = annotation.id === selectedAnnotationId;
+      const resolved = annotation.status === 'resolved';
+      // Subtle, design-matched palette: faint tint + a thin underline for text,
+      // a soft outline for elements. Selected only deepens slightly.
+      const tint = resolved ? '.13' : (selected ? '.18' : '.11');
+      const line = resolved ? '.4' : (selected ? '.7' : '.45');
+      const rgb = resolved ? '47,191,113' : '39,65,241';
+      const fill = `rgba(${rgb},${tint})`;
+      const underline = `rgba(${rgb},${line})`;
+      rects.forEach((rect, i) => {
         const mark = document.createElement('div');
-        const selected = annotation.id === selectedAnnotationId;
+        mark.setAttribute('data-annotron-ui', 'annotation-mark');
         mark.style.cssText = annotation.kind === 'text'
-          ? `position:absolute;left:${rect.left}px;top:${rect.top}px;width:${rect.width}px;height:${rect.height}px;background:${selected ? 'rgba(77,143,255,.35)' : 'rgba(255,202,40,.34)'};border-bottom:2px solid ${selected ? 'rgba(43,106,214,.92)' : 'rgba(224,151,0,.85)'};border-radius:2px;`
-          : `position:absolute;left:${rect.left}px;top:${rect.top}px;width:${rect.width}px;height:${rect.height}px;outline:${selected ? 3 : 2}px solid rgba(79,142,247,${selected ? '.95' : '.6'});outline-offset:2px;border-radius:2px;`;
+          ? `position:absolute;left:${rect.left}px;top:${rect.top}px;width:${rect.width}px;height:${rect.height}px;background:${fill};border-bottom:1.5px solid ${underline};border-radius:2px;cursor:pointer;pointer-events:auto;transition:background .12s;`
+          : `position:absolute;left:${rect.left}px;top:${rect.top}px;width:${rect.width}px;height:${rect.height}px;outline:1.5px solid ${underline};outline-offset:2px;border-radius:3px;background:${fill};cursor:pointer;pointer-events:auto;transition:background .12s;`;
+        mark.addEventListener('mouseenter', () => {
+          mark.style.background = `rgba(${rgb},.2)`;
+          showHoverPopup(annotation, mark.getBoundingClientRect());
+        });
+        mark.addEventListener('mouseleave', () => {
+          mark.style.background = fill;
+          hoverHideTimer = setTimeout(clearHoverPopup, 120);
+        });
+        mark.addEventListener('click', e => {
+          e.preventDefault();
+          e.stopPropagation();
+          clearHoverPopup();
+          selectedAnnotationId = annotation.id;
+          renderAnnotationsOverlay();
+          window.parent.postMessage({ [TAG]: true, type: 'annotation-selected', id: annotation.id }, '*');
+        });
         overlay.appendChild(mark);
-      }
-      addAnnotationButton(overlay, annotation, rects.at(-1));
+      });
     }
   }
 
@@ -514,21 +604,22 @@
   document.addEventListener('scroll', scheduleAnnotationsRender, true);
   document.addEventListener('load', scheduleAnnotationsRender, true);
 
-  // ── Card ──────────────────────────────────────────────────────────────────
+  // ── Inline composer card ────────────────────────────────────────────────
+  const FONT = "'Inter',system-ui,-apple-system,sans-serif";
   const CARD_STYLE = [
     'position:fixed',
     'z-index:2147483646',
-    'width:min(300px,calc(100vw - 24px))',
-    'padding:14px',
-    'border-radius:10px',
-    'background:#25262b',
-    'color:#c9cdd4',
-    'border:1px solid #4f8ef7',
-    'box-shadow:0 16px 56px rgba(0,0,0,.5)',
-    'font:13px/1.4 system-ui,-apple-system,sans-serif',
+    'width:min(340px,calc(100vw - 24px))',
+    'padding:13px',
+    'border-radius:14px',
+    'background:#fff',
+    'color:#1B1A3D',
+    'border:1px solid rgba(39,65,241,.3)',
+    'box-shadow:0 6px 20px rgba(27,26,61,.16)',
+    `font:13px/1.45 ${FONT}`,
     'display:flex',
     'flex-direction:column',
-    'gap:8px',
+    'gap:0',
   ].join(';');
 
   function clearCard() {
@@ -551,9 +642,10 @@
 
   function positionCard(anchorRect) {
     const vw = window.innerWidth, vh = window.innerHeight;
-    let left = Math.max(12, Math.min(anchorRect.left, vw - 316));
+    const cw = cardEl.offsetWidth || 340, ch = cardEl.offsetHeight || 200;
+    let left = Math.max(12, Math.min(anchorRect.left, vw - cw - 12));
     let top = anchorRect.bottom + 10;
-    if (top + 200 > vh) top = Math.max(12, anchorRect.top - 210);
+    if (top + ch > vh - 12) top = Math.max(12, anchorRect.top - ch - 10);
     cardEl.style.left = left + 'px';
     cardEl.style.top = top + 'px';
   }
@@ -565,36 +657,48 @@
     return e;
   }
 
-  function showCard({ heading, placeholder, anchorRect, onAdd }) {
+  function showCard({ quote, placeholder, anchorRect, onAdd }) {
     clearCard();
 
     cardEl = document.createElement('div');
     cardEl.setAttribute('data-annotron-ui', 'card');
     cardEl.style.cssText = CARD_STYLE;
 
-    const hdg = el('div',
-      'font-size:11px;font-weight:700;color:#6c7280;text-transform:uppercase;letter-spacing:.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;',
-      heading);
+    const hdg = document.createElement('div');
+    hdg.style.cssText = `display:flex;align-items:center;gap:6px;font:600 11px ${FONT};letter-spacing:.09em;text-transform:uppercase;color:#2741F1;margin-bottom:9px;`;
+    hdg.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span>New comment</span>';
+
+    let quoteEl = null;
+    if (quote) {
+      quoteEl = document.createElement('div');
+      quoteEl.style.cssText = `border-left:3px solid #D88689;padding:2px 0 2px 10px;font:italic 400 12.5px/1.5 ${FONT};color:rgba(27,26,61,.6);margin-bottom:11px;max-height:66px;overflow:hidden;`;
+      quoteEl.textContent = '"' + quote + '"';
+    }
 
     const ta = document.createElement('textarea');
-    ta.placeholder = placeholder;
-    ta.style.cssText = 'width:100%;min-height:68px;resize:vertical;border-radius:6px;border:1px solid #373a40;background:#1e1f23;color:#c9cdd4;padding:7px 8px;font:13px/1.4 system-ui,-apple-system,sans-serif;box-sizing:border-box;outline:none;';
-    ta.addEventListener('focus', () => { ta.style.borderColor = '#4f8ef7'; });
-    ta.addEventListener('blur', () => { ta.style.borderColor = '#373a40'; });
+    ta.placeholder = placeholder || 'Add your comment…';
+    ta.style.cssText = `width:100%;min-height:66px;resize:vertical;border-radius:10px;border:1px solid rgba(27,26,61,.14);background:#fff;color:#1B1A3D;padding:10px 11px;font:400 13.5px/1.5 ${FONT};box-sizing:border-box;outline:none;`;
+    ta.addEventListener('focus', () => { ta.style.borderColor = '#2741F1'; ta.style.boxShadow = '0 0 0 3px rgba(39,65,241,.12)'; });
+    ta.addEventListener('blur', () => { ta.style.borderColor = 'rgba(27,26,61,.14)'; ta.style.boxShadow = 'none'; });
 
-    const hint = el('div', 'font-size:11px;color:#4a4e5a;', 'Enter — add · Esc — cancel');
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;margin-top:10px;';
 
-    const row = el('div', 'display:flex;gap:6px;justify-content:flex-end;');
-
-    const btnCancel = el('button', 'border:0;border-radius:6px;padding:6px 12px;font:600 12px system-ui;cursor:pointer;background:#373a40;color:#c9cdd4;', 'Cancel');
-    const btnAdd = el('button', 'border:0;border-radius:6px;padding:6px 12px;font:600 12px system-ui;cursor:pointer;background:#4f8ef7;color:#fff;', 'Add annotation');
+    const btnCancel = document.createElement('button');
+    btnCancel.textContent = 'Cancel';
+    btnCancel.style.cssText = `height:32px;padding:0 13px;border-radius:8px;border:1px solid rgba(27,26,61,.14);background:#fff;color:rgba(27,26,61,.7);font:600 12.5px ${FONT};cursor:pointer;`;
+    const btnAdd = document.createElement('button');
+    btnAdd.textContent = 'Comment';
+    btnAdd.style.cssText = `height:32px;padding:0 15px;border-radius:8px;border:none;background:#2741F1;color:#fff;font:600 12.5px ${FONT};cursor:pointer;`;
 
     row.append(btnCancel, btnAdd);
-    cardEl.append(hdg, ta, hint, row);
+    cardEl.append(hdg);
+    if (quoteEl) cardEl.append(quoteEl);
+    cardEl.append(ta, row);
     document.documentElement.appendChild(cardEl);
     positionCard(anchorRect);
 
-    const submit = () => { onAdd(ta.value.trim()); dismissCard(); };
+    const submit = () => { const v = ta.value.trim(); if (!v) { ta.focus(); return; } onAdd(v); dismissCard(); };
 
     btnCancel.addEventListener('click', e => { e.stopPropagation(); dismissCard(); });
     btnAdd.addEventListener('click', e => { e.stopPropagation(); submit(); });
@@ -610,7 +714,7 @@
     if (!annotating || isInteractive(e.target) || isAnnotronEl(e.target)) return;
     if (hovered) { hovered.style.outline = ''; hovered.style.outlineOffset = ''; hovered.style.cursor = ''; }
     hovered = e.target;
-    hovered.style.outline = '2px solid #4f8ef7';
+    hovered.style.outline = '2px solid #2741F1';
     hovered.style.outlineOffset = '2px';
     hovered.style.cursor = 'crosshair';
   }, true);
@@ -740,17 +844,16 @@
     const selector = cssPath(el);
     const label = labelFor(el);
     const anchorRect = el.getBoundingClientRect();
+    const quote = (el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 120);
 
-    console.log('[annotron-sdk] showing card at', anchorRect.left, anchorRect.bottom);
     dismissCard();
     highlightElement(el);
     showCard({
-      heading: 'Element: ' + label,
+      quote,
       placeholder: 'What should change about this element?',
       anchorRect,
       onAdd: note => {
         window.parent.postMessage({ [TAG]: true, type: 'element-selected', selector, label, note }, '*');
-        dismissCard();
       },
     });
   }, true);
@@ -814,5 +917,19 @@
     }
   });
 
-  window.parent.postMessage({ [TAG]: true, type: 'sdk-ready' }, '*');
+  // Extract headings for outline
+  function extractHeadings() {
+    const headingsData = document.querySelector('meta[name="headings-data"]');
+    if (headingsData && headingsData.content) {
+      try {
+        return JSON.parse(headingsData.content);
+      } catch (e) {
+        console.error('[annotron-sdk] failed to parse headings:', e);
+      }
+    }
+    return [];
+  }
+
+  const headings = extractHeadings();
+  window.parent.postMessage({ [TAG]: true, type: 'sdk-ready', headings }, '*');
 })();

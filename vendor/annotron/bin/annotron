@@ -77,10 +77,10 @@ function openBrowser(url) {
 
 // --- Commands ---
 async function cmdOpen(file) {
-  if (!file) { console.error('Usage: annotron <file.html>'); process.exit(1); }
+  if (!file) { console.error('Usage: annotron <file.html|file.md>'); process.exit(1); }
   const abs = path.resolve(file);
   if (!fs.existsSync(abs)) { console.error(`File not found: ${abs}`); process.exit(1); }
-  if (!abs.endsWith('.html')) { console.error('File must be .html'); process.exit(1); }
+  if (!abs.endsWith('.html') && !/\.md$/i.test(abs)) { console.error('File must be .html or .md'); process.exit(1); }
 
   await ensureServer();
 
@@ -93,8 +93,16 @@ async function cmdOpen(file) {
 
   const editorUrl = `${BASE}/?file=${encodeURIComponent(abs)}`;
   console.log('Editor URL:', editorUrl);
-  console.log('Poll command: annotron poll', abs);
   openBrowser(editorUrl);
+
+  // `annotron <file> --agent` also starts the auto-apply agent loop in the
+  // foreground, so feedback is handled without a separate command.
+  if (process.argv.includes('--agent')) {
+    console.log('');
+    await cmdAgent(abs);
+  } else {
+    console.log('Agent:  annotron agent', abs, '   (auto-apply feedback with Claude)');
+  }
 }
 
 async function cmdPoll(file, reply, annotationId) {
@@ -155,16 +163,267 @@ async function cmdStop() {
   } catch { console.log('Server not running.'); }
 }
 
+// --- Agent loop: poll for feedback and auto-apply it with Claude Code ---------
+// `annotron agent <file>` sits in the feedback loop so the reviewer never has to
+// wire anything: it waits for feedback, runs `claude -p` to edit the source
+// file, and replies — then loops. This is what turns "Send feedback" in the
+// browser into applied edits automatically.
+
+// Build a clean environment for spawning `claude`.
+//
+// The VS Code extension launches this agent with VS Code's Electron acting as
+// Node (ELECTRON_RUN_AS_NODE=1) and injects VSCODE_*/ELECTRON_* vars plus a
+// NODE_OPTIONS that --require's VS Code internals. If those leak into `claude`,
+// the Node subprocesses it spawns (shell for Bash, hooks, ripgrep) try to load
+// VS Code's hooks and hang — the run stalls until our timeout fires. Strip them
+// so claude sees a normal shell environment. Also augment PATH so `claude`
+// resolves even when launched from a GUI (Dock).
+function agentEnv() {
+  const home = process.env.HOME || '';
+  const extra = ['/opt/homebrew/bin', '/usr/local/bin', `${home}/.local/bin`, `${home}/.claude/local`]
+    .filter(Boolean).join(':');
+  const env = { ...process.env };
+  delete env.ELECTRON_RUN_AS_NODE;
+  delete env.NODE_OPTIONS;
+  for (const k of Object.keys(env)) {
+    if (k.startsWith('ELECTRON_') || k.startsWith('VSCODE_')) delete env[k];
+  }
+  // A stale/invalid ANTHROPIC_API_KEY exported in the user's shell profile makes
+  // the spawned `claude` authenticate with a bad key → 401 → endless api_retry →
+  // our timeout, even though the user's interactive `claude` works fine via its
+  // subscription login. Drop the key so the applier uses the same logged-in
+  // (OAuth) auth as the user's CLI. Set ANNOTRON_KEEP_API_KEY=1 to keep it if
+  // you deliberately authenticate with an API key.
+  if (!process.env.ANNOTRON_KEEP_API_KEY) delete env.ANTHROPIC_API_KEY;
+  env.PATH = `${process.env.PATH || ''}:${extra}`;
+  return env;
+}
+
+function buildAgentPrompt(abs, items, message) {
+  const list = (items || []).map((it, i) => {
+    const where = it.text ? `the text "${it.text}"` : (it.label ? `the element ${it.label}` : `(${it.kind})`);
+    return `${i + 1}. On ${where}: ${it.note || '(no note)'}`;
+  }).join('\n');
+  return [
+    `Apply human review feedback to this source file: ${abs}`,
+    `Edit the file directly — it is the source of truth (Markdown or HTML). Make ONLY the requested changes:`,
+    list || '(see the reviewer note below)',
+    message ? `\nReviewer note:\n${message}` : '',
+    `\nAfter editing, reply with ONE short sentence describing what you changed.`,
+  ].filter(Boolean).join('\n');
+}
+
+// Turn one stream-json event into a short, human-readable activity line for the
+// browser's live log — or null for events not worth showing.
+function formatStep(ev) {
+  try {
+    if (ev.type !== 'assistant') return null;
+    for (const b of (ev.message?.content || [])) {
+      if (b.type === 'tool_use') {
+        const inp = b.input || {};
+        const f = inp.file_path ? inp.file_path.split('/').pop() : '';
+        switch (b.name) {
+          case 'Read':  return f ? `Reading ${f}` : 'Reading file';
+          case 'Edit':  return f ? `Editing ${f}` : 'Editing file';
+          case 'Write': return f ? `Writing ${f}` : 'Writing file';
+          case 'Grep':  return `Searching “${inp.pattern || ''}”`;
+          case 'Glob':  return `Finding ${inp.pattern || 'files'}`;
+          case 'ToolSearch': return null; // internal tool-loading noise
+          default: return b.name;
+        }
+      }
+      if (b.type === 'text' && b.text && b.text.trim()) {
+        const t = b.text.trim().replace(/\s+/g, ' ');
+        return t.length > 90 ? t.slice(0, 90) + '…' : t;
+      }
+    }
+  } catch {}
+  return null;
+}
+
+function runClaude(prompt, cwd, abs) {
+  return new Promise((resolve, reject) => {
+    // stdin must be closed ('ignore'): in -p mode `claude` waits on stdin and
+    // otherwise hangs ("no stdin data received in 3s") since we pass the prompt
+    // as an argument, not via a pipe.
+    //
+    // Keep the applier lean and fast:
+    //   --strict-mcp-config  skip the project's MCP servers. Applying a small
+    //                        text/HTML edit needs none of them, and connecting to
+    //                        unauthenticated servers (e.g. claude.ai connectors)
+    //                        can stall the run for minutes.
+    //   --disallowedTools    HARD-block Task/Agent so the run never delegates the
+    //                        edit to a subagent. A user CLAUDE.md that routes
+    //                        "routine" work to a subagent would otherwise spawn a
+    //                        nested Claude session per comment (minutes, not
+    //                        seconds). --allowedTools alone does NOT prevent this
+    //                        — it only pre-approves tools, it doesn't remove them.
+    //   --model sonnet       applying review feedback is mechanical editing —
+    //                        Sonnet is accurate here and faster than Opus.
+    //                        Override with ANNOTRON_AGENT_MODEL.
+    //   --output-format      stream-json so we can surface a live activity log
+    //                        (what file it's reading/editing) in the browser.
+    const model = process.env.ANNOTRON_AGENT_MODEL || 'sonnet';
+    const args = [
+      '-p', prompt,
+      '--permission-mode', 'acceptEdits',
+      '--strict-mcp-config',
+      '--allowedTools', 'Read', 'Edit', 'Write', 'Grep', 'Glob',
+      '--disallowedTools', 'Task', 'Agent',
+      '--model', model,
+      '--output-format', 'stream-json', '--verbose',
+    ];
+    // ── Debug log ─────────────────────────────────────────────────────────
+    // Everything about this run is written to <file>.agent.log (override with
+    // ANNOTRON_AGENT_LOG) AND echoed to the terminal, so a hang in the real
+    // extension environment can be diagnosed: exact command, whether VS Code's
+    // env vars were stripped, every stream event, stderr, and — on timeout —
+    // the last event seen (i.e. where it stalled).
+    const t0 = Date.now();
+    const logPath = process.env.ANNOTRON_AGENT_LOG || (abs ? abs + '.agent.log' : null);
+    const secs = () => ((Date.now() - t0) / 1000).toFixed(1) + 's';
+    const log = (msg) => {
+      const line = `[+${secs()}] ${msg}`;
+      console.log('  ' + line);
+      if (logPath) { try { fs.appendFileSync(logPath, line + '\n'); } catch {} }
+    };
+    const env = agentEnv();
+    if (logPath) { try { fs.appendFileSync(logPath, `\n===== run @ ${new Date().toISOString()} =====\n`); } catch {} }
+    log(`cwd=${cwd} model=${model} timeout=${(Number(process.env.ANNOTRON_AGENT_TIMEOUT_MS) || 180000) / 1000}s`);
+    log(`claude flags: ${args.filter(a => a !== prompt).join(' ')}`);
+    log(`env: parent ELECTRON_RUN_AS_NODE=${process.env.ELECTRON_RUN_AS_NODE || '(unset)'} → child=${env.ELECTRON_RUN_AS_NODE || '(stripped)'} | child NODE_OPTIONS=${env.NODE_OPTIONS || '(stripped)'} | VSCODE_* left=${Object.keys(env).filter(k => k.startsWith('VSCODE_')).length}`);
+    // Resolve which `claude` binary PATH picks — a VS Code-spawned process can
+    // have a different PATH than a login shell and pick a different claude.
+    let claudeBin = '(not found on PATH)';
+    for (const dir of (env.PATH || '').split(':')) {
+      if (!dir) continue;
+      const cand = path.join(dir, 'claude');
+      try { fs.accessSync(cand, fs.constants.X_OK); claudeBin = cand; break; } catch {}
+    }
+    log(`claude binary: ${claudeBin}`);
+    if (logPath) { try { fs.appendFileSync(logPath, `PATH=${env.PATH}\n`); } catch {} }
+
+    const child = spawn('claude', args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
+    log(`spawned pid=${child.pid}`);
+    let err = '', buf = '', lastText = '', resultText = null, done = false, events = 0;
+    let lastDesc = '(no output yet)', lastAt = Date.now();
+    // Hard timeout so a wedged run reports back instead of leaving the UI stuck
+    // on "working" forever. Override with ANNOTRON_AGENT_TIMEOUT_MS.
+    const timeoutMs = Number(process.env.ANNOTRON_AGENT_TIMEOUT_MS) || 180000;
+    // Stall heartbeat: if nothing arrives for 15s, say so (and what the last
+    // event was), so a silent hang is visible while it's happening.
+    const heartbeat = setInterval(() => {
+      const idle = ((Date.now() - lastAt) / 1000).toFixed(0);
+      if (idle >= 12) log(`… still waiting (${idle}s since last event: ${lastDesc})`);
+    }, 15000);
+    const settle = (fn, arg) => { if (done) return; done = true; clearTimeout(timer); clearInterval(heartbeat); fn(arg); };
+    const timer = setTimeout(() => {
+      log(`TIMEOUT after ${Math.round(timeoutMs / 1000)}s — ${events} events; last was "${lastDesc}" ${((Date.now() - lastAt) / 1000).toFixed(0)}s ago. Killing.`);
+      if (err.trim()) log('stderr so far: ' + err.trim().split('\n').slice(-5).join(' | '));
+      try { child.kill('SIGKILL'); } catch {}
+      settle(reject, new Error(`claude timed out after ${Math.round(timeoutMs / 1000)}s`));
+    }, timeoutMs);
+    const postStep = (step) => {
+      if (step && abs) postJSON('/agent-progress', { file: abs, step }).catch(() => {});
+    };
+    const handleLine = (line) => {
+      line = line.trim();
+      if (!line) return;
+      let ev; try { ev = JSON.parse(line); } catch { log('non-JSON: ' + line.slice(0, 120)); return; }
+      events++; lastAt = Date.now();
+      if (ev.type === 'result' && typeof ev.result === 'string') resultText = ev.result;
+      if (ev.type === 'assistant') {
+        for (const b of (ev.message?.content || [])) {
+          if (b.type === 'text' && b.text && b.text.trim()) lastText = b.text.trim();
+        }
+      }
+      const step = formatStep(ev);
+      lastDesc = step || (ev.subtype ? `${ev.type}/${ev.subtype}` : ev.type);
+      log(`event: ${lastDesc}`);
+      // API retries mean the request itself is failing (network/auth/proxy) —
+      // dump the raw event so we can see the actual reason (status/error).
+      if (ev.type === 'system' && ev.subtype && ev.subtype !== 'init' && ev.subtype.indexOf('task') !== 0) {
+        log('  raw: ' + JSON.stringify(ev).slice(0, 400));
+      }
+      postStep(step);
+    };
+    child.stdout.on('data', (c) => {
+      buf += c;
+      let i;
+      while ((i = buf.indexOf('\n')) >= 0) { handleLine(buf.slice(0, i)); buf = buf.slice(i + 1); }
+    });
+    child.stderr.on('data', (c) => { err += c; log('stderr: ' + String(c).trim().slice(0, 200)); });
+    child.on('error', e => { log('spawn error: ' + e.message); settle(reject, e); });
+    child.on('close', code => {
+      if (buf.trim()) handleLine(buf);
+      const summary = (resultText || lastText || '').trim();
+      log(`closed code=${code} in ${secs()}, ${events} events`);
+      if (code === 0) settle(resolve, summary || 'Applied your feedback.');
+      else settle(reject, new Error((err.trim() || summary || `claude exited ${code}`).split('\n').slice(-3).join(' ')));
+    });
+  });
+}
+
+// Log a line to the terminal AND to the same <file>.agent.log that runClaude
+// writes, so the whole agent lifecycle (feedback received, Done, stopping) is
+// visible in one place — not just the claude sub-run.
+function agentLog(abs, msg) {
+  const line = `[${new Date().toISOString()}] ${msg}`;
+  console.log(line);
+  const logPath = process.env.ANNOTRON_AGENT_LOG || (abs ? abs + '.agent.log' : null);
+  if (logPath) { try { fs.appendFileSync(logPath, line + '\n'); } catch {} }
+}
+
+async function cmdAgent(file) {
+  if (!file) { console.error('Usage: annotron agent <file>'); process.exit(1); }
+  const abs = path.resolve(file);
+  if (!fs.existsSync(abs)) { console.error(`File not found: ${abs}`); process.exit(1); }
+  await ensureServer();
+  const s = await postJSON('/session', { file: abs });
+  if (s.status !== 200) { console.error('Session error:', s.body); process.exit(1); }
+  agentLog(abs, `annotron agent • watching ${abs}`);
+  console.log('Waiting for feedback from the browser…  (Ctrl+C to stop)\n');
+  for (;;) {
+    let body;
+    try {
+      const r = await apiFetch('/poll?file=' + encodeURIComponent(abs));
+      if (r.status !== 200) { await sleep(1500); continue; }
+      body = JSON.parse(r.body);
+    } catch { await sleep(1500); continue; }
+    if (body.finalized) { agentLog(abs, '■ Done received from browser — review finished, agent stopping.'); break; }
+    if (!body.feedback) continue; // keep-alive tick
+    const items = body.feedback.items || [];
+    const message = (body.feedback.message || '').trim();
+    agentLog(abs, `▶ Feedback: ${items.length} comment(s)${message ? ' + message' : ''} — applying with claude…`);
+    let summary = '', ok = true;
+    try { summary = await runClaude(buildAgentPrompt(abs, items, message), path.dirname(abs), abs); }
+    catch (e) { summary = `Could not apply automatically: ${e.message}`; ok = false; }
+    const short = summary.split('\n').filter(Boolean).slice(-1)[0] || 'Applied your feedback.';
+    for (const it of items) {
+      // `failed` tells the server NOT to auto-resolve a comment we couldn't apply.
+      if (it.id) await postJSON('/agent-reply', {
+        file: abs, annotationId: it.id,
+        message: ok ? `Applied — ${it.note || it.label || 'done'}.` : short,
+        failed: !ok,
+      }).catch(() => {});
+    }
+    await postJSON('/agent-reply', { file: abs, message: short }).catch(() => {});
+    agentLog(abs, `✓ ${short}\n`);
+  }
+}
+
 function cmdHelp() {
   console.log(`
 annotron — local review editor for agent-generated HTML artifacts
 
 Usage:
-  annotron <file.html>                    Open the editor in browser
-  annotron poll <file.html>               Wait for feedback (run by agent)
-  annotron poll <file.html> --reply "…"  Post a reply then wait for feedback
-  annotron progress <file.html> "step"    Post a live progress step (shown in the browser)
-  annotron check <file.html>              Print {"cancelled":true|false} for the session
+  annotron <file.html|file.md>            Open the editor in browser
+  annotron <file> --agent                 Open + auto-apply feedback with Claude
+  annotron agent <file>                   Run the auto-apply agent loop (poll → claude → reply)
+  annotron poll <file>                    Wait for feedback (low-level, run by an agent)
+  annotron poll <file> --reply "…"       Post a reply then wait for feedback
+  annotron progress <file> "step"         Post a live progress step (shown in the browser)
+  annotron check <file>                   Print {"cancelled":true|false} for the session
   annotron stop                           Shut down the background server
   annotron help                           Show this help
 
@@ -193,7 +452,9 @@ if (!cmd || cmd === 'help' || cmd === '--help' || cmd === '-h') {
   const annIdx = args.indexOf('--annotation-id');
   const annotationId = annIdx !== -1 ? args[annIdx + 1] : null;
   await cmdPoll(file, reply, annotationId);
+} else if (cmd === 'agent') {
+  await cmdAgent(args[1]);
 } else {
-  // annotron <file.html>
+  // annotron <file.html|file.md> [--agent]
   await cmdOpen(cmd);
 }

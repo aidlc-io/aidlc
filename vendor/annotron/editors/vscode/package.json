@@ -1,0 +1,75 @@
+{
+  "name": "annotron",
+  "displayName": "annotron — Markdown preview, Mermaid diagrams & point-and-click review",
+  "description": "Preview Markdown & HTML with Mermaid diagrams (flowchart, sequence, class, ER, C4, gantt), outline navigation, and point-and-click review. A human-in-the-loop layer for AI coding agents (Claude Code, Cursor): comment on any element or text, auto-apply feedback via the integrated agent loop, sync edits back to the source, and close the review cycle fast. Outline sidebar with jump navigation for long documents. Great for architecture docs, tech designs, and AI-agent artifacts.",
+  "icon": "icon.svg",
+  "version": "1.0.0",
+  "publisher": "hueanmy",
+  "license": "MIT",
+  "repository": { "type": "git", "url": "https://github.com/hueanmy/annotron" },
+  "engines": { "vscode": "^1.75.0" },
+  "categories": ["AI", "Developer Tools", "Visualization", "Documentation", "Notebooks", "Other"],
+  "keywords": [
+    "markdown", "markdown preview", "mermaid", "mermaid preview", "diagram", "uml",
+    "flowchart", "sequence diagram", "class diagram", "er diagram", "gantt", "c4",
+    "preview", "annotate", "annotation", "review", "code review", "comment", "html",
+    "ai", "ai agent", "agentic", "agent loop", "claude code", "cursor", "codeium",
+    "human in the loop", "in-the-loop", "human feedback", "feedback loop", "auto-apply",
+    "loop engineering", "agentic loop", "agent feedback", "continuous improvement",
+    "context engineering", "vibe coding", "redline", "markup", "architecture",
+    "artifact review", "document review", "tech design", "specification",
+    "outline", "navigation", "table of contents", "toc", "sidebar"
+  ],
+  "galleryBanner": { "color": "#1B1A3D", "theme": "dark" },
+  "activationEvents": [],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      { "command": "annotron.open", "title": "Open in annotron", "category": "annotron" },
+      { "command": "annotron.stop", "title": "Stop annotron server", "category": "annotron" }
+    ],
+    "menus": {
+      "explorer/context": [
+        { "command": "annotron.open", "when": "resourceExtname == .md || resourceExtname == .markdown || resourceExtname == .html || resourceExtname == .htm", "group": "navigation@50" }
+      ],
+      "editor/context": [
+        { "command": "annotron.open", "when": "resourceExtname == .md || resourceExtname == .markdown || resourceExtname == .html || resourceExtname == .htm", "group": "navigation@50" }
+      ],
+      "editor/title/context": [
+        { "command": "annotron.open", "when": "resourceExtname == .md || resourceExtname == .markdown || resourceExtname == .html || resourceExtname == .htm", "group": "navigation@50" }
+      ]
+    },
+    "configuration": {
+      "title": "annotron",
+      "properties": {
+        "annotron.port": {
+          "type": "number",
+          "default": 7321,
+          "markdownDescription": "Port the bundled annotron server listens on (`127.0.0.1`)."
+        },
+        "annotron.openIn": {
+          "type": "string",
+          "enum": ["browser", "vscode"],
+          "enumDescriptions": [
+            "Open in your external default browser",
+            "Open in a VS Code Simple Browser tab"
+          ],
+          "default": "browser",
+          "description": "Where to open the annotron review editor."
+        },
+        "annotron.autoAgent": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "When you open a file, also start an agent that **auto-applies your feedback** — it runs Claude Code (`claude`) in a terminal, watches for comments, edits the source, and replies. Requires the `claude` CLI on your PATH. Turn off to review without an agent (then run `annotron poll` yourself)."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vendor": "bash scripts/vendor-annotron.sh",
+    "package": "npm run vendor && vsce package --no-dependencies"
+  },
+  "devDependencies": {
+    "@vscode/vsce": "^3.2.0"
+  }
+}

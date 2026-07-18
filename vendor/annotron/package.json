@@ -1,7 +1,7 @@
 {
   "name": "annotron",
-  "version": "0.6.0",
-  "description": "Local, browser-based review editor for agent-generated HTML artifacts — annotate elements and text, send feedback to your AI coding agent, then finalize the result into the file and download it.",
+  "version": "1.0.0",
+  "description": "Human-in-the-loop review editor for AI agents. Point-and-click annotate HTML/Markdown artifacts, send structured feedback to Claude Code, watch the integrated agent loop auto-apply changes live via loop engineering, browse outline navigation for docs, then finalize & download. Zero setup — just `--agent` and annotate.",
   "type": "module",
   "bin": {
     "annotron": "bin/annotron"
@@ -26,17 +26,47 @@
   "keywords": [
     "claude",
     "claude-code",
+    "anthropic",
     "claude-plugin",
     "html",
     "artifacts",
+    "markdown",
     "annotation",
     "code-review",
     "ai-agents",
+    "agentic",
     "developer-tools",
     "cli",
     "feedback",
-    "llm"
+    "llm",
+    "agent-loop",
+    "agentic-loop",
+    "feedback-loop",
+    "loop-engineering",
+    "auto-apply",
+    "auto-feedback",
+    "continuous-feedback",
+    "human-in-the-loop",
+    "in-the-loop",
+    "agent-feedback",
+    "outline-navigation",
+    "architecture-docs",
+    "tech-design",
+    "mermaid",
+    "diagram",
+    "observability",
+    "agent-observability",
+    "activity-stream",
+    "context-engineering",
+    "prompt-engineering"
   ],
   "author": "Meii",
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "markdown-it": "^14.3.0",
+    "merslim": "^0.2.3"
+  },
+  "devDependencies": {
+    "playwright": "^1.61.1"
+  }
 }
