@@ -19,6 +19,7 @@ import {
   WORKSPACE_DIR,
   WORKSPACE_FILENAME,
   stepAgentId,
+  writeTwoLayerCommands,
 } from '@aidlc/core';
 
 import {
@@ -295,27 +296,33 @@ export function registerV2WorkspaceCommands(
   // wondering what happened. Shell integration's onDidChange fires
   // exactly when the prompt is ready, so executeCommand lands cleanly.
   /**
+   * Ensure .claude/commands/*.md files exist so slash commands don't fail with
+   * "command not found". Uses the two-layer command model to generate both the
+   * backbone dispatcher and shortcut commands. Idempotent — skips existing files.
+   * (GH-73 Problem A)
+   */
+  function ensureCommandFiles(root: string): void {
+    try {
+      writeTwoLayerCommands(root);
+    } catch (err) {
+      // Log but don't fail — command files might already exist or permission
+      // issues are rare in a workspace root.
+      console.warn('[ensureCommandFiles]', err);
+    }
+  }
+
+  /**
    * Send a slash command + carried feedback to the Claude REPL. Used by
    * the "Update with feedback" button on awaiting_work steps that have a
    * non-empty `feedback` field (cascade reject blame OR rerun feedback).
    *
-   * Two paths:
-   * 1. AIDLC · Claude terminal already exists → assume `claude` is running
-   *    in the REPL (most common case — we created it earlier and the user
-   *    didn't kill it). `terminal.sendText(prompt, false)` types the
-   *    prompt into the REPL with NO trailing newline so the user reviews
-   *    and presses Enter, keeping them in control. If claude actually
-   *    exited (rare), the prompt lands at the shell prompt and the user
-   *    sees a shell error — recovery is to run `claude` and re-click.
-   * 2. No terminal yet → create one and launch `claude '<prompt>'` as the
-   *    one-shot initial command. Claude takes the prompt as its first
-   *    user message, so the slash command processes immediately on boot.
-   *    Single-quote-escaped via the standard `'\''` POSIX trick so quoted
-   *    feedback bodies survive intact.
+   * Always creates a fresh terminal for the run to ensure a Claude REPL
+   * is actually running (GH-73 Problem B). Never reuses an existing terminal
+   * because it might be at a shell prompt, causing silent failures. Bakes the
+   * prompt into the `claude '<prompt>'` one-shot launch command so it executes
+   * immediately on boot. Single-quote-escaped via `'\''` POSIX trick.
    *
-   * Avoids the previous "wait 2.2s then sendText" approach that races
-   * against claude's boot — typing slash commands into a shell prompt that
-   * doesn't recognize them produces a confusing error.
+   * Before running, ensures .claude/commands/*.md files exist (GH-73 Problem A).
    */
   const runWithFeedbackCmd = vscode.commands.registerCommand(
     'aidlc.runStepWithFeedback',
@@ -325,21 +332,19 @@ export function registerV2WorkspaceCommands(
       const fb = typeof feedback === 'string' ? feedback.trim() : '';
       if (!slash || !id) { return; }
 
+      const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      if (!root) { return; }
+
+      ensureCommandFiles(root);
+
       const prompt = fb
         ? `${slash} ${id} — Update artifact per feedback: "${fb.replace(/"/g, '\\"')}"`
         : `${slash} ${id}`;
 
+      // GH-73 Problem B: Always create fresh terminal; never reuse existing
+      // one since it might be at shell prompt, not Claude REPL.
       const TERMINAL_NAME = 'AIDLC · Claude';
-      const existing = vscode.window.terminals.find((t) => t.name === TERMINAL_NAME);
-      if (existing) {
-        existing.show(false);
-        existing.sendText(prompt, false);
-        return;
-      }
-
-      // Fresh terminal — bake the prompt into the claude launch command.
-      const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-      const cwd = root && fs.existsSync(root) ? root : undefined;
+      const cwd = fs.existsSync(root) ? root : undefined;
       const terminal = vscode.window.createTerminal({
         name: TERMINAL_NAME,
         cwd,

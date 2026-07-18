@@ -1,9 +1,9 @@
-# GH-68 Implementation Summary
+# GH-68 IMPLEMENTATION SUMMARY
 
 ## Branch
 `feature/GH-68-epics-dir-setting` — PR: https://github.com/aidlc-io/aidlc/pull/70
 
-## What was built
+## WHAT WAS BUILT
 A configurable epics directory — viewable and changeable from both VS Code Settings and the extension's webview UI, with a "no project" experience that lets users start epics or load them from other projects.
 
 ### 1. VS Code Setting + bidirectional sync
