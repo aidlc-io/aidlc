@@ -110,18 +110,31 @@ const PHASES: PhaseDef[] = [
     capabilities: ['jira', 'figma', 'core-business', 'web'],
   },
   {
+    // GH-77: Prototype phase — propose UI visually (multiple options) before design.
+    // Reads PRD (incl. Discovery decisions) to generate UI variants.
+    // Uses discovery-gate for method selection + option choice (like #76).
+    id: 'prototype', name: 'Prototype', persona: 'designer', skillFiles: ['prototype', 'discovery-gate'], model: 'claude-opus-4-7',
+    description: 'Propose the UI visually with multiple design options.',
+    inputs: 'PRD + discovery decisions, user preference for design method',
+    outputs: 'UI prototype options (HTML) + PROTOTYPE.md with chosen option',
+    artifact: 'PROTOTYPE.md',
+    humanReview: true, autoReview: false,
+    capabilities: ['figma', 'artifact-design', 'web'],
+    dependsOn: ['plan'],
+  },
+  {
     // Design also carries `discovery-gate`: when open questions surface while
     // writing the implementation plan (approach, boundaries, which files, edge
     // cases), it runs the gate instead of asking inline, then finishes
     // TECH-DESIGN.md from the answers.
     id: 'design', name: 'Design', persona: 'tech-lead', skillFiles: ['tech-design', 'discovery-gate'], model: 'claude-opus-4-7',
     description: 'Design the implementation approach.',
-    inputs: 'PRD, existing code, dependency graph',
+    inputs: 'PRD, prototype, existing code, dependency graph',
     outputs: 'Architecture, API contract, DI plan, file impact list',
     artifact: 'TECH-DESIGN.md',
     humanReview: true, autoReview: false,
     capabilities: ['files', 'github', 'core-business'],
-    dependsOn: ['plan'],
+    dependsOn: ['prototype'],
   },
   {
     id: 'test-plan', name: 'Test Plan', persona: 'qa', skillFiles: ['test-plan'], model: 'claude-sonnet-4-6',
@@ -266,14 +279,19 @@ const SDLC_RECIPES: RecipeDef[] = [
     steps: ['design', 'implement', 'execute-test'],
   },
   {
+    id: 'ui-feature',
+    description: 'UI-focused feature with prototype phase before design.',
+    steps: ['plan', 'prototype', 'design', 'implement', 'execute-test'],
+  },
+  {
     id: 'feature-parallel',
-    description: 'Mid-size feature, QA track parallel to engineering (design ∥ test-plan).',
-    steps: ['plan', 'design', 'test-plan', 'implement', 'execute-test'],
+    description: 'Mid-size feature, QA track parallel to engineering (prototype → design ∥ test-plan).',
+    steps: ['plan', 'prototype', 'design', 'test-plan', 'implement', 'execute-test'],
   },
   {
     id: 'large-feature',
-    description: 'Full SDLC: plan → design ∥ test-plan → implement → test cases → execute.',
-    steps: ['plan', 'design', 'test-plan', 'implement', 'generate-test-cases', 'execute-test'],
+    description: 'Full SDLC: plan → prototype → design ∥ test-plan → implement → test cases → execute.',
+    steps: ['plan', 'prototype', 'design', 'test-plan', 'implement', 'generate-test-cases', 'execute-test'],
   },
   {
     id: 'spike',

@@ -56,6 +56,7 @@ export interface CanonicalPhase {
  */
 export const CANONICAL_PHASES: CanonicalPhase[] = [
   { id: 'plan', name: 'Plan', description: 'Scaffold the epic and write the PRD.', artifact: 'PRD.md' },
+  { id: 'prototype', name: 'Prototype', description: 'Propose the UI visually with multiple design options.', artifact: 'PROTOTYPE.md' },
   { id: 'design', name: 'Design', description: 'Design the implementation approach.', artifact: 'TECH-DESIGN.md' },
   { id: 'test-plan', name: 'Test Plan', description: 'Plan how the feature will be verified.', artifact: 'TEST-PLAN.md' },
   { id: 'implement', name: 'Implement', description: 'Build the feature on a feature branch.', artifact: 'IMPLEMENT-SUMMARY.md' },
