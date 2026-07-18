@@ -97,7 +97,11 @@ interface PhaseDef {
  */
 const PHASES: PhaseDef[] = [
   {
-    id: 'plan', name: 'Plan', persona: 'po', skillFiles: ['prd'], model: 'claude-opus-4-7',
+    // `discovery-gate` is a secondary skill (not the primary composed into the
+    // command body) — the Plan phase runs it up front when the gate rule fires
+    // (≥3 open questions, or any high-impact one), then writes the confirmed
+    // choices into PRD.md's `## Discovery decisions` section. It is NOT a phase.
+    id: 'plan', name: 'Plan', persona: 'po', skillFiles: ['prd', 'discovery-gate'], model: 'claude-opus-4-7',
     description: 'Scaffold the epic and write the PRD.',
     inputs: 'Jira ticket, business context, Figma designs',
     outputs: 'Epic doc + PRD with measurable acceptance criteria',
@@ -106,7 +110,11 @@ const PHASES: PhaseDef[] = [
     capabilities: ['jira', 'figma', 'core-business', 'web'],
   },
   {
-    id: 'design', name: 'Design', persona: 'tech-lead', skillFiles: ['tech-design'], model: 'claude-opus-4-7',
+    // Design also carries `discovery-gate`: when open questions surface while
+    // writing the implementation plan (approach, boundaries, which files, edge
+    // cases), it runs the gate instead of asking inline, then finishes
+    // TECH-DESIGN.md from the answers.
+    id: 'design', name: 'Design', persona: 'tech-lead', skillFiles: ['tech-design', 'discovery-gate'], model: 'claude-opus-4-7',
     description: 'Design the implementation approach.',
     inputs: 'PRD, existing code, dependency graph',
     outputs: 'Architecture, API contract, DI plan, file impact list',

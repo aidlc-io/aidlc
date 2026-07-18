@@ -7,6 +7,16 @@
 
 ---
 
+## 0. Discovery decisions
+
+> *Only when the discovery gate ran. One line per resolved question → the chosen answer
+> (including any "Decide for me" defaults that stood). Downstream phases read confirmed
+> scope / approach from here. Omit this section for a small, clear epic that skipped the gate.*
+
+| # | Question | Decision |
+|---|----------|----------|
+| 1 |          |          |
+
 ## 1. Problem Statement
 
 > *Describe the user or business problem this epic solves. Why does it exist?*

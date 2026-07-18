@@ -12,6 +12,33 @@ Load your full persona from `.claude/agents/po.md` before starting.
 ## Step 0: Pipeline Gate Check
 Read and execute `.claude/skills/_gate-check.md`. This skill = phase `plan`, epic = `$0`. If gate fails → STOP.
 
+## Step 0.5: Discovery Gate (run up front — BEFORE asking anything in chat)
+
+Before writing the PRD, take stock of your **open questions** — scope, target users, which data
+to surface, density, edge cases, which approach, where a boundary sits.
+
+**Gate rule:** if there are **≥ 3 open questions**, OR **any single high-impact question**
+(scope / architecture / acceptance criteria):
+
+> **Read and execute `~/.claude/skills/aidlc-discovery-gate.md` now.** Pass epic = `$0`.
+> That skill composes `docs/epics/$0/artifacts/DISCOVERY.md` as a point-and-click
+> questionnaire, **opens it in annotron in the browser**, and blocks (`poll`) until you
+> finalize your answers.
+
+**This is mandatory when the gate fires — it is the ONLY acceptable way to resolve the
+questions. Do NOT ask them one-at-a-time in chat. Do NOT silently guess. Do NOT skip straight
+to writing the PRD.** If you find yourself about to type a numbered list of questions to the
+user, stop — that is the signal to run the discovery gate instead. The whole point is a single
+point-and-click place to confirm decisions, not a chat interrogation.
+
+When the gate returns, write the confirmed choices into a **`## Discovery decisions`** section at
+the **top of the PRD** (see Output), then build the rest of the PRD *from those decisions*.
+
+Only when the gate rule does **not** fire (a genuinely small / clear epic — fewer than 3
+questions and none high-impact) may you skip discovery and write the PRD directly, with no
+annotron round. `DISCOVERY.md` is a **working doc, never a pipeline artifact** (never in any
+`produces:` / `depends_on`); the durable record is the PRD's `## Discovery decisions` section.
+
 ## Steps
 
 1. Read the epic doc at `docs/epics/$0/$0.md` to understand scope, target user, and user stories
@@ -21,6 +48,11 @@ Read and execute `.claude/skills/_gate-check.md`. This skill = phase `plan`, epi
 5. Fill the PRD with the sections below — each answers a specific question downstream work will ask
 
 ## PRD Contents
+
+### Discovery decisions
+*(Only when the discovery gate ran — omit for a small/clear epic that skipped it.)*
+- One line per resolved question → the chosen answer (including any "Decide for me" defaults
+  that stood). Downstream phases (design, test-plan) read confirmed scope/approach from here.
 
 ### Problem & Goal
 - **Problem**: crisp user-focused statement — who hurts, when, why
