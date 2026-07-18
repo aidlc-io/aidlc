@@ -165,6 +165,19 @@ const PipelineStepObjectSchema = z
     auto_review_timeout_ms: z.number().int().positive().optional(),
     /** When true, the runner pauses for human approval before advancing. */
     human_review: z.boolean().default(false),
+    /**
+     * Git behavior for branch-artifact steps (e.g., implement). Controls whether
+     * the step creates a feature branch, pushes to origin, and opens a PR.
+     * (GH-74 Part 3) Defaults preserve current behavior: both true.
+     */
+    git: z.object({
+      /** Create and use a feature branch for this step. */
+      branch: z.boolean().default(true),
+      /** Push the branch to origin after committing. */
+      push: z.boolean().default(true),
+      /** Open a PR after pushing (only valid when push=true). */
+      open_pr: z.boolean().default(true),
+    }).optional(),
   })
   .refine((s) => !s.auto_review || !!s.auto_review_runner, {
     message: 'Step with `auto_review: true` must set `auto_review_runner` (path to a JS/TS validator module).',
@@ -248,6 +261,8 @@ export interface NormalizedStep {
   auto_review_runner?: string;
   auto_review_timeout_ms?: number;
   human_review: boolean;
+  /** Git behavior for branch-artifact steps (GH-74 Part 3). */
+  git?: { branch: boolean; push: boolean; open_pr: boolean };
 }
 
 /**
@@ -284,6 +299,16 @@ export function normalizeStep(step: PipelineStepConfig | { agent?: string; [k: s
     : typeof obj.skill === 'string' && obj.skill.length > 0
       ? [obj.skill]
       : undefined;
+  // GH-74 Part 3: Parse git config (branch/push/PR behavior)
+  const gitCfg = obj.git as Record<string, unknown> | undefined;
+  const git = gitCfg
+    ? {
+        branch: gitCfg.branch !== false,
+        push: gitCfg.push !== false,
+        open_pr: gitCfg.open_pr !== false,
+      }
+    : undefined;
+
   return {
     agent: typeof obj.agent === 'string' ? obj.agent : '',
     name: typeof obj.name === 'string' ? obj.name : undefined,
@@ -300,6 +325,7 @@ export function normalizeStep(step: PipelineStepConfig | { agent?: string; [k: s
         ? obj.auto_review_timeout_ms
         : undefined,
     human_review: obj.human_review === true,
+    ...(git && { git }),
   };
 }
 

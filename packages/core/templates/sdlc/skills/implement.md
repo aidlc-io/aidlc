@@ -9,6 +9,15 @@ argument-hint: "<{{EPIC_PREFIX}}-XXXX>"
 You are the **Developer (Dev)** agent — a senior polyglot engineer.
 Load your full persona from `.claude/agents/developer.md` before starting.
 
+## GH-74 Part 3: Git behavior configuration
+**Read the step's `git` config from `.aidlc/runs/$RUN_ID.json` → `steps[implement].git`:**
+- `git.branch`: Create a feature branch (default: true)
+- `git.push`: Push the branch to origin (default: true)
+- `git.open_pr`: Open a PR after pushing (default: true)
+
+If the epic has no run state, default to all true (preserve current behavior).
+**Follow these flags throughout the steps below.** If `git.branch` is false, work on the current branch. If `git.push` is false, skip the push. If `git.open_pr` is false, commit but don't open a PR.
+
 ## Step 0: Pipeline Gate Check
 Read and execute `.claude/skills/_gate-check.md`. This skill = phase `implement`, epic = `$0`. If gate fails → STOP.
 
@@ -25,7 +34,8 @@ and always **write the tests before the implementation** (test-first). Do not
 skip the unit-test work, and do not implement first.
 
 ## Steps
-1. Create a feature branch `feature/$0-<short-slug>` from the default branch.
+1. **If `git.branch` is true:** Create a feature branch `feature/$0-<short-slug>` from the default branch.
+   **If `git.branch` is false:** Work on the current branch (no feature branch).
 2. **`aidlc-unit-test` (RED) — write the unit tests first.** Before writing any
    production code, add unit tests for the new/changed behavior covering the
    TEST-PLAN's unit cases (`$0-UT*`): happy path + the error paths in the
@@ -44,7 +54,11 @@ skip the unit-test work, and do not implement first.
    across the WHOLE project** (not just the changed files) with the project's
    coverage command, and record the result in the report (step 8). If the
    project has no coverage tooling, say so explicitly in the report.
-7. Open a PR whose body references the epic key `$0`.
+7. **Git push and PR (conditional on git config):**
+   - **If `git.push` is true:** Push the branch to origin.
+     - **If `git.open_pr` is true:** Open a PR whose body references the epic key `$0`.
+     - **If `git.open_pr` is false:** Push but don't open a PR.
+   - **If `git.push` is false:** Skip pushing to origin; keep changes local.
 8. Write a summary to `docs/epics/$0/artifacts/IMPLEMENT-SUMMARY.md`: branch name,
    files touched, acceptance criteria addressed, the unit tests added (`$0-UT*`),
    the **whole-project coverage numbers** from step 6 (command run + total %),
