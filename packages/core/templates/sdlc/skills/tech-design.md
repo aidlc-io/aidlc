@@ -12,6 +12,26 @@ Load your full persona from `.claude/agents/tech-lead.md` before starting.
 ## Step 0: Pipeline Gate Check
 Read and execute `.claude/skills/_gate-check.md`. This skill = phase `design`, epic = `$0`. If gate fails → STOP.
 
+## Step 0.5: Discovery Gate (when open questions surface)
+
+The implementation plan for coding stays **inside this design phase** — there is no separate
+impl-plan phase — so `TECH-DESIGN.md` must carry a **complete implementation plan**, not just a
+bare file-impact list. While working that plan you may hit open questions (which approach, where
+a boundary sits, which files to touch, edge cases).
+
+**Gate rule:** if there are **≥ 3 open questions**, OR **any single high-impact question**
+(approach / architecture / acceptance-affecting boundary):
+
+> **Read and execute `~/.claude/skills/aidlc-discovery-gate.md` now.** Pass epic = `$0`.
+> It composes a questionnaire, **opens it in annotron in the browser**, and blocks until you
+> finalize.
+
+**This is mandatory when the gate fires — do NOT ask the questions one-at-a-time in chat and do
+NOT guess.** If you're about to type a numbered list of questions to the user, stop and run the
+discovery gate instead. Then finish the design from the confirmed answers and note the resolved
+choices in the Summary / Open Questions sections. `DISCOVERY.md` is a working doc, never a
+`produces:` / `depends_on` artifact.
+
 ## Steps
 
 1. Read the epic doc: `docs/epics/$0/$0.md`
@@ -80,9 +100,19 @@ Read and execute `.claude/skills/_gate-check.md`. This skill = phase `design`, e
 - Staged rollout plan (if applicable)
 - Rollback path (flag flip / version rollback / config rollback)
 
+### Implementation Plan
+The design must carry a **complete implementation plan** the Implement phase can execute directly
+— not just a file list:
+- **Ordered tasks / steps** — the sequence to build this in, dependencies first. Each task small
+  and independently reviewable.
+- **Per-file checklist** — for every file, what to add / change / delete (functions, types,
+  wiring), tied to the task(s) above.
+- **Tests to write** — the unit / integration tests to add per the test plan, mapped to the
+  acceptance criteria and the tasks that make them pass.
+
 ### File / Module Impact
 - Complete list: new / modified / deleted
-- For each modified file, a one-line reason
+- For each modified file, a one-line reason (this feeds the per-file checklist above)
 
 ### Risks & Technical Debt
 - Risks with mitigations

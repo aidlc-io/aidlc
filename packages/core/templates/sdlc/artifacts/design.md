@@ -80,13 +80,32 @@ CREATE TABLE example (
 |-----------|--------------|----------|-------|
 |           |              |          |       |
 
-## 7. File Impact List
+## 7. Implementation Plan
 
-| File | Change type | Reason |
-|------|-------------|--------|
-| `src/...` | Add | New feature |
-| `src/...` | Modify | Extend existing |
-| `src/...` | Delete | Superseded by … |
+> *A complete plan the Implement phase can execute directly — not just a file list.*
+
+### 7.1 Ordered Tasks
+
+| # | Task | Depends on | Notes |
+|---|------|-----------|-------|
+| 1 |      | —          |       |
+| 2 |      | 1          |       |
+
+### 7.2 Per-File Checklist
+
+| File | Change type | What to add / change | Task(s) |
+|------|-------------|----------------------|---------|
+| `src/...` | Add | New feature | 1 |
+| `src/...` | Modify | Extend existing | 2 |
+| `src/...` | Delete | Superseded by … | — |
+
+### 7.3 Tests to Write
+
+> *Unit / integration tests to add per the test plan, mapped to acceptance criteria.*
+
+| Test | Kind (unit / integration) | Covers AC | Task(s) |
+|------|---------------------------|-----------|---------|
+|      |                           |           |         |
 
 ## 8. Security Considerations
 

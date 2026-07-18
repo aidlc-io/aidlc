@@ -770,6 +770,72 @@
     return dt + clone.outerHTML;
   }
 
+  // ── Form control capture ──────────────────────────────────────────────────
+  function captureFormControlState(el) {
+    const type = el.type?.toLowerCase() || el.tagName.toLowerCase();
+    let value;
+
+    if (type === 'checkbox') {
+      value = el.checked;
+    } else if (type === 'radio') {
+      value = el.checked ? el.value : null;
+    } else if (type === 'select' || el.tagName.toLowerCase() === 'select') {
+      value = el.value;
+    } else if (type === 'text' || type === 'textarea' || el.tagName.toLowerCase() === 'textarea') {
+      value = el.value;
+    } else {
+      value = el.value;
+    }
+
+    return {
+      selector: cssPath(el),
+      type: type === 'select' ? 'select' : (el.type || type),
+      value: value,
+      name: el.name || '',
+      label: el.getAttribute('aria-label') || el.parentElement?.textContent?.trim().slice(0, 60) || '',
+    };
+  }
+
+  function captureAllFormControls() {
+    const controls = [];
+    const inputs = document.querySelectorAll('input[type="checkbox"], input[type="radio"], input[type="text"], input[type="textarea"], select, textarea');
+    for (const el of inputs) {
+      if (isAnnotronEl(el)) continue;
+      controls.push(captureFormControlState(el));
+    }
+    return controls;
+  }
+
+  function setupFormControlListeners() {
+    document.addEventListener('change', e => {
+      if (!annotating || isAnnotronEl(e.target)) return;
+      const el = e.target;
+      if (!el.matches('input[type="checkbox"], input[type="radio"], select')) return;
+
+      const state = captureFormControlState(el);
+      window.parent.postMessage({
+        [TAG]: true,
+        type: 'form-control-changed',
+        ...state,
+      }, '*');
+    }, true);
+
+    document.addEventListener('input', e => {
+      if (!annotating || isAnnotronEl(e.target)) return;
+      const el = e.target;
+      if (!el.matches('input[type="text"], textarea')) return;
+
+      const state = captureFormControlState(el);
+      window.parent.postMessage({
+        [TAG]: true,
+        type: 'form-control-changed',
+        ...state,
+      }, '*');
+    }, true);
+  }
+
+  setupFormControlListeners();
+
   // ── Message bus ────────────────────────────────────────────────────────────
   window.addEventListener('message', e => {
     const d = e.data;
@@ -786,6 +852,10 @@
     }
     if (d.type === 'serialize') {
       e.source.postMessage({ [TAG]: true, type: 'serialized', html: serialize(), reqId: d.reqId }, '*');
+    }
+    if (d.type === 'get-form-state') {
+      const formControls = captureAllFormControls();
+      e.source.postMessage({ [TAG]: true, type: 'form-state', controls: formControls, reqId: d.reqId }, '*');
     }
     if (d.type === 'jump-to-element') {
       const target = d.selector ? document.querySelector(d.selector) : null;

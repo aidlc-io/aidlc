@@ -24,6 +24,8 @@ This is a **monorepo** managed with [pnpm workspaces](https://pnpm.io/workspaces
 
 Open any epic artifact in a **browser annotation editor** ([annotron](https://www.npmjs.com/package/annotron), vendored — no separate install), point-and-click your feedback, and let Claude apply it **back to the Markdown** (the canonical source) and re-render — with a full **revision history**: who changed what, and a per-revision selector to reopen any past version. Each epic also keeps a compact **memory** (`epic-memory.json`: decisions, constraints, reflections) so picking it back up later — with any agent — costs far fewer tokens. Markdown → HTML uses a zero-dependency Node renderer (no Python). Works in the VS Code extension, and from the terminal via `aidlc globals install` (installs the `/annotate-artifact` and `/epic-context` skills + tools under `~/.claude`).
 
+The mirror image runs at the **start** of a phase: a **discovery gate**. When the **Plan** phase (or **Design**) has open questions before it can write a good artifact — scope, target users, which approach, where a boundary sits — it doesn't ask them one-at-a-time in chat or silently guess. The `discovery-gate` skill turns them into a point-and-click **questionnaire** (each question with options, an "Other / notes" blank, and a pre-ticked "Decide for me" default), opens it in annotron the same way, and resumes the phase from your confirmed choices — which land in the PRD's `## Discovery decisions` section. It's a **gate, not a phase** (the questionnaire is a throwaway working doc, never a pipeline artifact), and it only fires when there are ≥ 3 open questions or a single high-impact one — a small, clear epic writes the PRD directly.
+
 ## Packages
 
 | Package | Path | Purpose |
