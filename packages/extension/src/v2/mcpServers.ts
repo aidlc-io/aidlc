@@ -51,7 +51,7 @@ export async function loadMcpServers(
     execFile(
       claudeBin,
       ['mcp', 'list'],
-      { timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024 },
+      { timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024, env: process.env },
       (err, stdout, stderr) => {
         if (err) {
           resolve(describeSpawnError(err, stdout || '', stderr || '', claudeBin, timeoutMs));

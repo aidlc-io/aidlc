@@ -3648,6 +3648,7 @@ export class WorkspaceWebview {
               cwd: root,
               maxBuffer: 2 * 1024 * 1024,
               timeout: 60_000,
+              env: process.env,
             });
             if (stdout.trim()) {
               fs.writeFileSync(destFile, stdout.trim() + '\n', 'utf8');
