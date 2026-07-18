@@ -207,6 +207,7 @@ function ScopeFilter({
       >
         <option value="project">Project — .claude/ ({counts.project})</option>
         <option value="global">Global — ~/.claude/ ({counts.global})</option>
+        {counts.aidlc > 0 && <option value="aidlc">AIDLC — workspace.yaml ({counts.aidlc})</option>}
       </select>
     </div>
   );
