@@ -144,7 +144,7 @@ const PHASES: PhaseDef[] = [
     artifact: 'TEST-PLAN.md',
     humanReview: true, autoReview: false,
     capabilities: ['files', 'jira', 'core-business', 'its'],
-    dependsOn: ['plan'],
+    dependsOn: ['prototype'],
   },
   {
     id: 'implement', name: 'Implement', persona: 'developer', skillFiles: ['implement', 'unit-test'], model: 'claude-sonnet-4-6',
