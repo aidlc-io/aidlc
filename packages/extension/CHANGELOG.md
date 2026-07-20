@@ -1,5 +1,31 @@
 # Changelog
 
+## 3.1.0
+
+### Annotron 1.0 Integration
+
+- feat(annotron): upgrade to v1.0.0 with major new features:
+  - **Markdown rendering with Mermaid diagrams** — view `.md` files with inline flowchart, sequence, UML, ER, C4, architecture, Gantt, timeline diagrams
+  - **Editable Markdown pane** — edit Markdown source directly in annotron; press Save (⌘/Ctrl+S) to re-render HTML
+  - **Outline navigation sidebar** — auto-generated sidebar for h1–h4 headings in long docs; one-click jump to sections
+  - **Auto-apply feedback loop** — integrated agent loop engineering: send annotations → watch Claude apply changes live in real-time
+  - **Live activity mirror** — stream of agent's tool calls (Read/Edit/Bash/Run) visible in sidebar during execution
+  - **Image attachments** — paste/upload images into annotations and replies
+  - **Permission approval in browser** — approve/deny Claude Code tool permissions directly in annotation UI
+
+### Skill Discovery & Agent Picker Improvements
+
+- fix(extension): improve file watcher pattern (`.claude/**`) reliability. Added manual refresh button (🔄) to sidebar and AIDLC command palette command for instant discovery without VSCode restart.
+- fix(wizards): skill picker in agent creation now includes discovered skills (not just `workspace.yaml`-declared ones). Skills created via `aidlc.addSkill` immediately appear without restart.
+- fix(workspaceWebview): deduplicate skills and agents when declared in both `workspace.yaml` AND discovered in `.claude/skills/`. Uses precedence: aidlc > project > global. Each skill ID now appears once; single checkbox per skill.
+
+### Model Version Updates
+
+- fix(models): update Claude model defaults to current versions:
+  - `claude-sonnet-4-6` → `claude-sonnet-5` (latest, balanced default)
+  - `claude-opus-4-7` → `claude-opus-4-8` (current most capable)
+  - `claude-haiku-4-5-20251001` (unchanged)
+
 ## 2.6.0
 
 ### Discovery gate (GH-76)
