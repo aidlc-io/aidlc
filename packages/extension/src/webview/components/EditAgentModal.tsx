@@ -7,8 +7,8 @@ import { Modal, ModalFooter, ModalCancelButton, ModalConfirmButton } from './Mod
 const CAP_PATTERN = /^[a-z][a-z0-9-]*$/;
 
 const MODELS = [
-  { value: 'claude-sonnet-4-6', label: 'claude-sonnet-4-6', hint: 'Balanced (recommended default)' },
-  { value: 'claude-opus-4-7', label: 'claude-opus-4-7', hint: 'Most capable, slower' },
+  { value: 'claude-sonnet-5', label: 'claude-sonnet-5', hint: 'Balanced (recommended default)' },
+  { value: 'claude-opus-4-8', label: 'claude-opus-4-8', hint: 'Most capable, slower' },
   { value: 'claude-haiku-4-5-20251001', label: 'claude-haiku-4-5', hint: 'Fastest, cheapest' },
 ];
 
