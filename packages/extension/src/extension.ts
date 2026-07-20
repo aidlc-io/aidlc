@@ -113,6 +113,16 @@ export function activate(context: vscode.ExtensionContext): void {
     ),
   );
 
+  // Manual refresh command for skills/agents/workspace state. Users can invoke
+  // from command palette if file watcher detection is delayed (e.g., global
+  // ~/.claude/skills changes or CI generates new files).
+  context.subscriptions.push(
+    vscode.commands.registerCommand('aidlc.refreshSidebar', () => {
+      sidebar.refresh();
+      vscode.window.showInformationMessage('AIDLC sidebar refreshed');
+    }),
+  );
+
   // Watch workspace.yaml so the sidebar (and any open Builder panel) refresh
   // automatically when the user edits the file directly. We don't rely on
   // a single watcher because the user can switch projects mid-session.
@@ -288,22 +298,21 @@ function createTemplatesWatcher(): vscode.FileSystemWatcher | null {
 }
 
 /**
- * Watcher for `<workspace>/.claude/{skills,agents}/**` — project-scoped
- * Claude Code native assets. Triggers a refresh on add / change / delete
- * so the catalog the user sees in the Builder is always in sync with
- * disk. The glob is broad on purpose (recursive) — folder-form skills
- * `<id>/SKILL.md` count as a change to the asset itself, not just to a
- * deeply-nested file.
+ * Watcher for `<workspace>/.claude/**` — project-scoped Claude Code native
+ * assets (skills, agents, templates). Triggers a refresh on add / change / delete
+ * so the catalog the user sees in the Builder is always in sync with disk.
+ * The glob is broad on purpose (recursive) — folder-form skills `<id>/SKILL.md`
+ * count as a change to the asset itself, not just to a deeply-nested file.
  */
 function createClaudeAssetsWatcher(): vscode.FileSystemWatcher | null {
   const folder = vscode.workspace.workspaceFolders?.[0];
   if (!folder) { return null; }
-  const pattern = new vscode.RelativePattern(folder, '.claude/{skills,agents}/**');
+  const pattern = new vscode.RelativePattern(folder, '.claude/**');
   return vscode.workspace.createFileSystemWatcher(pattern);
 }
 
 /**
- * Watcher for `<workspace>/.aidlc/{skills,agents}/**` — AIDLC-scoped
+ * Watcher for `<workspace>/.aidlc/skills/**` and `.aidlc/agents/**` — AIDLC-scoped
  * skill / agent .md files. Workspace.yaml has its own watcher; this one
  * picks up edits to the referenced .md files themselves.
  */
@@ -311,7 +320,8 @@ function createAidlcAssetsWatcher(): vscode.FileSystemWatcher | null {
   const folder = vscode.workspace.workspaceFolders?.[0];
   if (!folder) { return null; }
   const pattern = new vscode.RelativePattern(folder, '.aidlc/{skills,agents}/**');
-  return vscode.workspace.createFileSystemWatcher(pattern);
+  const watcher = vscode.workspace.createFileSystemWatcher(pattern);
+  return watcher;
 }
 
 /**

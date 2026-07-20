@@ -228,6 +228,12 @@
         "title": "Select SDLC Standard",
         "icon": "$(law)",
         "category": "AIDLC"
+      },
+      {
+        "command": "aidlc.refreshSidebar",
+        "title": "Refresh Skills & Agents Catalog",
+        "icon": "$(refresh)",
+        "category": "AIDLC"
       }
     ],
     "configuration": {
@@ -323,6 +329,11 @@
           "command": "aidlc.selectStandard",
           "when": "view == aidlcSidebar",
           "group": "navigation@6"
+        },
+        {
+          "command": "aidlc.refreshSidebar",
+          "when": "view == aidlcSidebar",
+          "group": "navigation@7"
         }
       ]
     },
