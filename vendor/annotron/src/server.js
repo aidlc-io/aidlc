@@ -1,10 +1,55 @@
 import http from 'http';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import crypto from 'crypto';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import { fileURLToPath } from 'url';
+import { renderMarkdown } from './mdRender.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const execFileP = promisify(execFile);
+
+// A source Markdown artifact is rendered to HTML on the fly; the .md stays the
+// source of truth and is what the Save button writes back to.
+const isMarkdown = (f) => /\.md$/i.test(f);
+
+// --- Reviewer identity ---------------------------------------------------------
+// Who is leaving comments? Prefer the GitHub login (via `gh`), then the git
+// user.name/email, then the OS user@hostname. Computed once and cached — this is
+// a single-user local tool. PATH is augmented so `gh`/`git` resolve even when
+// the server was spawned from a GUI (Dock) with a minimal PATH.
+let _identityPromise = null;
+function identityEnv() {
+  const home = process.env.HOME || '';
+  const extra = ['/opt/homebrew/bin', '/usr/local/bin', `${home}/.local/bin`].filter(Boolean).join(':');
+  return { ...process.env, PATH: `${process.env.PATH || ''}:${extra}` };
+}
+async function runId(cmd, args, cwd) {
+  try {
+    const { stdout } = await execFileP(cmd, args, { cwd, timeout: 2500, env: identityEnv() });
+    return stdout.toString().trim();
+  } catch { return ''; }
+}
+async function computeIdentity(cwd) {
+  const [gitName, gitEmail, login] = await Promise.all([
+    runId('git', ['config', 'user.name'], cwd),
+    runId('git', ['config', 'user.email'], cwd),
+    runId('gh', ['api', 'user', '--jq', '.login'], cwd),
+  ]);
+  let user = '', host = '';
+  try { user = os.userInfo().username; } catch {}
+  try { host = os.hostname().replace(/\.local$/, ''); } catch {}
+  const name = login || gitName || user || 'Reviewer';
+  const userHost = user && host ? `${user}@${host}` : (host || user);
+  const detail = login ? (gitEmail || userHost) : (gitEmail || userHost);
+  return { name, detail, login, gitName, gitEmail, user, host };
+}
+function getIdentity(cwd) {
+  if (!_identityPromise) _identityPromise = computeIdentity(cwd);
+  return _identityPromise;
+}
 
 const PORT = parseInt(process.env.ANNOTRON_PORT || '7321', 10);
 const HOST = process.env.ANNOTRON_HOST || '127.0.0.1';
@@ -199,7 +244,7 @@ async function handler(req, res) {
     if (!file) return send(res, 400, { error: 'missing file' });
     const abs = path.resolve(file);
     if (!fs.existsSync(abs)) return send(res, 404, { error: 'file not found' });
-    if (!abs.endsWith('.html')) return send(res, 400, { error: 'must be .html' });
+    if (!abs.endsWith('.html') && !isMarkdown(abs)) return send(res, 400, { error: 'must be .html or .md' });
     allowList.add(abs);
     getSession(abs);
     watchFile(abs);
@@ -214,7 +259,7 @@ async function handler(req, res) {
   }
 
   if (pathname === '/sdk.js' && method === 'GET') {
-    res.writeHead(200, { 'Content-Type': 'application/javascript' });
+    res.writeHead(200, { 'Content-Type': 'application/javascript', 'Cache-Control': 'no-store' });
     res.end(fs.readFileSync(SDK_PATH, 'utf8'));
     return;
   }
@@ -224,12 +269,49 @@ async function handler(req, res) {
     if (!file) return send(res, 400, { error: 'missing file' });
     const abs = path.resolve(file);
     if (!allowList.has(abs)) return send(res, 403, { error: 'not registered' });
+    let raw;
+    try { raw = fs.readFileSync(abs, 'utf8'); } catch { return send(res, 404, { error: 'not found' }); }
+    // Markdown source is rendered to HTML (with merslim diagrams) on the fly;
+    // HTML artifacts are served as-is. Either way the SDK is injected.
     let html;
-    try { html = fs.readFileSync(abs, 'utf8'); } catch { return send(res, 404, { error: 'not found' }); }
+    if (isMarkdown(abs)) {
+      try { html = await renderMarkdown(raw, { title: path.basename(abs) }); }
+      catch (e) { return send(res, 500, { error: 'markdown render failed: ' + e.message }); }
+    } else {
+      html = raw;
+    }
     const injected = injectSDK(html);
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    // Never cache: the artifact changes as the agent edits it, and the injected
+    // SDK changes across versions — a cached copy would serve a stale preview
+    // (and stale annotation overlays) even after a reload.
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
     res.end(injected);
     return;
+  }
+
+  // Raw Markdown source (for the in-browser editor pane, Markdown mode only).
+  if (pathname === '/source' && method === 'GET') {
+    const file = u.searchParams.get('file');
+    if (!file) return send(res, 400, { error: 'missing file' });
+    const abs = path.resolve(file);
+    if (!allowList.has(abs)) return send(res, 403, { error: 'not registered' });
+    if (!isMarkdown(abs)) return send(res, 400, { error: 'not a markdown file' });
+    let text;
+    try { text = fs.readFileSync(abs, 'utf8'); } catch { return send(res, 404, { error: 'not found' }); }
+    return send(res, 200, { file: abs, markdown: text });
+  }
+
+  // Save the edited Markdown back to the .md source. The file watcher then
+  // fires a reload, re-rendering the preview (diagrams included).
+  if (pathname === '/save-md' && method === 'POST') {
+    const body = await readBody(req);
+    const file = body.file;
+    if (!file || typeof body.markdown !== 'string') return send(res, 400, { error: 'missing file or markdown' });
+    const abs = path.resolve(file);
+    if (!allowList.has(abs)) return send(res, 403, { error: 'not registered' });
+    if (!isMarkdown(abs)) return send(res, 400, { error: 'not a markdown file' });
+    try { fs.writeFileSync(abs, body.markdown, 'utf8'); } catch (e) { return send(res, 500, { error: 'write failed: ' + e.message }); }
+    return send(res, 200, { ok: true });
   }
 
   if (pathname === '/annotations' && method === 'GET') {
@@ -238,6 +320,13 @@ async function handler(req, res) {
     const abs = path.resolve(file);
     if (!allowList.has(abs)) return send(res, 403, { error: 'not registered' });
     return send(res, 200, readSidecar(abs));
+  }
+
+  // Who is reviewing? Used by the browser to label comment authors.
+  if (pathname === '/whoami' && method === 'GET') {
+    const file = u.searchParams.get('file');
+    const cwd = file ? path.dirname(path.resolve(file)) : process.cwd();
+    return send(res, 200, await getIdentity(cwd));
   }
 
   if (pathname === '/annotations' && method === 'POST') {
@@ -259,15 +348,21 @@ async function handler(req, res) {
     if (!file) return send(res, 400, { error: 'missing file' });
     const abs = path.resolve(file);
     if (!allowList.has(abs)) return send(res, 403, { error: 'not registered' });
-    // Persist annotations to sidecar
+    // Persist annotations to sidecar, stamped with the reviewer's identity.
     if (body.items && body.items.length > 0) {
+      const who = await getIdentity(path.dirname(abs));
+      const now = () => new Date().toISOString();
+      const humanMsg = (message) => ({ role: 'human', author: who.name, authorDetail: who.detail, message, timestamp: now() });
       const sidecar = readSidecar(abs);
       for (const item of body.items) {
         const existing = item.id ? sidecar.annotations.find(a => a.id === item.id) : null;
         if (existing) {
           // Add new message to existing thread
           if (!existing.thread) existing.thread = [];
-          if (item.note) existing.thread.push({ role: 'human', message: item.note, timestamp: new Date().toISOString() });
+          // A retry re-sends the original instruction (already in the thread) —
+          // just clear the failed flag; don't append a duplicate human message.
+          if (item.retry) delete existing.applyFailed;
+          else if (item.note) existing.thread.push(humanMsg(item.note));
           if (item.kind === 'text') {
             existing.textStart = Number.isInteger(item.textStart) ? item.textStart : existing.textStart ?? null;
             existing.textEnd = Number.isInteger(item.textEnd) ? item.textEnd : existing.textEnd ?? null;
@@ -286,8 +381,10 @@ async function handler(req, res) {
             textEnd: Number.isInteger(item.textEnd) ? item.textEnd : null,
             textPrefix: item.textPrefix || null,
             textSuffix: item.textSuffix || null,
-            thread: item.note ? [{ role: 'human', message: item.note, timestamp: new Date().toISOString() }] : [],
-            createdAt: new Date().toISOString(),
+            author: who.name,
+            authorDetail: who.detail,
+            thread: item.note ? [humanMsg(item.note)] : [],
+            createdAt: now(),
             status: 'open',
           };
           item.id = ann.id;
@@ -348,11 +445,30 @@ async function handler(req, res) {
     if (!file || !body.html) return send(res, 400, { error: 'missing file or html' });
     const abs = path.resolve(file);
     if (!allowList.has(abs)) return send(res, 403, { error: 'not registered' });
+    // Never overwrite a Markdown source with rendered HTML — use /save-md.
+    if (isMarkdown(abs)) return send(res, 400, { error: 'markdown source: use Save (writes .md), not Finalize' });
     const sess = getSession(abs);
     sess._suppressReload = true;
     fs.writeFileSync(abs, body.html, 'utf8');
     sess.finalized = true;
     wakePoll(abs, { finalized: true });
+    return send(res, 200, { ok: true });
+  }
+
+  if (pathname === '/done' && method === 'POST') {
+    // Mark the review finished: no file is written (Save/Finalize already did
+    // that) — this just ends the agent's poll loop cleanly so it can exit, and
+    // tells the browser the session is over. Callers usually follow with /stop.
+    const body = await readBody(req);
+    const file = body.file;
+    if (!file) return send(res, 400, { error: 'missing file' });
+    const abs = path.resolve(file);
+    if (!allowList.has(abs)) return send(res, 403, { error: 'not registered' });
+    const sess = getSession(abs);
+    sess.finalized = true;
+    sess.working = false;
+    wakePoll(abs, { finalized: true });
+    broadcastSSE(abs, 'session-done', '{}');
     return send(res, 200, { ok: true });
   }
 
@@ -370,11 +486,23 @@ async function handler(req, res) {
       const ann = sidecar.annotations.find(a => a.id === body.annotationId);
       if (ann) {
         if (!ann.thread) ann.thread = [];
-        ann.thread.push({ role: 'agent', message: body.message, timestamp: new Date().toISOString() });
+        const now = new Date().toISOString();
+        ann.thread.push({ role: 'agent', message: body.message, timestamp: now });
+        // A comment the agent successfully acted on is considered resolved — the
+        // UI moves it to the History tab, timestamped so the reviewer can track
+        // it. A failed apply (body.failed) stays open and is flagged so the UI
+        // can red-border it and offer a Retry.
+        if (!body.failed) {
+          ann.status = 'resolved';
+          ann.resolvedAt = now;
+          delete ann.applyFailed;
+        } else {
+          ann.applyFailed = true;
+        }
         writeSidecar(abs, sidecar);
       }
     }
-    broadcastSSE(abs, 'agent-reply', JSON.stringify({ message: body.message, annotationId: body.annotationId || null }));
+    broadcastSSE(abs, 'agent-reply', JSON.stringify({ message: body.message, annotationId: body.annotationId || null, failed: !!body.failed }));
     return send(res, 200, { ok: true });
   }
 
