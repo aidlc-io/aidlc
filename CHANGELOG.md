@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.0] - 2026-07-20
+
+### Added
+
+- **Annotron 1.0.0 Integration** — Human-in-the-loop annotation editor with major new features:
+  - **Markdown rendering with diagrams** — View `.md` files with inline Mermaid diagrams (flowchart, sequence, UML, ER, C4, architecture, Gantt, timeline)
+  - **Editable Markdown pane** — Edit Markdown source directly in annotron, press Save (⌘/Ctrl+S) to re-render
+  - **Outline navigation sidebar** — Auto-generated sidebar for h1–h4 headings with one-click navigation in long docs
+  - **Auto-apply feedback loop** — Integrated agent loop engineering: send annotations → watch Claude apply changes live in real-time
+  - **Live activity mirror** — Stream of agent's tool calls (Read/Edit/Bash/Run) visible in sidebar during execution
+  - **Image attachments** — Paste/upload images into annotations and replies
+  - **Permission approval in browser** — Approve/deny Claude Code tool permissions directly in the annotation UI
+
+### Fixed
+
+- **GH-XX: File Watcher Pattern** — `.claude/**` file discovery pattern now more reliable. Manual refresh button (🔄) added to sidebar + AIDLC command palette for immediate discovery without restart.
+
+- **GH-XX: Skill Picker Discovery** — Skills created via `aidlc.addSkill` now immediately appear in agent creation picker without VSCode restart. Discovered skills (not in workspace.yaml) now included alongside workspace-declared skills.
+
+- **GH-XX: Skills & Agents Deduplication** — Fixed duplicate skills appearing in picker when declared both in `workspace.yaml` AND discovered in `.claude/skills/`. Deduplication uses precedence: `aidlc > project > global`. Single skill now shows once, single checkbox per skill ID.
+
+### Changed
+
+- **Model Defaults** — Updated to current Claude models:
+  - `claude-sonnet-4-6` → `claude-sonnet-5` (latest, balanced default)
+  - `claude-opus-4-7` → `claude-opus-4-8` (current most capable)
+  - `claude-haiku-4-5-20251001` (unchanged)
+
+### Improved
+
+- **Annotation Editor UX** — Zero-setup flow: `annotron <file.html>` or click **Annotate** in VS Code. Supports Markdown editing + live reload.
+- **Skill Discovery** — Sidebar now shows all skills (workspace + discovered) with visual distinction. Refresh button provides immediate feedback.
+- **Agent Skill Selection** — Cleaner picker with no duplicates, visual feedback on selection.
+
 ## [3.0.0] - 2026-07-19
 
 ### Added

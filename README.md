@@ -18,6 +18,17 @@ Code transcript.
 
 ![aidlc demo](packages/extension/media/demo.gif)
 
+## ✨ What's New in v3.1
+
+- **📝 Annotron 1.0 — Markdown Editing in Review** — Annotation editor now renders Markdown with inline diagrams (Mermaid: flowchart, sequence, UML, C4, architecture, Gantt). Edit `.md` source directly, press Save to re-render. Auto-apply feedback loop: send annotations → watch Claude apply changes live.
+- **🗂️ Outline Navigation** — Long Markdown docs now show an auto-generated sidebar with h1–h4 headings. One-click jump to sections, persist state across sessions.
+- **📸 Image Attachments** — Paste/upload images into annotations. Agent reads them by path.
+- **⚡ Live Activity Mirror** — Watch Claude's tool calls (Read/Edit/Bash) stream into the annotation editor in real-time. Know exactly what the agent is doing.
+- **🔄 Improved Skill Discovery** — Skills created mid-session now immediately visible in agent picker. Fixed deduplication when skills exist in both workspace.yaml and discovered locations.
+- **🎙️ Better File Watching** — Manual refresh button (🔄) in sidebar + CLI command for instant discovery without VSCode restart.
+
+---
+
 ## ✨ What's New in v3.0
 
 - **🎨 Prototype Phase** — Designers propose multiple UI options (HTML, Figma, lo-fi) before tech design. Users pick a preferred approach, which feeds into Design.
