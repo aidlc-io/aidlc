@@ -956,7 +956,9 @@ function detectBuiltinSource(filePath: string): string | undefined {
 }
 
 function mergeAgents(doc: YamlDocument | null, root: string, discovered: DiscoveredAsset[]): AgentSummary[] {
-  const out: AgentSummary[] = [];
+  // Use Map to deduplicate by agent ID; precedence: aidlc > project > global
+  // so an agent declared in workspace.yaml takes priority over discovered files.
+  const byId = new Map<string, AgentSummary>();
 
   // Workspace.yaml owns the persona ↔ skills binding for AIDLC personas, but
   // the same persona shows up in the Agents tab (and the AddPipeline picker)
@@ -971,10 +973,28 @@ function mergeAgents(doc: YamlDocument | null, root: string, discovered: Discove
     }
   }
 
+  // Add global scope (lowest priority)
+  for (const a of discovered.filter((x) => x.scope === 'global')) {
+    const fm = parseAgentFrontmatter(a.filePath);
+    const yamlSkills = yamlSkillsById.get(a.id);
+    byId.set(a.id, {
+      id: a.id,
+      scope: 'global',
+      filePath: a.filePath,
+      description: fm.description,
+      model: fm.model,
+      integrations: fm.tools,
+      skill: yamlSkills?.[0],
+      skills: yamlSkills,
+      builtinFrom: detectBuiltinSource(a.filePath),
+    });
+  }
+
+  // Add project scope (overrides global)
   for (const a of discovered.filter((x) => x.scope === 'project')) {
     const fm = parseAgentFrontmatter(a.filePath);
     const yamlSkills = yamlSkillsById.get(a.id);
-    out.push({
+    byId.set(a.id, {
       id: a.id,
       scope: 'project',
       filePath: a.filePath,
@@ -986,6 +1006,8 @@ function mergeAgents(doc: YamlDocument | null, root: string, discovered: Discove
       builtinFrom: detectBuiltinSource(a.filePath),
     });
   }
+
+  // Add aidlc scope (overrides project and global)
   if (doc) {
     // Pre-index workspace.yaml skill declarations by id so we can resolve
     // each agent's primary-skill path (built-in presets now reference
@@ -1007,7 +1029,7 @@ function mergeAgents(doc: YamlDocument | null, root: string, discovered: Discove
       // or new `~/.claude/skills/aidlc-*`).
       const primarySkillPath = skillPathById.get(skills[0] ?? id)
         ?? path.join(root, WORKSPACE_DIR, 'skills', `${skills[0] ?? id}.md`);
-      out.push({
+      byId.set(id, {
         id,
         scope: 'aidlc',
         filePath: '',
@@ -1022,22 +1044,8 @@ function mergeAgents(doc: YamlDocument | null, root: string, discovered: Discove
       });
     }
   }
-  for (const a of discovered.filter((x) => x.scope === 'global')) {
-    const fm = parseAgentFrontmatter(a.filePath);
-    const yamlSkills = yamlSkillsById.get(a.id);
-    out.push({
-      id: a.id,
-      scope: 'global',
-      filePath: a.filePath,
-      description: fm.description,
-      model: fm.model,
-      integrations: fm.tools,
-      skill: yamlSkills?.[0],
-      skills: yamlSkills,
-      builtinFrom: detectBuiltinSource(a.filePath),
-    });
-  }
-  return out;
+
+  return Array.from(byId.values());
 }
 
 /**
@@ -1191,15 +1199,26 @@ function mergeSkills(
   root: string,
   discovered: DiscoveredAsset[],
 ): SkillSummary[] {
-  const out: SkillSummary[] = [];
-  for (const s of discovered.filter((x) => x.scope === 'project')) {
-    out.push({ id: s.id, scope: 'project', filePath: s.filePath, builtinFrom: detectBuiltinSource(s.filePath) });
+  // Use Map to deduplicate by skill ID; precedence: aidlc > project > global
+  // so a skill declared in workspace.yaml takes priority over discovered files.
+  const byId = new Map<string, SkillSummary>();
+
+  // Add global scope (lowest priority)
+  for (const s of discovered.filter((x) => x.scope === 'global')) {
+    byId.set(s.id, { id: s.id, scope: 'global', filePath: s.filePath, builtinFrom: detectBuiltinSource(s.filePath) });
   }
+
+  // Add project scope (overrides global)
+  for (const s of discovered.filter((x) => x.scope === 'project')) {
+    byId.set(s.id, { id: s.id, scope: 'project', filePath: s.filePath, builtinFrom: detectBuiltinSource(s.filePath) });
+  }
+
+  // Add aidlc scope (overrides project and global)
   if (doc) {
     for (const s of doc.skills) {
       const id = String(s.id);
       if (s.builtin) {
-        out.push({ id, scope: 'aidlc', filePath: '', description: 'builtin' });
+        byId.set(id, { id, scope: 'aidlc', filePath: '', description: 'builtin' });
         continue;
       }
       const skillPath = typeof s.path === 'string' ? s.path : undefined;
@@ -1207,13 +1226,11 @@ function mergeSkills(
       const abs = expanded
         ? (path.isAbsolute(expanded) ? expanded : path.resolve(root, expanded))
         : '';
-      out.push({ id, scope: 'aidlc', filePath: abs, builtinFrom: detectBuiltinSource(abs) });
+      byId.set(id, { id, scope: 'aidlc', filePath: abs, builtinFrom: detectBuiltinSource(abs) });
     }
   }
-  for (const s of discovered.filter((x) => x.scope === 'global')) {
-    out.push({ id: s.id, scope: 'global', filePath: s.filePath, builtinFrom: detectBuiltinSource(s.filePath) });
-  }
-  return out;
+
+  return Array.from(byId.values());
 }
 
 // ── Singleton panel ───────────────────────────────────────────────────────
