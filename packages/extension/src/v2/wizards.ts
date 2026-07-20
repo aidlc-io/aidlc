@@ -333,7 +333,10 @@ export async function addAgentCommand(): Promise<void> {
   // skill at creation time. AIDLC agents resolve skills at runtime; project
   // and global agents inline the picked skills' content into the .md body
   // as a starting prompt the user can then edit.
-  if (doc.skills.length === 0) {
+  // Check both workspace.yaml declared skills AND discovered skills from disk.
+  const discovered = discoverAssets(root);
+  const availableSkills = doc.skills.length > 0 || discovered.skills.length > 0;
+  if (!availableSkills) {
     const choice = await vscode.window.showWarningMessage(
       'No skills available — add a skill first, then assign it to an agent.',
       'Add Skill',
@@ -359,27 +362,52 @@ export async function addAgentCommand(): Promise<void> {
   });
   if (!name || !name.trim()) { return; }
 
+  const skills = await pickSkills(root, doc);
+  if (!skills) { return; }
+
   if (scope === 'aidlc') {
-    await addAidlcAgent(root, doc, agentId, name.trim());
+    await addAidlcAgent(root, doc, agentId, name.trim(), skills);
   } else {
-    await addClaudeAgent(root, doc, scope, agentId, name.trim());
+    await addClaudeAgent(root, doc, scope, agentId, name.trim(), skills);
   }
 }
 
 /**
  * Multi-select skill picker. Returns the picked skill ids, or undefined
  * if the user cancels (Esc or Enter with nothing selected — both treated
- * as "abort the wizard"). Shared by aidlc and Claude-native agent flows.
+ * as "abort the wizard"). Includes both workspace.yaml declared skills
+ * and newly discovered skills from `.claude/skills/` directories.
+ * Shared by aidlc and Claude-native agent flows.
  */
-async function pickSkills(doc: YamlDocument): Promise<string[] | undefined> {
+async function pickSkills(root: string, doc: YamlDocument): Promise<string[] | undefined> {
+  // Merge workspace.yaml declared skills with newly discovered skills from disk
+  const discovered = discoverAssets(root);
+  const discoveredSkillMap = new Map(discovered.skills.map(s => [s.id, s]));
+
+  // Combine workspace.yaml skills with discovered skills not yet in workspace.yaml
+  const allSkills = new Map<string, { id: string; src: string }>();
+
+  // Add workspace.yaml declared skills
+  for (const s of doc.skills) {
+    const id = String(s.id);
+    const src = s.builtin
+      ? 'builtin'
+      : (typeof s.path === 'string' ? s.path : '(no source)');
+    allSkills.set(id, { id, src });
+  }
+
+  // Add newly discovered skills not yet in workspace.yaml
+  for (const s of discovered.skills) {
+    if (!allSkills.has(s.id)) {
+      allSkills.set(s.id, { id: s.id, src: s.filePath || '(discovered)' });
+    }
+  }
+
   const skillPicks = await vscode.window.showQuickPick(
-    doc.skills.map((s) => {
-      const id = String(s.id);
-      const src = s.builtin
-        ? 'builtin'
-        : (typeof s.path === 'string' ? s.path : '(no source)');
-      return { label: id, description: src };
-    }),
+    Array.from(allSkills.values()).map((s) => ({
+      label: s.id,
+      description: s.src,
+    })),
     {
       placeHolder: 'Pick one or more skills this agent uses (space to toggle, enter to confirm)',
       canPickMany: true,
@@ -432,8 +460,11 @@ async function addAidlcAgent(
   doc: YamlDocument,
   agentId: string,
   name: string,
+  skillIds?: string[],
 ): Promise<void> {
-  const skillIds = await pickSkills(doc);
+  if (!skillIds) {
+    skillIds = await pickSkills(root, doc);
+  }
   if (!skillIds) { return; }
 
   const modelPick = await vscode.window.showQuickPick(MODEL_CHOICES, {
@@ -486,8 +517,11 @@ async function addClaudeAgent(
   scope: AssetScope,
   agentId: string,
   name: string,
+  skillIds?: string[],
 ): Promise<void> {
-  const skillIds = await pickSkills(doc);
+  if (!skillIds) {
+    skillIds = await pickSkills(root, doc);
+  }
   if (!skillIds) { return; }
 
   const description = await vscode.window.showInputBox({
