@@ -16,7 +16,7 @@ function tmpRoot(): string {
 }
 
 const PIPELINE: PipelineConfig = {
-  id: 'sdlc-parallel-full',
+  id: 'aidlc-workflow',
   on_failure: 'stop',
   steps: [
     { agent: 'po', name: 'plan', requires: [], produces: ['PRD.md'], depends_on: [], human_review: true, auto_review: false, enabled: true },

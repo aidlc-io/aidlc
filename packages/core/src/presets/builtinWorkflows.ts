@@ -277,7 +277,7 @@ const SDLC_RECIPES: RecipeDef[] = [
 export const BUILTIN_WORKFLOWS: BuiltinWorkflow[] = [
   {
     id: 'sdlc-parallel-pipeline',
-    pipelineId: 'sdlc-parallel-full',
+    pipelineId: 'aidlc-workflow',
     name: 'SDLC Pipeline',
     templatesDir: 'sdlc',
     description:

@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { onHostMessage, getPersistedUi, setPersistedUi } from '@/lib/bridge';
-import { Plus, FileCode2, Pencil, Copy, Trash2 } from 'lucide-react';
+import { Plus, FileCode2, Pencil, Copy, Trash2, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { WorkspaceState, AgentSummary, SkillSummary, AssetScope } from '@/lib/types';
 import { AgentCard, KebabMenu } from './AgentCard';
@@ -279,10 +279,25 @@ function SkillsByScope({ skills }: { skills: SkillSummary[] }) {
     setPersistedUi<PersistedBuilderUi>({ ...prev, skillScope: next });
   };
 
+  const handleReload = () => {
+    postMessage({ type: 'executeCommand', command: 'claude.sendMessage', args: ['/reload'] });
+  };
+
   const list = grouped[scope];
   return (
     <>
-      <ScopeFilter scope={scope} counts={counts} onChange={onChange} />
+      <div className="flex items-center justify-between">
+        <ScopeFilter scope={scope} counts={counts} onChange={onChange} />
+        <button
+          type="button"
+          onClick={handleReload}
+          title="Reload skills from workspace"
+          className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary"
+        >
+          <RefreshCw className="h-3.5 w-3.5" />
+          Reload
+        </button>
+      </div>
       {list.length === 0 ? (
         <EmptyHint kind="skills" />
       ) : (
@@ -395,7 +410,7 @@ function SkillCard({ skill, allSkillIds }: { skill: SkillSummary; allSkillIds: s
   );
 }
 
-const DEFAULT_PIPELINE_ID = 'sdlc-parallel-full';
+const DEFAULT_PIPELINE_ID = 'aidlc-workflow';
 
 interface PersistedBuilderUi {
   workflowDomain?: string;

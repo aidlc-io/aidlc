@@ -1,4 +1,4 @@
-# annotron
+# ANNOTRON
 
 Local, browser-based review editor for **agent-generated HTML artifacts** — annotate elements and text, attach images, watch the agent work live, approve tool permissions, send feedback to your AI coding agent, then finalize the result into the file and download it.
 
