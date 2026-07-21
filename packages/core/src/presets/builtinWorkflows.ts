@@ -403,7 +403,7 @@ const SPECKIT_RECIPES: RecipeDef[] = [
 export const BUILTIN_WORKFLOWS: BuiltinWorkflow[] = [
   {
     id: 'aidlc-workflow',
-    pipelineId: 'sdlc-parallel-full',
+    pipelineId: 'aidlc-workflow-full',
     name: 'AIDLC Workflow',
     templatesDir: 'sdlc',
     description:
