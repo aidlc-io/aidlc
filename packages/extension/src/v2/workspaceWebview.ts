@@ -976,7 +976,9 @@ function mergeAgents(doc: YamlDocument | null, root: string, discovered: Discove
   // Add global scope (lowest priority)
   for (const a of discovered.filter((x) => x.scope === 'global')) {
     const fm = parseAgentFrontmatter(a.filePath);
+    const fileSkills = fm.skills && fm.skills.length > 0 ? fm.skills : undefined;
     const yamlSkills = yamlSkillsById.get(a.id);
+    const resolvedSkills = fileSkills ?? yamlSkills;
     byId.set(a.id, {
       id: a.id,
       scope: 'global',
@@ -984,8 +986,8 @@ function mergeAgents(doc: YamlDocument | null, root: string, discovered: Discove
       description: fm.description,
       model: fm.model,
       integrations: fm.tools,
-      skill: yamlSkills?.[0],
-      skills: yamlSkills,
+      skill: resolvedSkills?.[0],
+      skills: resolvedSkills,
       builtinFrom: detectBuiltinSource(a.filePath),
     });
   }
@@ -993,7 +995,9 @@ function mergeAgents(doc: YamlDocument | null, root: string, discovered: Discove
   // Add project scope (overrides global)
   for (const a of discovered.filter((x) => x.scope === 'project')) {
     const fm = parseAgentFrontmatter(a.filePath);
+    const fileSkills = fm.skills && fm.skills.length > 0 ? fm.skills : undefined;
     const yamlSkills = yamlSkillsById.get(a.id);
+    const resolvedSkills = fileSkills ?? yamlSkills;
     byId.set(a.id, {
       id: a.id,
       scope: 'project',
@@ -1001,8 +1005,8 @@ function mergeAgents(doc: YamlDocument | null, root: string, discovered: Discove
       description: fm.description,
       model: fm.model,
       integrations: fm.tools,
-      skill: yamlSkills?.[0],
-      skills: yamlSkills,
+      skill: resolvedSkills?.[0],
+      skills: resolvedSkills,
       builtinFrom: detectBuiltinSource(a.filePath),
     });
   }
@@ -1049,18 +1053,18 @@ function mergeAgents(doc: YamlDocument | null, root: string, discovered: Discove
 }
 
 /**
- * Pull `description`, `model`, and `tools` out of a Claude-native agent
- * `.md` file's YAML frontmatter. Hand-rolled parser (no yaml dep needed
- * for the three fields we care about) — reads only the first 4 KB and
- * stops at the closing `---`.
+ * Pull `description`, `model`, `tools`, and `skills` out of a Claude-native
+ * agent `.md` file's YAML frontmatter. Hand-rolled parser (no yaml dep needed
+ * for these fields) — reads only the first 4 KB and stops at the closing `---`.
  *
- * `tools` accepts either an inline array (`[files, jira]`) or a bullet
- * list under the key. Unknown fields are ignored.
+ * `tools` and `skills` accept either inline arrays (`[files, jira]`) or bullet
+ * lists under the key. Unknown fields are ignored.
  */
 function parseAgentFrontmatter(filePath: string): {
   description?: string;
   model?: string;
   tools?: string[];
+  skills?: string[];
 } {
   if (!filePath || !fs.existsSync(filePath)) { return {}; }
   let raw: string;
@@ -1071,7 +1075,7 @@ function parseAgentFrontmatter(filePath: string): {
   if (!m) { return {}; }
   const block = m[1];
 
-  const out: { description?: string; model?: string; tools?: string[] } = {};
+  const out: { description?: string; model?: string; tools?: string[]; skills?: string[] } = {};
   const lines = block.split(/\r?\n/);
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
@@ -1083,9 +1087,10 @@ function parseAgentFrontmatter(filePath: string): {
       out.description = stripFrontmatterQuotes(value);
     } else if (key === 'model') {
       out.model = stripFrontmatterQuotes(value);
-    } else if (key === 'tools') {
+    } else if (key === 'tools' || key === 'skills') {
+      const arrayKey = key as 'tools' | 'skills';
       if (value.startsWith('[') && value.endsWith(']')) {
-        out.tools = value.slice(1, -1).split(',').map((s) => s.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean);
+        out[arrayKey] = value.slice(1, -1).split(',').map((s) => s.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean);
       } else if (!value) {
         // YAML list form: collect indented `- item` lines.
         const items: string[] = [];
@@ -1094,7 +1099,7 @@ function parseAgentFrontmatter(filePath: string): {
           if (!m2) { break; }
           items.push(m2[1].trim().replace(/^['"]|['"]$/g, ''));
         }
-        if (items.length > 0) { out.tools = items; }
+        if (items.length > 0) { out[arrayKey] = items; }
       }
     }
   }
@@ -1111,7 +1116,7 @@ function stripFrontmatterQuotes(s: string): string {
 /**
  * Rewrite a Claude-native agent `.md` file's YAML frontmatter. Each key in
  * `updates` either overwrites the existing field, removes it (when value is
- * an explicit empty array for `tools`), or leaves it alone (`undefined`).
+ * an explicit empty array for `tools` or `skills`), or leaves it alone (`undefined`).
  *
  * The body — everything after the closing `---` — is preserved byte-for-byte.
  * If the file has no frontmatter, one is prepended.
@@ -1126,11 +1131,13 @@ function rewriteAgentFrontmatter(
     description?: string;
     model?: string;
     tools?: string[];
+    skills?: string[];
   },
 ): string {
   const m = raw.match(/^(?:<!--[^\n]*-->\s*\n)?---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
   const existing: Record<string, string> = {};
   const existingTools: { value: string[] | null } = { value: null };
+  const existingSkills: { value: string[] | null } = { value: null };
   let body = raw;
   if (m) {
     body = raw.slice(m[0].length);
@@ -1141,9 +1148,10 @@ function rewriteAgentFrontmatter(
       if (!kv) { continue; }
       const key = kv[1];
       const value = kv[2].trim();
-      if (key === 'tools') {
+      if (key === 'tools' || key === 'skills') {
+        const targetObj = key === 'tools' ? existingTools : existingSkills;
         if (value.startsWith('[') && value.endsWith(']')) {
-          existingTools.value = value.slice(1, -1).split(',').map((s) => s.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean);
+          targetObj.value = value.slice(1, -1).split(',').map((s) => s.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean);
         } else if (!value) {
           const items: string[] = [];
           let j = i + 1;
@@ -1153,7 +1161,7 @@ function rewriteAgentFrontmatter(
             items.push(item[1].trim().replace(/^['"]|['"]$/g, ''));
             j++;
           }
-          if (items.length > 0) { existingTools.value = items; }
+          if (items.length > 0) { targetObj.value = items; }
           i = j - 1;
         }
       } else {
@@ -1167,8 +1175,9 @@ function rewriteAgentFrontmatter(
   if (updates.description !== undefined) { merged.description = updates.description; }
   if (updates.model !== undefined) { merged.model = updates.model; }
   const finalTools = updates.tools ?? existingTools.value ?? null;
+  const finalSkills = updates.skills ?? existingSkills.value ?? null;
 
-  // Emit in a stable order: name, description, model, tools, then any
+  // Emit in a stable order: name, description, model, tools, skills, then any
   // other keys we preserved (e.g. user-added frontmatter).
   const orderedKeys = ['name', 'description', 'model'];
   const lines: string[] = ['---'];
@@ -1183,6 +1192,9 @@ function rewriteAgentFrontmatter(
   }
   if (finalTools && finalTools.length > 0) {
     lines.push(`tools: [${finalTools.join(', ')}]`);
+  }
+  if (finalSkills && finalSkills.length > 0) {
+    lines.push(`skills: [${finalSkills.join(', ')}]`);
   }
   lines.push('---', '');
   const bodyTrimmed = body.replace(/^\r?\n+/, '');
@@ -2521,9 +2533,13 @@ export class WorkspaceWebview {
     }
 
     const yamlNote = scope === 'aidlc' ? ' + workspace.yaml' : '';
-    void vscode.window.showInformationMessage(
-      `Skill "${id}" added (${scope})${yamlNote}.`,
+    const action = await vscode.window.showInformationMessage(
+      `Skill "${id}" added (${scope})${yamlNote}. Reload VS Code to see it in the Agents/Skills tabs.`,
+      'Reload',
     );
+    if (action === 'Reload') {
+      void vscode.commands.executeCommand('workbench.action.reloadWindow');
+    }
   }
 
   /**
@@ -2548,13 +2564,17 @@ export class WorkspaceWebview {
     if (!id || !name) { return; }
     if (scope !== 'project' && scope !== 'aidlc' && scope !== 'global') { return; }
 
-    const yamlSkillIds = new Set(doc.skills.map((s) => String(s.id)));
-    for (const s of skills) {
-      if (!yamlSkillIds.has(s)) {
-        void vscode.window.showWarningMessage(
-          `Skill "${s}" not declared in workspace.yaml.`,
-        );
-        return;
+    // AIDLC agents store skills in workspace.yaml, so they must be declared there.
+    // Project/global agents store skills in the agent file's frontmatter — no workspace.yaml check needed.
+    if (scope === 'aidlc') {
+      const yamlSkillIds = new Set(doc.skills.map((s) => String(s.id)));
+      for (const s of skills) {
+        if (!yamlSkillIds.has(s)) {
+          void vscode.window.showWarningMessage(
+            `Skill "${s}" not declared in workspace.yaml.`,
+          );
+          return;
+        }
       }
     }
 
@@ -2581,9 +2601,13 @@ export class WorkspaceWebview {
         d.agents.push(agent);
       });
 
-      void vscode.window.showInformationMessage(
-        `Agent "${id}" added (aidlc · skills: ${skills.join(', ')}, model: ${model}).`,
+      const action = await vscode.window.showInformationMessage(
+        `Agent "${id}" added (aidlc · skills: ${skills.join(', ')}, model: ${model}). Reload VS Code to see it in the Agents tab.`,
+        'Reload',
       );
+      if (action === 'Reload') {
+        void vscode.commands.executeCommand('workbench.action.reloadWindow');
+      }
       return;
     }
 
@@ -2619,7 +2643,7 @@ export class WorkspaceWebview {
       sections.push('');
     }
 
-    // Build the YAML frontmatter. `model` and `tools` are Claude Code
+    // Build the YAML frontmatter. `model`, `tools`, and `skills` are Claude Code
     // native frontmatter fields; surfacing them here means the agent file
     // honors the user's modal choices instead of silently dropping them.
     const frontmatterLines = [
@@ -2631,6 +2655,9 @@ export class WorkspaceWebview {
     if (capabilities.length > 0) {
       frontmatterLines.push(`tools: [${capabilities.join(', ')}]`);
     }
+    if (skills.length > 0) {
+      frontmatterLines.push(`skills: [${skills.join(', ')}]`);
+    }
     frontmatterLines.push('---', '');
     const content = `${frontmatterLines.join('\n')}\n${sections.join('\n').trimEnd()}\n`;
 
@@ -2640,9 +2667,13 @@ export class WorkspaceWebview {
     const docOpen = await vscode.workspace.openTextDocument(agentPath);
     await vscode.window.showTextDocument(docOpen, { preview: false });
 
-    void vscode.window.showInformationMessage(
-      `Agent "${id}" added (${scope} · skills: ${skills.join(', ')}).`,
+    const action = await vscode.window.showInformationMessage(
+      `Agent "${id}" added (${scope} · skills: ${skills.join(', ')}). Reload VS Code to see it in the Agents tab.`,
+      'Reload',
     );
+    if (action === 'Reload') {
+      void vscode.commands.executeCommand('workbench.action.reloadWindow');
+    }
   }
 
   /**
@@ -2715,36 +2746,13 @@ export class WorkspaceWebview {
       description: description || undefined,
       model: model || undefined,
       tools: capabilities.length > 0 ? capabilities : undefined,
+      skills: skillsProvided && skills.length > 0 ? skills : (skillsProvided ? [] : undefined),
     });
     fs.writeFileSync(agentPath, updated, 'utf8');
 
-    // Persona ↔ skill binding lives in workspace.yaml's AIDLC layer (the
-    // agent frontmatter has no `skills:` field), so write it there even
-    // for file-based agents. Idempotent — creates the entry on first edit,
-    // updates it thereafter.
-    if (skillsProvided) {
-      this.mutateYaml((doc) => {
-        const existing = doc.agents.find((a) => String(a.id) === id);
-        if (skills.length === 0) {
-          if (existing) {
-            delete (existing as Record<string, unknown>).skills;
-            delete (existing as Record<string, unknown>).skill;
-          }
-          return;
-        }
-        if (existing) {
-          (existing as Record<string, unknown>).skills = skills;
-          delete (existing as Record<string, unknown>).skill;
-        } else {
-          const entry: Record<string, unknown> = { id, skills };
-          if (name) { entry.name = name; }
-          if (description) { entry.description = description; }
-          if (model) { entry.model = model; }
-          if (capabilities.length > 0) { entry.capabilities = capabilities; }
-          doc.agents.push(entry as unknown as YamlDocument['agents'][number]);
-        }
-      });
-    }
+    // For project/global scope agents, skills are now stored in the agent file's
+    // frontmatter (not workspace.yaml). We no longer need to sync to workspace.yaml
+    // for file-based agents — the agent's own `skills:` field is authoritative.
     void vscode.window.showInformationMessage(`Agent "${id}" updated.`);
   }
 

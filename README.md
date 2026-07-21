@@ -1,4 +1,4 @@
-# AIDLC v3.0 🚀
+# AIDLC v3.2 🚀
 
 **AI-driven SDLC pipeline runner. Plan → Prototype → Design ∥ Test → Implement → Release. See what Claude is building, control every step, track every token.**
 
@@ -17,6 +17,14 @@ observability, and a native session-insights dashboard built from the Claude
 Code transcript.
 
 ![aidlc demo](packages/extension/media/demo.gif)
+
+## ✨ What's New in v3.2
+
+- **🧠 Agent Skills Management** — Project-level agent configuration without workspace.yaml dependency. Agent files (`.claude/agents/*.md`) now define skills directly in frontmatter: `skills: [skill1, skill2]`. Auto-reload notifications keep UI in sync.
+- **🔄 One-Click Reload** — When creating agents/skills, see "Reload VS Code" popup with actionable [Reload] button. No more manual window reloading.
+- **✅ Better UI Feedback** — Edit modal now shows checkmarks for selected skills. Changes to skills are reflected in agent file immediately.
+
+---
 
 ## ✨ What's New in v3.1
 

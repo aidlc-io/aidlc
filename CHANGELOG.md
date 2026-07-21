@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.2.0] - 2026-07-21
+
+### Added
+
+- **Agent Skills Management** — Project-level agent configuration without workspace.yaml dependency:
+  - Agent files (`.claude/agents/*.md`) now support `skills:` field in frontmatter
+  - Supports both inline format (`[skill1, skill2]`) and bullet-list format
+  - Auto-reload notification when creating/editing agents and skills with one-click reload button
+  - Skills are auto-discovered from `.claude/skills/` and `~/.claude/skills/` directories
+
+### Fixed
+
+- **GH-XX: Project-Scope Agent Skills** — Fixed "skill not declared in workspace.yaml" error when creating agents with project-scope skills. Project/global scope agents now store skills in agent file frontmatter instead of requiring workspace.yaml entry.
+
+- **GH-XX: Agent File Generation** — New agent files now include `skills:` field in frontmatter when skills are selected during creation.
+
+- **GH-XX: Skill Validation Logic** — Only AIDLC scope agents now require skills to be in workspace.yaml. Project/global scope agents skip this validation since skills are stored in agent files.
+
+### Improved
+
+- **Agent UI Flow** — When editing agents, selected skills now display as checked checkboxes in modal. Changes to skills are reflected immediately in agent file.
+
+- **User Notifications** — Create/edit operations now show "Reload VS Code" prompts with actionable [Reload] button for better UX.
+
+### Changed
+
+- **Agent File Frontmatter Order** — Standardized field order: `name → description → model → tools → skills → custom fields`
+
 ## [3.1.0] - 2026-07-20
 
 ### Added
