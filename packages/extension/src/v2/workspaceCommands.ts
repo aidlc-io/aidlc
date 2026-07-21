@@ -718,7 +718,7 @@ async function initWorkspace(
   } else {
     const picks: PipelinePick[] = [
       ...BUILTIN_WORKFLOWS.map((w) => {
-        const recommended = w.id === 'sdlc-parallel-pipeline';
+        const recommended = w.id === 'aidlc-workflow';
         return {
           label: recommended ? `$(star-full) ${w.name}` : w.name,
           description: recommended ? 'Recommended' : '',

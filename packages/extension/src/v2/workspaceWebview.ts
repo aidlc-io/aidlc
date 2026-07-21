@@ -1553,7 +1553,7 @@ export class WorkspaceWebview {
       }
       case 'applyPreset':  await vscode.commands.executeCommand('aidlc.applyPreset');   return;
       case 'initSdlcPreset':
-        await vscode.commands.executeCommand('aidlc.applyPreset', 'sdlc-parallel-pipeline', true);
+        await vscode.commands.executeCommand('aidlc.applyPreset', 'aidlc-workflow', true);
         return;
       // GH-67: open a project folder first, then apply the SDLC preset.
       case 'openProjectAndApplyPreset': {
@@ -1566,7 +1566,7 @@ export class WorkspaceWebview {
         }
         // Wait for workspace activation then apply the preset + refresh.
         setTimeout(async () => {
-          await vscode.commands.executeCommand('aidlc.applyPreset', 'sdlc-parallel-pipeline', true);
+          await vscode.commands.executeCommand('aidlc.applyPreset', 'aidlc-workflow', true);
           this.refresh();
         }, 300);
         return;

@@ -52,7 +52,7 @@ interface InstallReport {
  * polluted `~/.claude/agents/` + `~/.claude/skills/` with ~144 files per
  * user, most of which they never touch.
  */
-export const DEFAULT_GLOBAL_WORKFLOW_IDS: readonly string[] = ['sdlc-parallel-pipeline'];
+export const DEFAULT_GLOBAL_WORKFLOW_IDS: readonly string[] = ['aidlc-workflow'];
 
 /**
  * Install the *default* built-in workflows under `~/.claude/agents/` and

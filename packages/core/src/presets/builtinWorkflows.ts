@@ -402,9 +402,9 @@ const SPECKIT_RECIPES: RecipeDef[] = [
 
 export const BUILTIN_WORKFLOWS: BuiltinWorkflow[] = [
   {
-    id: 'sdlc-parallel-pipeline',
+    id: 'aidlc-workflow',
     pipelineId: 'sdlc-parallel-full',
-    name: 'SDLC Pipeline',
+    name: 'AIDLC Workflow',
     templatesDir: 'sdlc',
     description:
       'Parallel SDLC pipeline ending at execute-test: Plan → (Design → Implement+UnitTest) ∥ (Test Plan → Generate Test Cases) → Execute Test+Report. PO / Tech Lead / Developer / QA. QA runs concurrently with engineering.',

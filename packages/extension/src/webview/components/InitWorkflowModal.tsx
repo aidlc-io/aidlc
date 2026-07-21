@@ -14,8 +14,8 @@ interface Option {
 
 const OPTIONS: Option[] = [
   {
-    workflowId: 'sdlc-parallel-pipeline',
-    title: 'SDLC Pipeline',
+    workflowId: 'aidlc-workflow',
+    title: 'AIDLC Workflow',
     badge: 'Recommended',
     description:
       'Engineering + QA tracks run concurrently and meet at execute-test. PO / Tech Lead / Developer / QA.',
