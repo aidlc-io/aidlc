@@ -22,6 +22,8 @@ import type { PipelineConfig } from '../schema/WorkspaceSchema';
 import type { RunState, StepStatus } from './RunState';
 import { startRun } from './PipelineRunner';
 import { RunStateStore } from './RunStateStore';
+import { collectContext } from '../epics/ContextCollector';
+import { generatePlan, renderPlanMarkdown } from '../epics/PlanGenerator';
 
 /** Epic-level status as persisted in `<epic>/state.json`. */
 export type EpicStatus = 'pending' | 'in_progress' | 'done' | 'failed';
@@ -142,6 +144,14 @@ export interface ScaffoldEpicArgs {
    * to `<workspaceRoot>/.aidlc`.
    */
   aidlcDir?: string;
+  /**
+   * aidlc-autopilot (experimental / "coming soon"): when true, collect epic
+   * context and generate a recommended plan (`context.json` +
+   * `autopilot-plan.{json,md}`) at scaffold time. Defaults to **false** so the
+   * feature stays dark until it's been tested — callers flip it on via the
+   * `aidlc.autopilot.enabled` setting.
+   */
+  enableAutopilot?: boolean;
 }
 
 export interface ScaffoldEpicResult {
@@ -159,6 +169,7 @@ export interface ScaffoldEpicResult {
 export function scaffoldEpic(args: ScaffoldEpicArgs): ScaffoldEpicResult {
   const {
     workspaceRoot, doc, epicId, title, description, target, agents, inputs, extraProjects, pipeline,
+    enableAutopilot = false,
   } = args;
 
   if (!epicId.trim()) { throw new EpicScaffoldError('Epic id is required.'); }
@@ -224,6 +235,42 @@ export function scaffoldEpic(args: ScaffoldEpicArgs): ScaffoldEpicResult {
     JSON.stringify(persistedInputs, null, 2) + '\n',
     'utf8',
   );
+
+  // aidlc-autopilot (experimental — off by default, "coming soon"): collect
+  // context and generate a plan. Gated so it stays dark until tested; when
+  // disabled the epic scaffolds exactly as it did pre-autopilot.
+  if (enableAutopilot) {
+    const context = collectContext(
+      workspaceRoot,
+      epicDir,
+      epicId,
+      description || title || epicId,
+    );
+    fs.writeFileSync(
+      path.join(epicDir, 'context.json'),
+      JSON.stringify(context, null, 2) + '\n',
+      'utf8',
+    );
+
+    if (target.kind === 'pipeline' && pipeline && Array.isArray(pipeline.steps) && pipeline.steps.length > 0) {
+      const plan = generatePlan(
+        epicId,
+        context,
+        pipeline,
+        (doc as { agents?: { id: string; skills?: string[] }[] } | null) || {},
+      );
+      fs.writeFileSync(
+        path.join(epicDir, 'autopilot-plan.json'),
+        JSON.stringify(plan, null, 2) + '\n',
+        'utf8',
+      );
+      fs.writeFileSync(
+        path.join(epicDir, 'autopilot-plan.md'),
+        renderPlanMarkdown(plan) + '\n',
+        'utf8',
+      );
+    }
+  }
 
   // Start the pipeline run machine + mirror it into the epic's state.json.
   let runState: RunState | undefined;

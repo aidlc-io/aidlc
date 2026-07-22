@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.3.0
+
+- fix(builder): custom pipelines created/edited inline now generate their slash commands — `.claude/commands/<pipelineId>-<step>.md` plus a matching `slash_commands` entry in `workspace.yaml` — for every named step. Previously "Run step" on a custom pipeline executed `/<pipelineId>-<step>` with no backing command file and failed with *command not found*. Idempotent: hand-authored command files and existing entries are left untouched. (Re-save an older custom pipeline once to backfill.)
+- feat(autopilot): introduce **aidlc-autopilot** (experimental, "coming soon") — collects epic context and generates a recommended plan (`context.json` + `autopilot-plan.{json,md}`) at epic-scaffold time. Gated behind the new `aidlc.autopilot.enabled` setting and **off by default**; when disabled, epics scaffold exactly as before.
+- feat(workflow): rename the default workflow `sdlc-parallel-pipeline` → `aidlc-workflow` and pipeline `sdlc-parallel-full` → `aidlc-workflow-full`, aligning naming with the AIDLC brand.
+
 ## 3.1.0
 
 ### Annotron 1.0 Integration

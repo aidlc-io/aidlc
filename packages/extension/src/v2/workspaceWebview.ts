@@ -182,6 +182,7 @@ import {
   parseClassificationVerdict,
   slugEpicId,
   scaffoldEpic,
+  epicsRoot,
   EpicScaffoldError,
   installAnnotationTools,
   setEpicMemoryHook,
@@ -3301,6 +3302,11 @@ export class WorkspaceWebview {
         inputs,
         extraProjects: extraProjects && extraProjects.length > 0 ? extraProjects : undefined,
         pipeline: pipelineCfg,
+        // aidlc-autopilot is experimental / "coming soon": off unless the user
+        // opts in via the `aidlc.autopilot.enabled` setting.
+        enableAutopilot: vscode.workspace
+          .getConfiguration('aidlc')
+          .get<boolean>('autopilot.enabled', false),
       });
     } catch (err) {
       if (err instanceof EpicScaffoldError) {
@@ -3331,9 +3337,30 @@ export class WorkspaceWebview {
       void vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(wsFile));
     }
 
-    void vscode.window.showInformationMessage(
-      `Started epic "${epicId}" — ${agents[0]}. Run /${agents[0]} ${epicId} in Claude to begin.`,
+    // aidlc-autopilot: if a plan was generated, offer to open it before running.
+    const pathMod = require('path') as typeof import('path');
+    const fsMod = require('fs') as typeof import('fs');
+    const planPath = pathMod.join(
+      epicsRoot(root, doc),
+      epicId,
+      'autopilot-plan.md',
     );
+    if (fsMod.existsSync(planPath)) {
+      void vscode.window
+        .showInformationMessage(
+          `Started epic "${epicId}" — autopilot generated a plan. Run /${agents[0]} ${epicId} in Claude to begin.`,
+          'View plan',
+        )
+        .then((choice) => {
+          if (choice === 'View plan') {
+            void vscode.window.showTextDocument(vscode.Uri.file(planPath));
+          }
+        });
+    } else {
+      void vscode.window.showInformationMessage(
+        `Started epic "${epicId}" — ${agents[0]}. Run /${agents[0]} ${epicId} in Claude to begin.`,
+      );
+    }
     this.refresh();
   }
 
@@ -3503,6 +3530,91 @@ export class WorkspaceWebview {
     return rel && !rel.startsWith('..') ? rel : abs;
   }
 
+  /**
+   * Wire each *named* step of a custom pipeline as a real Claude Code slash
+   * command: write `.claude/commands/<pipelineId>-<step>.md` and register a
+   * matching `slash_commands` entry in workspace.yaml.
+   *
+   * Without this, "Run step" on a custom pipeline executes
+   * `/<pipelineId>-<step>` (the fallback that `epicsList.slashForStep`
+   * resolves to when the command table is empty) but no command file exists,
+   * so Claude Code reports "command not found". The built-in preset apply path
+   * (`applyWorkflowPreset`) already does this wiring; custom pipelines built in
+   * the inline builder never did — this closes that gap.
+   *
+   * Mutates `doc.slash_commands` in place (caller persists via `mutateYaml`)
+   * and writes the command files as a side effect. Idempotent: skips slash
+   * entries already present and command files already on disk (so a user's
+   * hand-tuned command survives a re-save). Steps without a `name` are skipped
+   * — they have no namespaced command id to bind to.
+   */
+  private writeCustomPipelineCommands(
+    root: string,
+    pipelineId: string,
+    steps: Array<Record<string, unknown>>,
+    doc: YamlDocument,
+  ): void {
+    const state = doc.state;
+    const epicRoot = typeof state?.root === 'string' ? state.root : 'docs/epics';
+
+    const commandsDir = path.join(root, '.claude', 'commands');
+    fs.mkdirSync(commandsDir, { recursive: true });
+
+    const existingCmds = new Set(
+      doc.slash_commands.map((c) => String(c.name ?? '')),
+    );
+
+    for (const step of steps) {
+      const agent = String(step.agent ?? '').trim();
+      const stepName = typeof step.name === 'string' ? step.name.trim() : '';
+      if (!stepName) { continue; }
+
+      const cmdId = pipelineCommandId(pipelineId, stepName);
+      const slashName = `/${cmdId}`;
+
+      // Register the slash command in workspace.yaml — the source of truth
+      // the epic step resolver reads (see epicsList `slashForStep`).
+      if (!existingCmds.has(slashName)) {
+        doc.slash_commands.push({ name: slashName, agent });
+        existingCmds.add(slashName);
+      }
+
+      // Write the command body, but never clobber a hand-authored one.
+      const commandFile = path.join(commandsDir, `${cmdId}.md`);
+      if (fs.existsSync(commandFile)) { continue; }
+
+      // Compose the step's linked skill content into the body so the command
+      // is self-contained (mirrors how presets use `builtinClaudeCommand`).
+      const skillIds = Array.isArray(step.skills)
+        ? (step.skills as unknown[]).map(String).filter((s) => s.length > 0)
+        : [];
+      const skillBodies: string[] = [];
+      for (const skillId of skillIds) {
+        const decl = doc.skills.find((s) => String(s.id) === skillId);
+        const declPath = typeof decl?.path === 'string' ? decl.path : '';
+        if (!declPath) { continue; }
+        const resolved = path.isAbsolute(declPath) ? declPath : path.resolve(root, declPath);
+        if (fs.existsSync(resolved)) { skillBodies.push(fs.readFileSync(resolved, 'utf8')); }
+      }
+
+      const title = stepName.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+      const skillBody = skillBodies.length > 0
+        ? skillBodies.join('\n\n---\n\n')
+        : `# ${title}\n\nRun the ${stepName} step for this epic.`;
+
+      // `builtinClaudeCommand` only reads `.id`, `.description` and
+      // `.artifact` off the phase — synthesize a minimal one for the step.
+      const phase = {
+        id: stepName,
+        name: title,
+        description: `Run the ${stepName} step.`,
+        artifact: `${stepName.toUpperCase().replace(/[^A-Z0-9]+/g, '-')}-SUMMARY.md`,
+      } as Parameters<typeof builtinClaudeCommand>[0];
+
+      fs.writeFileSync(commandFile, builtinClaudeCommand(phase, skillBody, epicRoot), 'utf8');
+    }
+  }
+
   private async addPipelineInline(draft: Record<string, unknown>): Promise<void> {
     const root = this.getRootOrWarn();
     if (!root) { return; }
@@ -3586,6 +3698,9 @@ export class WorkspaceWebview {
       // the stale `doc` it received.
       this.applySyncedAgents(d, sync.added);
       d.pipelines.push({ id, steps, on_failure: onFailure });
+      // Wire each named step as a slash command (+ `.claude/commands/*.md`)
+      // so "Run step" doesn't fail with "command not found" on this pipeline.
+      this.writeCustomPipelineCommands(root, id, steps as Array<Record<string, unknown>>, d);
     });
 
     void vscode.window.showInformationMessage(
@@ -3822,6 +3937,9 @@ export class WorkspaceWebview {
       if (!p) { return false; }
       p.steps = newSteps;
       p.on_failure = onFailure;
+      // Provision slash commands for any newly-named steps (idempotent —
+      // existing entries + command files are left untouched).
+      this.writeCustomPipelineCommands(root, id, newSteps as Array<Record<string, unknown>>, d);
     });
 
     void vscode.window.showInformationMessage(

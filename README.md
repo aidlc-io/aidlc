@@ -1,4 +1,4 @@
-# AIDLC v3.2 🚀
+# AIDLC v3.3 🚀
 
 **AI-driven SDLC pipeline runner. Plan → Prototype → Design ∥ Test → Implement → Release. See what Claude is building, control every step, track every token.**
 
@@ -17,6 +17,14 @@ observability, and a native session-insights dashboard built from the Claude
 Code transcript.
 
 ![aidlc demo](packages/extension/media/demo.gif)
+
+## ✨ What's New in v3.3
+
+- **🛠️ Custom pipelines now runnable end-to-end** — Building a pipeline in the Builder now wires each named step as a real Claude Code slash command (`.claude/commands/<pipeline>-<step>.md` + a `slash_commands` entry). "Run step" no longer fails with *command not found* on custom pipelines. (Re-save an older custom pipeline once to backfill its commands.)
+- **🧭 aidlc-autopilot** — *Experimental, coming soon.* Opt-in scaffolding that collects epic context and drafts a recommended plan (`autopilot-plan.md`) at epic start. Off by default; enable with the `aidlc.autopilot.enabled` setting once you're ready to try it.
+- **🔤 Workflow rename** — The default pipeline is now `aidlc-workflow` / `aidlc-workflow-full` (formerly `sdlc-parallel-pipeline` / `sdlc-parallel-full`), aligning naming with the AIDLC brand.
+
+---
 
 ## ✨ What's New in v3.2
 

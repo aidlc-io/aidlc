@@ -59,6 +59,16 @@ export type {
   ScaffoldEpicResult,
 } from './runs/EpicScaffold';
 
+export { collectContext } from './epics/ContextCollector';
+export type { EpicContext } from './epics/ContextCollector';
+export { generatePlan, renderPlanMarkdown } from './epics/PlanGenerator';
+export type {
+  AutopilotPlan,
+  AgentAllocation,
+  Task,
+  ScopeComplexity,
+} from './epics/PlanGenerator';
+
 export {
   WorkspaceLoader,
   WorkspaceNotFoundError,
