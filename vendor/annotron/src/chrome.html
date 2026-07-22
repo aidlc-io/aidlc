@@ -130,7 +130,65 @@
   .mde-foot { flex: none; padding: 7px 14px; border-top: 1px solid var(--line-08); background: #FAFAFC; font: 400 11px var(--ui); color: var(--dim-45); display: flex; align-items: center; gap: 6px; }
   iframe { width: 100%; height: 100%; border: none; display: block; background: #fff; }
 
-  #sidebar { width: var(--sidebar-w); flex: none; display: flex; flex-direction: column; background: var(--panel); border-left: 1px solid var(--line-08); min-height: 0; }
+  #sidebar { width: var(--sidebar-w); flex: none; display: flex; flex-direction: column; background: var(--panel); border-left: 1px solid var(--line-08); min-height: 0; position: relative; }
+
+  .resize-handle {
+    position: absolute;
+    cursor: row-resize;
+    background: transparent;
+    transition: background 0.2s;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .resize-handle.h-resize {
+    cursor: col-resize;
+    width: 6px;
+    top: 0;
+    bottom: 0;
+  }
+  .resize-handle.h-resize::before {
+    content: '';
+    width: 3px;
+    height: 40px;
+    background: var(--line-14);
+    border-radius: 2px;
+    transition: background 0.2s;
+  }
+  .resize-handle.h-resize:hover::before {
+    background: var(--accent);
+    box-shadow: 0 0 8px rgba(39, 65, 241, 0.3);
+  }
+  .resize-handle.v-resize {
+    height: 6px;
+    left: 0;
+    right: 0;
+  }
+  .resize-handle.v-resize::before {
+    content: '';
+    width: 40px;
+    height: 3px;
+    background: var(--line-14);
+    border-radius: 2px;
+    transition: background 0.2s;
+  }
+  .resize-handle.v-resize:hover::before {
+    background: var(--accent);
+    box-shadow: 0 0 8px rgba(39, 65, 241, 0.3);
+  }
+  .resize-handle.v-top {
+    top: -3px;
+    margin-top: 0;
+  }
+  .resize-handle.v-bottom {
+    bottom: -3px;
+    margin-bottom: 0;
+  }
+  .resize-handle.h-left {
+    left: -3px;
+    margin-left: 0;
+  }
 
   /* Tabs */
   #sidebar-tabs { display: flex; gap: 4px; padding: 8px 12px 0; border-bottom: 1px solid var(--line-08); flex: none; }
@@ -141,9 +199,9 @@
 
   /* Tab panels */
   .tab-panel { display: none; flex: 1; min-height: 0; overflow: auto; }
-  .tab-panel.active { display: block; }
+  .tab-panel.active { display: flex; flex-direction: column; }
 
-  #annotations-list, #history-list, #history-resolved { padding: 14px; display: flex; flex-direction: column; gap: 11px; }
+  #annotations-list, #history-list, #history-resolved { padding: 14px; display: flex; flex-direction: column; gap: 11px; flex: 1; }
   /* Resolved comments archived at the top of the History tab */
   #history-resolved:empty { display: none; }
   #history-resolved { padding-bottom: 4px; }
@@ -212,10 +270,10 @@
   .mini-attach:hover { background: var(--bg); }
 
   /* Empty states */
-  .empty-state { text-align: center; padding: 56px 24px; color: var(--dim-45); }
-  .empty-state .es-icon { width: 56px; height: 56px; margin: 0 auto 16px; border-radius: 16px; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #B4A8FC, var(--purple-soft)); box-shadow: 0 8px 22px rgba(78,17,178,.22); }
-  .empty-state .es-title { font: 600 15px var(--ui); color: var(--ink); margin-bottom: 6px; }
-  .empty-state .es-sub { font: 400 13px/1.6 var(--ui); max-width: 240px; margin: 0 auto; }
+  .empty-state { text-align: center; padding: 20px 16px; color: var(--dim-45); }
+  .empty-state .es-icon { width: 40px; height: 40px; margin: 0 auto 10px; border-radius: 12px; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #B4A8FC, var(--purple-soft)); box-shadow: 0 4px 12px rgba(78,17,178,.15); }
+  .empty-state .es-title { font: 600 12px var(--ui); color: var(--ink); margin-bottom: 4px; }
+  .empty-state .es-sub { font: 400 11px/1.5 var(--ui); max-width: 240px; margin: 0 auto; }
   .empty-state b { color: var(--accent); font-weight: 600; }
 
   /* History timeline */
@@ -273,6 +331,23 @@
 
   /* Bottom composer */
   #composer { flex: none; border-top: 1px solid var(--line-08); background: var(--panel); padding: 12px 14px 14px; }
+  #agent-info-bar {
+    padding: 8px 12px;
+    background: var(--bg);
+    border-radius: 6px;
+    font: 400 11px var(--mono);
+    color: var(--dim-5);
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+    border: 1px solid var(--line-08);
+  }
+  .info-item { display: inline-flex; align-items: center; gap: 6px; }
+  .info-label { color: var(--dim-45); font-weight: 500; }
+  .info-value { color: var(--ink); font-weight: 600; }
+
   #composer-status { display: flex; align-items: center; justify-content: space-between; margin-bottom: 9px; }
   #agent-status { display: inline-flex; align-items: center; gap: 7px; font: 500 12px var(--ui); color: var(--dim-6); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #agent-status .status-dot-sm { width: 8px; height: 8px; border-radius: 50%; background: rgba(27,26,61,.35); flex: none; }
@@ -283,16 +358,31 @@
   #remote-approve-wrap { display: inline-flex; align-items: center; gap: 6px; font: 500 12px var(--ui); color: var(--dim-5); cursor: pointer; user-select: none; }
   #remote-approve { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; }
 
+  /* Agent metrics bar */
+  #agent-metrics { display: flex; align-items: center; gap: 12px; padding: 8px 0; font: 400 11px var(--ui); color: var(--dim-45); flex-wrap: wrap; }
+  #agent-metrics.hidden { display: none; }
+  .metric-group { display: inline-flex; align-items: center; gap: 6px; }
+  .metric-label { color: var(--dim-6); font-weight: 500; }
+  .metric-value { color: var(--ink); font-family: var(--mono); font-weight: 600; }
+  .metric-bar { width: 100px; height: 4px; border-radius: 2px; background: var(--line-10); overflow: hidden; }
+  .metric-bar-fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--purple-soft)); border-radius: 2px; transition: width .3s ease; }
+
+  /* Model selector */
+  #model-selector-wrap { display: inline-flex; align-items: center; gap: 6px; }
+  #model-selector { padding: 5px 10px; border: 1px solid var(--line-10); border-radius: 6px; background: var(--panel); color: var(--ink); font: 500 11px var(--ui); cursor: pointer; }
+  #model-selector:hover { border-color: var(--line-14); background: var(--bg); }
+  #model-selector:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+
   #composer-box { border: 1px solid var(--line-14); border-radius: 12px; background: var(--panel); overflow: hidden; }
   #composer-box:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(39,65,241,.1); }
   #free-text { width: 100%; min-height: 62px; max-height: 150px; resize: none; border: none; outline: none; padding: 11px 12px; font: 400 13.5px/1.5 var(--ui); color: var(--ink); display: block; font-family: var(--ui); }
   #composer-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border-top: 1px solid rgba(27,26,61,.07); background: #FAFAFC; }
-  #btn-attach { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--line-14); background: var(--panel); color: var(--dim-7); font: 600 12px var(--ui); }
-  #btn-attach:hover { background: var(--bg); }
+  #btn-attach { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 6px; border: 1px solid var(--line-14); background: var(--panel); color: var(--dim-7); font-size: 16px; padding: 0; cursor: pointer; }
+  #btn-attach:hover { background: var(--bg); color: var(--ink); }
   #composer-send-group { display: flex; align-items: center; gap: 6px; }
-  #btn-send { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 14px; border-radius: 8px; border: none; background: var(--accent); color: #fff; font: 600 12.5px var(--ui); }
+  #btn-send { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 6px; border: none; background: var(--accent); color: #fff; font-size: 16px; padding: 0; cursor: pointer; }
   #btn-send:hover:not(:disabled) { background: var(--accent-hover); }
-  #btn-cancel-agent { height: 30px; padding: 0 12px; border-radius: 8px; border: none; background: var(--coral); color: #fff; font: 600 12.5px var(--ui); }
+  #btn-cancel-agent { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 6px; border: none; background: var(--coral); color: #fff; font-size: 16px; padding: 0; cursor: pointer; }
   #btn-cancel-agent:hover:not(:disabled) { background: #c96e71; }
   #composer .attach-previews { margin-top: 9px; }
   #shortcut-hints { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 9px; font: 400 11px var(--ui); color: var(--dim-45); }
@@ -302,6 +392,7 @@
   #toast { position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%) translateY(10px); z-index: 90; display: inline-flex; align-items: center; gap: 9px; padding: 11px 18px; border-radius: 12px; background: var(--ink); color: #fff; font: 500 13px var(--ui); box-shadow: 0 12px 34px rgba(27,26,61,.35); opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; }
   #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
   #toast svg { color: var(--purple-soft); flex: none; }
+
 
   /* Done overlay (shown after finishing the review) */
   #done-overlay { position: fixed; inset: 0; z-index: 200; display: none; align-items: center; justify-content: center; background: rgba(243,243,248,.82); backdrop-filter: blur(6px); }
@@ -393,6 +484,7 @@
   </div>
 
   <aside id="sidebar">
+    <div class="resize-handle h-resize h-left"></div>
     <div id="sidebar-tabs">
       <button class="stab active" data-tab="annotations">Annotations <span class="badge" id="ann-badge" style="display:none">0</span></button>
       <button class="stab" data-tab="history">History <span class="badge" id="hist-badge" style="display:none">0</span></button>
@@ -407,27 +499,79 @@
       <div id="history-list"></div>
     </div>
 
+    <div class="resize-handle v-top"></div>
     <div id="conversation-wrap"><div id="conversation"></div></div>
+    <div class="resize-handle v-bottom"></div>
 
     <div id="perm-requests"></div>
 
     <div id="composer">
+      <div id="agent-info-bar">
+        <div class="info-item">
+          <span class="info-label">🤖</span>
+          <span class="info-value" id="info-model">Default</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">🧠</span>
+          <span class="info-value" id="info-context">—</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">📊</span>
+          <span class="info-value" id="info-tokens">—</span>
+        </div>
+      </div>
       <div id="composer-status">
-        <span id="agent-status" class="idle"><span class="status-dot-sm"></span><span id="agent-status-text">Idle</span></span>
+        <div style="display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0;">
+          <span id="agent-status" class="idle"><span class="status-dot-sm"></span><span id="agent-status-text">Idle</span></span>
+          <div id="model-selector-wrap">
+            <select id="model-selector" title="Select model for agent">
+              <option value="">Default</option>
+              <option value="claude-opus-4-8">Opus 4.8</option>
+              <option value="claude-sonnet-5">Sonnet 5</option>
+              <option value="claude-haiku-4-5-20251001">Haiku 4.5</option>
+            </select>
+          </div>
+          <label id="ask-mode-wrap" title="Force Ask Mode even with comments (for Q&A over edits)" style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--dim-6);">
+            <input type="checkbox" id="ask-mode-toggle" style="cursor: pointer;">
+            <span>Ask Mode</span>
+          </label>
+        </div>
         <label id="remote-approve-wrap" title="Approve tool permissions from this browser instead of the terminal">
           <input type="checkbox" id="remote-approve"> Remote approve
         </label>
       </div>
+      <div id="agent-metrics" class="hidden">
+        <div class="metric-group">
+          <span class="metric-label">Model:</span>
+          <span class="metric-value" id="metric-model">—</span>
+        </div>
+        <div class="metric-group">
+          <span class="metric-label">Tokens:</span>
+          <span class="metric-value" id="metric-tokens">—</span>
+          <div class="metric-bar" style="margin-left: 4px;">
+            <div class="metric-bar-fill" id="metric-tokens-bar" style="width: 0%;"></div>
+          </div>
+        </div>
+        <div class="metric-group">
+          <span class="metric-label">Context:</span>
+          <span class="metric-value" id="metric-context">—</span>
+          <div class="metric-bar" style="margin-left: 4px;">
+            <div class="metric-bar-fill" id="metric-context-bar" style="width: 0%;"></div>
+          </div>
+        </div>
+      </div>
       <div id="composer-box">
         <textarea id="free-text" placeholder="Message to agent…  (Enter to send, Shift+Enter for newline, paste an image to attach)"></textarea>
         <div id="composer-bar">
-          <button id="btn-attach" title="Attach image(s) from your computer">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.6"/><path d="M21 15l-5-5L5 21"/></svg>Image
+          <button id="btn-attach" title="Attach image(s)">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.6"/><path d="M21 15l-5-5L5 21"/></svg>
           </button>
           <div id="composer-send-group">
-            <button id="btn-cancel-agent" title="Cancel current agent work" style="display:none">Cancel</button>
-            <button id="btn-send" title="Send feedback (Enter)">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4z"/></svg>Send feedback
+            <button id="btn-cancel-agent" title="Cancel" style="display:none">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+            <button id="btn-send" title="Send (Enter)">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4z"/></svg>
             </button>
           </div>
         </div>
@@ -435,7 +579,8 @@
       <div id="attach-previews" class="attach-previews"></div>
       <input type="file" id="file-input" accept="image/*" multiple hidden>
       <div id="shortcut-hints">
-        <span class="hint">Select text → comment</span>
+        <span class="hint">Comment only → apply change</span>
+        <span class="hint">+ Message → ask question</span>
         <span class="hint"><kbd>↵</kbd> Send</span>
         <span class="hint"><kbd>Ctrl</kbd><kbd>Z</kbd> Undo</span>
         <span class="hint"><kbd>Esc</kbd> Off</span>
@@ -462,8 +607,9 @@
 
 <div id="kbd-overlay" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
   <div id="kbd-panel">
-    <h2>Keyboard shortcuts</h2>
-    <div class="kbd-row"><span class="kbd-desc">Comment on selection</span><span class="kbd-keys">Select text → chip / right-click</span></div>
+    <h2>Keyboard shortcuts & modes</h2>
+    <div class="kbd-row"><span class="kbd-desc">Apply edit (Edit Mode)</span><span class="kbd-keys">Comment only, no message</span></div>
+    <div class="kbd-row"><span class="kbd-desc">Ask question (Ask Mode)</span><span class="kbd-keys">Comment + Message, or Message only</span></div>
     <div class="kbd-row"><span class="kbd-desc">Toggle annotate mode</span><span class="kbd-keys"><kbd>A</kbd></span></div>
     <div class="kbd-row"><span class="kbd-desc">Send feedback</span><span class="kbd-keys"><kbd>Enter</kbd></span></div>
     <div class="kbd-row"><span class="kbd-desc">Undo last removal</span><span class="kbd-keys"><kbd>Ctrl</kbd><kbd>Z</kbd></span></div>
@@ -498,6 +644,14 @@ const permRequests   = document.getElementById('perm-requests');
 const agentStatusEl  = document.getElementById('agent-status');
 const agentStatusText= document.getElementById('agent-status-text');
 const remoteApprove  = document.getElementById('remote-approve');
+const modelSelector  = document.getElementById('model-selector');
+const askModeToggle  = document.getElementById('ask-mode-toggle');
+const agentMetrics   = document.getElementById('agent-metrics');
+const metricModel    = document.getElementById('metric-model');
+const metricTokens   = document.getElementById('metric-tokens');
+const metricContext  = document.getElementById('metric-context');
+const metricTokensBar= document.getElementById('metric-tokens-bar');
+const metricContextBar=document.getElementById('metric-context-bar');
 const btnHelp     = document.getElementById('btn-help');
 const livePill    = document.getElementById('live-pill');
 const freeText    = document.getElementById('free-text');
@@ -519,6 +673,10 @@ const outlineList = document.getElementById('outline-list');
 const btnOutlineToggle = document.getElementById('btn-outline-toggle');
 const outlineTitle = document.getElementById('outline-title');
 let outlineCollapsed = false;
+const tabPanel = document.querySelector('.tab-panel.active');
+const convoWrapEl = document.getElementById('conversation-wrap');
+const composerEl = document.getElementById('composer');
+const resizeHandles = document.querySelectorAll('.resize-handle');
 
 // ── State ──────────────────────────────────────────────────────────────────
 let annotating = false;
@@ -550,6 +708,14 @@ let annotations = [];
 // pendingNew: new comments committed locally but not yet sent to the agent.
 let pendingNew = [];
 
+// Agent model & metrics
+let selectedModel = localStorage.getItem('annotron-model') || '';
+let forceAskMode = localStorage.getItem('annotron-ask-mode') === 'true';
+let agentMetricsData = { model: '', tokensUsed: 0, tokensMax: 200000, contextUsed: 0, contextMax: 65536 };
+
+// Resizable panels state
+let maxTabPanelHeight = null;
+
 // ── SVG helpers ──────────────────────────────────────────────────────────
 const ICON = {
   check: '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>',
@@ -560,6 +726,68 @@ const ICON = {
   toast: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>',
 };
 
+// ── Model selector ─────────────────────────────────────────────────────────
+const infoModel = document.getElementById('info-model');
+const infoContext = document.getElementById('info-context');
+const infoTokens = document.getElementById('info-tokens');
+
+function updateInfoBar() {
+  // Update model display
+  const modelDisplay = selectedModel ?
+    (selectedModel.includes('opus') ? 'Opus 4.8' :
+     selectedModel.includes('sonnet') ? 'Sonnet 5' :
+     selectedModel.includes('haiku') ? 'Haiku 4.5' :
+     selectedModel) : 'Default';
+  infoModel.textContent = modelDisplay;
+
+  // Update context display
+  if (agentMetricsData.contextUsed > 0) {
+    const fmt = (n) => n > 1000 ? (n / 1000).toFixed(1) + 'k' : String(n);
+    infoContext.textContent = fmt(agentMetricsData.contextUsed) + '/' + fmt(agentMetricsData.contextMax);
+  }
+
+  // Update tokens display
+  if (agentMetricsData.tokensUsed > 0) {
+    const fmt = (n) => n > 1000 ? (n / 1000).toFixed(1) + 'k' : String(n);
+    infoTokens.textContent = fmt(agentMetricsData.tokensUsed) + '/' + fmt(agentMetricsData.tokensMax);
+  }
+}
+
+modelSelector.value = selectedModel;
+modelSelector.addEventListener('change', (e) => {
+  selectedModel = e.target.value;
+  localStorage.setItem('annotron-model', selectedModel);
+  updateInfoBar();
+});
+
+updateInfoBar();
+
+// ── Ask Mode toggle ────────────────────────────────────────────────────────
+askModeToggle.checked = forceAskMode;
+askModeToggle.addEventListener('change', (e) => {
+  forceAskMode = e.target.checked;
+  localStorage.setItem('annotron-ask-mode', String(forceAskMode));
+});
+
+// ── Metrics display ────────────────────────────────────────────────────────
+function updateMetricsDisplay(metrics) {
+  agentMetricsData = { ...agentMetricsData, ...metrics };
+  const { model, tokensUsed, tokensMax, contextUsed, contextMax } = agentMetricsData;
+  if (model) metricModel.textContent = model;
+  if (tokensUsed > 0) {
+    const fmt = (n) => n > 1000 ? (n / 1000).toFixed(1) + 'k' : String(n);
+    metricTokens.textContent = fmt(tokensUsed) + ' / ' + fmt(tokensMax);
+    metricTokensBar.style.width = Math.min(100, (tokensUsed / tokensMax) * 100) + '%';
+  }
+  if (contextUsed > 0) {
+    const fmt = (n) => n > 1000 ? (n / 1000).toFixed(1) + 'k' : String(n);
+    metricContext.textContent = fmt(contextUsed) + ' / ' + fmt(contextMax);
+    metricContextBar.style.width = Math.min(100, (contextUsed / contextMax) * 100) + '%';
+  }
+  agentMetrics.classList.remove('hidden');
+  updateInfoBar();
+}
+
 // ── Sidebar tabs ───────────────────────────────────────────────────────────
 document.querySelectorAll('.stab').forEach(btn => {
   btn.addEventListener('click', () => switchTab(btn.dataset.tab));
@@ -567,12 +795,22 @@ document.querySelectorAll('.stab').forEach(btn => {
 function switchTab(tab) {
   document.querySelectorAll('.stab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-  document.getElementById('tab-' + tab).classList.add('active');
+  const newPanel = document.getElementById('tab-' + tab);
+  if (newPanel) newPanel.classList.add('active');
   // Leaving History drops the temporary highlight on any focused resolved card.
   if (tab !== 'history' && focusedResolvedId) {
     focusedResolvedId = null;
     syncAnnotationsToArtifact();
   }
+  // Trigger auto-resize for the newly visible panel
+  setTimeout(() => {
+    const activePanel = document.querySelector('.tab-panel.active');
+    if (activePanel && maxTabPanelHeight) {
+      const scrollHeight = activePanel.scrollHeight;
+      const newHeight = Math.min(scrollHeight + 20, maxTabPanelHeight);
+      activePanel.style.maxHeight = newHeight + 'px';
+    }
+  }, 50);
 }
 
 // ── Help overlay ───────────────────────────────────────────────────────────
@@ -590,6 +828,8 @@ function flashToast(msg) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => toastEl.classList.remove('show'), 1900);
 }
+
+// Native Cmd+C / Ctrl+C for copy - no floating button needed
 
 // ── Time formatting ──────────────────────────────────────────────────────
 function timeAgo(iso) {
@@ -686,6 +926,81 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
+// ── Resizable panels ───────────────────────────────────────────────────────
+function setupResizeHandles() {
+  const sidebar = document.getElementById('sidebar');
+
+  resizeHandles.forEach((handle) => {
+    let isResizing = false;
+    let startPos = 0;
+
+    handle.addEventListener('mousedown', (e) => {
+      isResizing = true;
+      startPos = handle.classList.contains('h-resize') ? e.clientX : e.clientY;
+      document.body.style.userSelect = 'none';
+      document.body.style.cursor = handle.classList.contains('h-resize') ? 'col-resize' : 'row-resize';
+
+      // Lock max height on first drag
+      if (handle.classList.contains('v-top') && !maxTabPanelHeight) {
+        const activePanel = sidebar.querySelector('.tab-panel.active');
+        if (activePanel) {
+          maxTabPanelHeight = activePanel.offsetHeight;
+        }
+      }
+    });
+
+    document.addEventListener('mousemove', (e) => {
+      if (!isResizing) return;
+      const sidebar = document.getElementById('sidebar');
+
+      if (handle.classList.contains('h-resize')) {
+        // Horizontal resize: change sidebar width
+        const delta = e.clientX - startPos;
+        const currentWidth = sidebar.offsetWidth;
+        const newWidth = Math.max(280, Math.min(600, currentWidth - delta));
+        sidebar.style.width = newWidth + 'px';
+        startPos = e.clientX;
+      } else if (handle.classList.contains('v-top')) {
+        const delta = e.clientY - startPos;
+        // Resize tab-panel: auto-fit content but max = locked height
+        const activePanel = sidebar.querySelector('.tab-panel.active');
+        if (activePanel && maxTabPanelHeight) {
+          const newHeight = Math.max(100, maxTabPanelHeight + delta);
+          activePanel.style.maxHeight = newHeight + 'px';
+          activePanel.style.minHeight = 'auto';  // Auto-fit to content, but respect max
+          startPos = e.clientY;
+        }
+      } else if (handle.classList.contains('v-bottom')) {
+        const delta = e.clientY - startPos;
+        // Resize conversation up/down
+        const currentHeight = convoWrapEl.offsetHeight;
+        const newHeight = Math.max(50, currentHeight + delta);
+        convoWrapEl.style.maxHeight = newHeight + 'px';
+        startPos = e.clientY;
+      }
+    });
+
+    document.addEventListener('mouseup', () => {
+      isResizing = false;
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+    });
+  });
+
+  // Auto-resize tab-panel when comments added (within max)
+  const observer = new MutationObserver(() => {
+    const activePanel = sidebar.querySelector('.tab-panel.active');
+    if (activePanel && maxTabPanelHeight) {
+      const scrollHeight = activePanel.scrollHeight;
+      const newHeight = Math.min(scrollHeight + 20, maxTabPanelHeight);
+      activePanel.style.maxHeight = newHeight + 'px';
+    }
+  });
+
+  observer.observe(sidebar, { childList: true, subtree: true });
+}
+setupResizeHandles();
+
 // ── postMessage bridge ─────────────────────────────────────────────────────
 window.addEventListener('message', (e) => {
   const d = e.data;
@@ -710,6 +1025,22 @@ window.addEventListener('message', (e) => {
       textStart: d.textStart, textEnd: d.textEnd,
       textPrefix: d.textPrefix || '', textSuffix: d.textSuffix || '',
     });
+    return;
+  }
+  if (d.type === 'text-edit') {
+    // Direct inline edit of the selected run in the .md (no agent). The server
+    // re-verifies the text before writing; on success the file watcher reloads
+    // the iframe and re-renders automatically.
+    (async () => {
+      try {
+        const res = await fetch('/edit-text', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ file: d.file || file, oldText: d.oldText, newText: d.newText, index: d.index }),
+        });
+        if (res.ok) { flashToast(d.newText === '' ? 'Deleted' : 'Saved to .md'); }
+        else { flashToast('Could not apply edit — try the Markdown pane'); }
+      } catch { flashToast('Edit failed — server not reachable'); }
+    })();
     return;
   }
   if (d.type === 'annotation-selected') {
@@ -1425,7 +1756,7 @@ async function sendFeedback() {
     const totalImgs = images.length + items.reduce((n, it) => n + it.images.length, 0);
     const res = await fetch('/feedback', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ file, items, message, images }),
+      body: JSON.stringify({ file, items, message, images, model: selectedModel || null, askMode: forceAskMode }),
     });
     if (res.ok) {
       pendingNew.forEach(c => { delete noteImgStore[c.id]; });
@@ -1566,6 +1897,9 @@ function connectSSE() {
       if (t === 'permission_prompt') setStatus('needs-perm', 'Needs your permission');
       else if (t === 'idle' || t === 'idle_prompt') { if (!agentWorking) setStatus('idle', 'Idle'); }
     } catch {}
+  });
+  es.addEventListener('agent-metrics', (e) => {
+    try { updateMetricsDisplay(JSON.parse(e.data)); } catch {}
   });
   es.addEventListener('permission-request', (e) => { try { renderPermCard(JSON.parse(e.data)); } catch {} });
   es.addEventListener('permission-resolved', (e) => { try { removePermCard(JSON.parse(e.data).requestId); } catch {} });

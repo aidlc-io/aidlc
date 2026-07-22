@@ -13,7 +13,7 @@ const execFileP = promisify(execFile);
 
 // A source Markdown artifact is rendered to HTML on the fly; the .md stays the
 // source of truth and is what the Save button writes back to.
-const isMarkdown = (f) => /\.md$/i.test(f);
+const isMarkdown = (f) => /\.(md|markdown)$/i.test(f);
 
 // --- Reviewer identity ---------------------------------------------------------
 // Who is leaving comments? Prefer the GitHub login (via `gh`), then the git
@@ -314,6 +314,36 @@ async function handler(req, res) {
     return send(res, 200, { ok: true });
   }
 
+  // Inline edit: replace one exact run of text in the .md source with new text
+  // (empty newText = delete). Used by the "Edit" affordance on a text selection
+  // in Annotate mode — a direct, agent-free tweak. The client only offers Edit
+  // when it can pin a single occurrence, and passes that `index`; the server
+  // re-verifies the slice still equals `oldText` (falls back to a unique search
+  // if the file shifted underneath) before writing, so it never edits blind.
+  if (pathname === '/edit-text' && method === 'POST') {
+    const body = await readBody(req);
+    const { file, oldText, index } = body;
+    const newText = typeof body.newText === 'string' ? body.newText : '';
+    if (!file || typeof oldText !== 'string' || !oldText) return send(res, 400, { error: 'missing file or oldText' });
+    const abs = path.resolve(file);
+    if (!allowList.has(abs)) return send(res, 403, { error: 'not registered' });
+    if (!isMarkdown(abs)) return send(res, 400, { error: 'not a markdown file' });
+    let md;
+    try { md = fs.readFileSync(abs, 'utf8'); } catch { return send(res, 404, { error: 'not found' }); }
+    // Prefer the client-provided index (verified), else a unique match.
+    let at = -1;
+    if (Number.isInteger(index) && md.slice(index, index + oldText.length) === oldText) {
+      at = index;
+    } else {
+      const first = md.indexOf(oldText);
+      if (first !== -1 && md.indexOf(oldText, first + 1) === -1) at = first; // unique only
+    }
+    if (at === -1) return send(res, 409, { error: 'text not found or ambiguous — file changed' });
+    const updated = md.slice(0, at) + newText + md.slice(at + oldText.length);
+    try { fs.writeFileSync(abs, updated, 'utf8'); } catch (e) { return send(res, 500, { error: 'write failed: ' + e.message }); }
+    return send(res, 200, { ok: true });
+  }
+
   if (pathname === '/annotations' && method === 'GET') {
     const file = u.searchParams.get('file');
     if (!file) return send(res, 400, { error: 'missing file' });
@@ -397,6 +427,7 @@ async function handler(req, res) {
     sess.pendingFeedback = body;
     sess.finalized = false;
     sess.cancelRequested = false;
+    sess.selectedModel = body.model || null;
     broadcastSSE(abs, 'agent-thinking', '{}');
     wakePoll(abs, { feedback: body, finalized: false });
     return send(res, 200, { ok: true });
@@ -538,6 +569,24 @@ async function handler(req, res) {
     const abs = path.resolve(file);
     if (!allowList.has(abs)) return send(res, 403, { error: 'not registered' });
     broadcastSSE(abs, 'agent-progress', JSON.stringify({ step: body.step || '', done: !!body.done }));
+    return send(res, 200, { ok: true });
+  }
+
+  if (pathname === '/agent-metrics' && method === 'POST') {
+    const body = await readBody(req);
+    const file = body.file;
+    if (!file) return send(res, 400, { error: 'missing file' });
+    const abs = path.resolve(file);
+    if (!allowList.has(abs)) return send(res, 403, { error: 'not registered' });
+    const metrics = {
+      model: body.model || undefined,
+      tokensUsed: body.tokensUsed || undefined,
+      tokensMax: body.tokensMax || undefined,
+      contextUsed: body.contextUsed || undefined,
+      contextMax: body.contextMax || undefined,
+    };
+    Object.keys(metrics).forEach(k => metrics[k] === undefined && delete metrics[k]);
+    broadcastSSE(abs, 'agent-metrics', JSON.stringify(metrics));
     return send(res, 200, { ok: true });
   }
 
