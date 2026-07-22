@@ -10,7 +10,7 @@
  */
 import MarkdownIt from 'markdown-it';
 import {
-  parseToIR, asciiFromIR,
+  parseToIR,
   flowchartToSvg, classToSvg, erToSvg,
   buildPieSvg, buildQuadrantSvg, buildJourneySvg, buildGanttSvg,
   buildTimelineSvg, buildC4Svg, buildArchitectureSvg, buildGitGraphSvg,
@@ -48,15 +48,16 @@ async function renderDiagram(src) {
           if (typeof svg === 'string' && svg.includes('<svg')) {
             return `<figure class="mmd-diagram" data-mmd-type="${escapeHtml(r.type)}">${svg}</figure>`;
           }
-        } catch { /* fall through to ASCII */ }
+        } catch { /* fall through to client-side mermaid */ }
       }
-      try {
-        const ascii = asciiFromIR(r.ir);
-        if (ascii) return `<pre class="mmd-ascii" data-mmd-type="${escapeHtml(r.type)}">${escapeHtml(ascii)}</pre>`;
-      } catch { /* fall through to raw */ }
     }
-  } catch { /* fall through to raw */ }
-  return `<pre class="mmd-raw"><code>${escapeHtml(src)}</code></pre>`;
+  } catch { /* fall through to client-side mermaid */ }
+  // merslim has no headless SVG builder for this type (sequence / state /
+  // mindmap) or the build failed. Hand the raw source to mermaid.js in the
+  // browser instead of the old ASCII fallback, so EVERY diagram renders as a
+  // real diagram — matching the mermaid extension. wrapDocument injects the
+  // mermaid runtime whenever any of these client blocks are present.
+  return `<pre class="mermaid mmd-client">${escapeHtml(src)}</pre>`;
 }
 
 const isMermaidFence = (info) => (info || '').trim().split(/\s+/)[0].toLowerCase() === 'mermaid';
@@ -114,10 +115,12 @@ export async function renderMarkdown(mdText, { title = 'Markdown' } = {}) {
   };
 
   const body = md.renderer.render(tokens, md.options, {});
-  return wrapDocument(body, title, headings);
+  // Load the mermaid runtime only when a diagram fell back to client rendering.
+  const needsMermaid = body.includes('class="mermaid');
+  return wrapDocument(body, title, headings, needsMermaid);
 }
 
-function wrapDocument(bodyHtml, title, headings = []) {
+function wrapDocument(bodyHtml, title, headings = [], needsMermaid = false) {
   const headingsJson = escapeHtml(JSON.stringify(headings));
   return `<!DOCTYPE html>
 <html lang="en">
@@ -160,12 +163,25 @@ function wrapDocument(bodyHtml, title, headings = []) {
   .md .mmd-ascii { background: #0f1420; color: #cfe3ff; border: none;
     font-family: ui-monospace, Menlo, monospace; line-height: 1.35; }
   .md .mmd-raw { border-style: dashed; }
+  /* client-side mermaid fallback (sequence / state / mindmap) */
+  .md .mermaid { margin: 1.4em 0; padding: 16px; border: 1px solid var(--line);
+    border-radius: 12px; background: #fcfcfe; text-align: center; overflow-x: auto; }
+  .md .mermaid svg { max-width: 100%; height: auto; }
+  /* raw source shown only until mermaid replaces it (avoids a flash of code) */
+  .md .mermaid:not([data-processed]) { color: var(--muted); text-align: left;
+    font: .82em/1.5 ui-monospace, Menlo, monospace; white-space: pre-wrap; }
 </style>
 </head>
 <body>
   <article class="md">
 ${bodyHtml}
   </article>
+${needsMermaid ? `  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    mermaid.initialize({ startOnLoad: false, theme: 'default' });
+    // Render the fenced blocks merslim couldn't lay out headless.
+    mermaid.run({ querySelector: '.mermaid' }).catch((e) => console.error('mermaid render failed', e));
+  </script>` : ''}
 </body>
 </html>`;
 }
