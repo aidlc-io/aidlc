@@ -1472,7 +1472,15 @@ export class WorkspaceWebview {
       location: vscode.TerminalLocation.Panel,
       // oh-my-zsh's weekly update prompt can swallow the launch command before
       // shell integration installs — disable it for this terminal only.
-      env: { DISABLE_AUTO_UPDATE: 'true', DISABLE_UPDATE_PROMPT: 'true' },
+      // Also unset the Electron-as-Node vars VS Code injects, so the annotron
+      // server `ensureServer` spawns gets a clean node env (else it can fail
+      // to start — see viewArtifactInAnnotron).
+      env: {
+        DISABLE_AUTO_UPDATE: 'true',
+        DISABLE_UPDATE_PROMPT: 'true',
+        ELECTRON_RUN_AS_NODE: null,
+        NODE_OPTIONS: null,
+      },
     });
     terminal.show(false);
 
@@ -1496,6 +1504,79 @@ export class WorkspaceWebview {
       `Đang mở vòng annotate cho ${filename}: Claude sẽ render + mở annotron rồi tự nhận feedback và sửa .md. ` +
         `(Cần Claude CLI. Chưa có thì chạy “${skillCmd}” trong Claude Code.)`,
     );
+  }
+
+  /**
+   * Read-only preview of an artifact in annotron. Unlike the old "Open HTML"
+   * (which opened md-to-html's static `.html` — no Mermaid), this opens the
+   * `.md` directly in annotron, which renders Markdown itself (markdown-it +
+   * merslim) so **diagrams show as SVG**, matching the Feedback view. No Claude
+   * and no feedback loop — the reviewer just looks; the "Feedback" button runs
+   * the full /annotate-artifact loop when they want to leave comments.
+   *
+   * Runs the vendored annotron installed at `~/.claude/tools/annotron` — the
+   * same binary the skill uses — so it needs only `node`, not `claude`.
+   */
+  private viewArtifactInAnnotron(epicDir: string, filename: string): void {
+    const mdPath = path.join(epicDir, 'artifacts', filename);
+    if (!fs.existsSync(mdPath)) {
+      void vscode.window.showInformationMessage(`Artifact chưa tồn tại: ${filename}`);
+      return;
+    }
+    const annotronBin = path.join(os.homedir(), '.claude', 'tools', 'annotron', 'bin', 'annotron');
+    if (!fs.existsSync(annotronBin)) {
+      void vscode.window.showWarningMessage(
+        'Annotron chưa được cài (~/.claude/tools/annotron). Mở lại project để extension cài lại, hoặc dùng nút Feedback.',
+      );
+      return;
+    }
+
+    const epicId = path.basename(epicDir);
+    const termName = `AIDLC · Preview: ${epicId}/${filename}`;
+    const existing = vscode.window.terminals.find((t) => t.name === termName);
+    if (existing) {
+      if (existing.exitStatus === undefined) { existing.show(false); return; }
+      existing.dispose();
+    }
+
+    const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    const cwd = root && fs.existsSync(root) ? root : epicDir;
+    const terminal = vscode.window.createTerminal({
+      name: termName,
+      cwd,
+      iconPath: new vscode.ThemeIcon('eye'),
+      location: vscode.TerminalLocation.Panel,
+      // Strip the Electron-as-Node vars VS Code injects into terminals it
+      // spawns. annotron's `ensureServer` starts `server.js` with
+      // `spawn(process.execPath, …, { env: process.env })`; if
+      // ELECTRON_RUN_AS_NODE / NODE_OPTIONS (which --requires VS Code
+      // internals) leak in, that node either loads VS Code's bootstrap
+      // (slow → 3s startup timeout) or crashes → "Server failed to start".
+      // Unsetting them (null) gives the whole chain a clean node env.
+      env: {
+        DISABLE_AUTO_UPDATE: 'true',
+        DISABLE_UPDATE_PROMPT: 'true',
+        ELECTRON_RUN_AS_NODE: null,
+        NODE_OPTIONS: null,
+      },
+    });
+    terminal.show(false);
+
+    // `annotron <file.md>` starts the background server (if needed), registers
+    // the file, and opens the rendered preview in the browser — then exits.
+    const launch = `node ${JSON.stringify(annotronBin)} ${JSON.stringify(mdPath)}`;
+    let sent = false;
+    const integ = vscode.window.onDidChangeTerminalShellIntegration((e) => {
+      if (e.terminal === terminal && e.shellIntegration && !sent) {
+        sent = true;
+        e.shellIntegration.executeCommand(launch);
+        integ.dispose();
+      }
+    });
+    this.disposables.push(integ);
+    setTimeout(() => {
+      if (!sent) { sent = true; terminal.sendText(launch, true); integ.dispose(); }
+    }, 2000);
   }
 
   /**
@@ -1805,20 +1886,14 @@ export class WorkspaceWebview {
         await vscode.window.showTextDocument(doc, { preview: false });
         return;
       }
-      case 'openHtmlFile': {
-        // Read-only view of the rendered artifact — open the .html in the
-        // browser (rendered), not the editor (raw source).
+      case 'viewArtifact': {
+        // Read-only preview: open the .md in annotron so diagrams render
+        // (annotron renders Markdown itself), without the /annotate-artifact
+        // feedback loop. See viewArtifactInAnnotron.
         const epicDir = String(msg.epicDir ?? '');
         const filename = String(msg.filename ?? '');
         if (!epicDir || !filename) { return; }
-        const filePath = path.join(epicDir, 'artifacts', filename);
-        if (!fs.existsSync(filePath)) {
-          void vscode.window.showInformationMessage(
-            `Chưa có bản HTML cho artifact này. Bấm “Feedback” để render rồi mở annotron.`,
-          );
-          return;
-        }
-        await vscode.env.openExternal(vscode.Uri.file(filePath));
+        this.viewArtifactInAnnotron(epicDir, filename);
         return;
       }
       case 'annotateArtifact': {

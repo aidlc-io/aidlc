@@ -590,11 +590,6 @@ function StepDetail({
   // emit different files, so the step is the authoritative source.
   const artifactName = focused.artifact || m.artifact || '';
   const artifactExists = artifactName ? epic.existingArtifacts.includes(artifactName) : false;
-  // The annotation loop renders `<file>.md` → `<file>.html`. Offer a plain
-  // "Open HTML" (read-only) only once that render exists; before then, the
-  // Feedback action is what creates it.
-  const htmlName = artifactName ? artifactName.replace(/\.md$/i, '') + '.html' : '';
-  const htmlExists = htmlName ? epic.existingArtifacts.includes(htmlName) : false;
   const [artifactMenuOpen, setArtifactMenuOpen] = useState(false);
 
   const accent = (() => {
@@ -694,21 +689,19 @@ function StepDetail({
                       <FileText className="h-3 w-3 text-muted-foreground" />
                       <span>Open Markdown</span>
                     </button>
-                    {htmlExists && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setArtifactMenuOpen(false);
-                          postMessage({ type: 'openHtmlFile', epicDir: epic.epicDir, filename: htmlName });
-                        }}
-                        className="flex w-full items-center gap-2 border-t border-border px-3 py-1.5 text-left text-[11px] text-foreground hover:bg-accent"
-                        title="Open the rendered HTML in your browser (read-only)"
-                      >
-                        <ExternalLink className="h-3 w-3 text-muted-foreground" />
-                        <span>Open HTML</span>
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setArtifactMenuOpen(false);
+                        postMessage({ type: 'viewArtifact', epicDir: epic.epicDir, filename: artifactName });
+                      }}
+                      className="flex w-full items-center gap-2 border-t border-border px-3 py-1.5 text-left text-[11px] text-foreground hover:bg-accent"
+                      title="Preview in annotron — renders the Markdown with diagrams (read-only; no feedback loop)"
+                    >
+                      <ExternalLink className="h-3 w-3 text-muted-foreground" />
+                      <span>Preview</span>
+                    </button>
                     <button
                       type="button"
                       onClick={(e) => {
@@ -717,11 +710,7 @@ function StepDetail({
                         postMessage({ type: 'annotateArtifact', epicDir: epic.epicDir, filename: artifactName });
                       }}
                       className="flex w-full items-center gap-2 border-t border-border px-3 py-1.5 text-left text-[11px] text-foreground hover:bg-accent"
-                      title={
-                        htmlExists
-                          ? 'Open the HTML in annotron and start the feedback loop (edits the .md)'
-                          : 'Render to HTML, open in annotron, and start the feedback loop (edits the .md)'
-                      }
+                      title="Open in annotron (renders the Markdown with diagrams) and start the feedback loop — edits land in the .md and each round is logged to this step's history"
                     >
                       <Highlighter className="h-3 w-3 text-primary" />
                       <span>Feedback</span>
