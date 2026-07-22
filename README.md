@@ -1,4 +1,4 @@
-# AIDLC v3.3 🚀
+# AIDLC v3.4 🚀
 
 **AI-driven SDLC pipeline runner. Plan → Prototype → Design ∥ Test → Implement → Release. See what Claude is building, control every step, track every token.**
 
@@ -17,6 +17,16 @@ observability, and a native session-insights dashboard built from the Claude
 Code transcript.
 
 ![aidlc demo](packages/extension/media/demo.gif)
+
+## ✨ What's New in v3.4
+
+- **📊 Mermaid renders for every diagram type** — Sequence, state, and mindmap diagrams (and any newer mermaid type) now render as real diagrams in the review/preview, not a dark ASCII box. Common types stay zero-runtime SVG; the rest fall back to a lazily-loaded mermaid runtime.
+- **🖼️ Feedback & Preview render the Markdown natively** — the Feedback button and the new **Preview** action open the artifact in annotron itself (diagrams included); revision history is still logged per round.
+- **✍️ Inline text edit** — in Annotate mode, selecting plain text offers **Edit** beside Comment to retype/delete it straight into the `.md` (only when it maps to an exact spot in the source).
+- **🩹 Sturdier annotron server** — starts reliably from VS Code terminals and stays up after Done.
+- **🧭 Autopilot core (experimental)** — unattended run engine + LLM pipeline adapter land in `@aidlc/core`, dormant behind `aidlc.autopilot.enabled`.
+
+---
 
 ## ✨ What's New in v3.3
 

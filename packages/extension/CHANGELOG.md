@@ -1,5 +1,19 @@
 # Changelog
 
+## 3.4.0
+
+### Annotron diagram rendering + review fixes (customer-reported)
+
+- fix(annotron): **Mermaid diagrams now render for every type**. Sequence, state, and mindmap diagrams (which merslim can't lay out headless) previously fell back to a dark ASCII box; they now render as real diagrams via a lazily-injected client-side mermaid runtime. merslim SVG is still used for the 11 headless types (flowchart, class, er, pie, gantt, journey, timeline, c4, architecture, gitgraph, quadrant) — offline, no runtime. Any unrecognized type also falls through to mermaid, so nothing renders as raw code anymore.
+- fix(annotron): the **Feedback** button opens annotron on the `.md` (annotron renders it, diagrams included) instead of feeding it a static `md-to-html` render — so the review shows diagrams and each round still logs to the step's history.
+- fix(annotron): "Open HTML" → **Preview** — opens the artifact in annotron (diagrams, read-only) rather than a static HTML file.
+- fix(annotron): the annotron server starts reliably from VS Code-launched terminals (strip `ELECTRON_RUN_AS_NODE` / `NODE_OPTIONS`) and stays up after **Done** (no more empty pane from an unregistered file).
+- feat(annotron): inline text edit in Annotate mode — selecting plain text offers **Edit** beside Comment to retype/delete it straight into the `.md` (shown only when the selection maps to a single exact run in the source).
+
+### Autopilot (experimental, off by default)
+
+- feat(autopilot): core auto-run engine (`runExecLoop`) extracted into `@aidlc/core` and an LLM-driven pipeline adapter (context → classify → assemble → adapt). Dormant until wired into the UI; gated behind `aidlc.autopilot.enabled`.
+
 ## 3.3.0
 
 - fix(builder): custom pipelines created/edited inline now generate their slash commands — `.claude/commands/<pipelineId>-<step>.md` plus a matching `slash_commands` entry in `workspace.yaml` — for every named step. Previously "Run step" on a custom pipeline executed `/<pipelineId>-<step>` with no backing command file and failed with *command not found*. Idempotent: hand-authored command files and existing entries are left untouched. (Re-save an older custom pipeline once to backfill.)
