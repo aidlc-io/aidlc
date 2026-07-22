@@ -130,6 +130,9 @@ interface SidebarState {
   mcpError: string | null;
   /** Extra projects from the active/recent epic (GH-67). */
   extraProjects?: Array<{ type: string; ref: string; label: string; mode?: string }>;
+  /** `aidlc.autopilot.enabled` setting — drives the AIDLC Autopilot row's
+   * "Coming soon" vs "On" state in the Common workflows. */
+  autopilotEnabled: boolean;
 }
 
 interface McpSnapshot {
@@ -143,6 +146,9 @@ function buildState(
   mcp: McpSnapshot,
 ): SidebarState {
   const demoProjectExists = fs.existsSync(path.join(os.homedir(), DEMO_DIR_NAME));
+  const autopilotEnabled = vscode.workspace
+    .getConfiguration('aidlc')
+    .get<boolean>('autopilot.enabled', false);
   const folder = vscode.workspace.workspaceFolders?.[0];
   if (!folder) {
     return {
@@ -159,6 +165,7 @@ function buildState(
       mcpServers: mcp.servers,
       mcpLoading: mcp.loading,
       mcpError: mcp.error,
+      autopilotEnabled,
     };
   }
 
@@ -225,6 +232,7 @@ function buildState(
       mcpLoading: mcp.loading,
       mcpError: mcp.error,
       extraProjects: sidebarExtraProjects,
+      autopilotEnabled,
     };
   }
 
@@ -266,6 +274,7 @@ function buildState(
     mcpLoading: mcp.loading,
     mcpError: mcp.error,
     extraProjects: sidebarExtraProjects,
+    autopilotEnabled,
   };
 }
 
@@ -393,6 +402,12 @@ export class SidebarWebviewProvider implements vscode.WebviewViewProvider {
     // other panel propagate here too.
     const themeReg = themeManager.register(view.webview);
     view.onDidDispose(() => themeReg.dispose());
+    // Re-render when the autopilot toggle changes so the row flips between
+    // "Coming soon" and "On" live, without a manual refresh.
+    const cfgReg = vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration('aidlc.autopilot.enabled')) { this.refresh(); }
+    });
+    view.onDidDispose(() => cfgReg.dispose());
     this.refresh();
     // First-time MCP load happens once the panel is up — kicks off the
     // spawn and re-posts state when the result lands.
@@ -650,6 +665,14 @@ export class SidebarWebviewProvider implements vscode.WebviewViewProvider {
         void vscode.window.setStatusBarMessage(`Copied ${cmd} to clipboard`, 2000);
         return;
       }
+      case 'openAutopilotSetting':
+        // Deep-link the Settings UI to the autopilot toggle so the user can
+        // flip "coming soon" on/off from the row itself.
+        await vscode.commands.executeCommand(
+          'workbench.action.openSettings',
+          'aidlc.autopilot.enabled',
+        );
+        return;
       case 'refresh':
         this.refresh();
         return;

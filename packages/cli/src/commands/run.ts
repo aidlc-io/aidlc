@@ -17,6 +17,9 @@ import {
   submitAutoReviewVerdict,
   PipelineRunError,
   RUN_ID_PATTERN,
+  runExecLoop,
+  type ExecOutcome,
+  type ExecHooks,
   type RunState,
   type PipelineConfig,
 } from '@aidlc/core';
@@ -363,18 +366,9 @@ export function registerRun(program: Command): void {
 
 // ── Exec internals ────────────────────────────────────────────────────────────
 
-/**
- * Why the exec loop stopped. The caller maps this to a process exit code so a
- * CI job can tell "the pipeline finished" from "it paused waiting on a human".
- */
-type ExecOutcome =
-  | { kind: 'completed' }
-  | { kind: 'until' }
-  | { kind: 'dry_run' }
-  | { kind: 'awaiting_review' }
-  | { kind: 'rejected' }
-  | { kind: 'budget_pause' }
-  | { kind: 'error' };
+// The exec loop itself now lives in @aidlc/core (`runExecLoop`) so the VS Code
+// extension can drive runs too. This file only maps the engine's I/O hooks
+// back to the CLI's chalk output + exit codes.
 
 /**
  * 0 = run completed (or deliberately stopped at --until); 2 = paused on a gate
@@ -417,283 +411,111 @@ async function execLoop(
   runId: string,
   opts: { until?: string; autoApprove?: boolean; json?: boolean; message?: string; dryRun?: boolean },
 ): Promise<ExecOutcome> {
-  // Resolve the optional --until boundary once (before loop, using initial state).
+  // Resolve --until against the initial state (keeps the CLI's nice not-found
+  // error + exit). The engine reloads state each iteration on its own.
   const initialState = requireRun(root, runId);
-  const untilIdx = opts.until !== undefined
-    ? requireStepIdx(initialState, opts.until)
-    : -1;
+  const untilIdx = opts.until !== undefined ? requireStepIdx(initialState, opts.until) : -1;
 
-  // Resolve the pipeline's optional cost ceiling once — only the autopilot
-  // loop enforces it (manual mark-done is never gated).
-  const budget = requirePipelineForRun(root, initialState).budget;
-
-  while (true) {
-    // Reload fresh state each iteration so concurrent edits (extension, other CLI) are picked up.
-    const state = RunStateStore.load(root, runId);
-    if (!state) {
-      console.error(chalk.red(`Run "${runId}" disappeared.`));
-      return { kind: 'error' };
-    }
-
-    if (state.status === 'completed') {
-      info(chalk.green('\n🎉 Run completed — all steps approved.'));
-      return { kind: 'completed' };
-    }
-    if (state.status === 'failed') {
-      console.error(chalk.red('\nRun failed.'));
-      return { kind: 'error' };
-    }
-
-    const step = state.steps[state.currentStepIdx];
-
-    // Auto-review gate: the step's produces validated, now run its
-    // auto_review_runner validator headlessly. submitAutoReviewVerdict
-    // transitions the step away from awaiting_auto_review (→ rejected, →
-    // awaiting_review, or auto-advance), so the next iteration picks it up.
-    if (step.status === 'awaiting_auto_review') {
-      const proceed = await runAutoReviewStep(root, runId);
-      if (!proceed) { return { kind: 'error' }; }
-      continue;
-    }
-
-    // Stop at human_review unless --auto-approve
-    if (step.status === 'awaiting_review') {
-      if (opts.autoApprove) {
-        await autoApproveStep(root, state, runId);
-        continue;
-      }
-      info(chalk.cyan(`\n⏸  Step "${step.agent}" is awaiting human review.`));
-      info(chalk.dim(`  Approve: aidlc run approve ${runId}`));
-      info(chalk.dim(`  Reject:  aidlc run reject ${runId} --reason "..."`));
-      return { kind: 'awaiting_review' };
-    }
-
-    // Stop at rejected unless user reruns
-    if (step.status === 'rejected') {
-      info(chalk.red(`\n✘  Step "${step.agent}" was rejected.`));
-      info(chalk.dim(`  Rerun: aidlc run rerun ${runId} [--feedback "..."]`));
-      return { kind: 'rejected' };
-    }
-
-    if (step.status !== 'awaiting_work') {
-      console.error(chalk.red(`\nUnexpected step status "${step.status}" — cannot exec.`));
-      return { kind: 'error' };
-    }
-
-    // Execute the current step
-    const success = await execStep(root, state, runId, opts);
-    if (!success) { return { kind: 'error' }; }
-
-    // Dry-run only previews the current step's prompt — it never advances the
-    // step, so returning here avoids re-previewing the same step forever.
-    if (opts.dryRun) { return { kind: 'dry_run' }; }
-
-    // Budget guard — sum per-step cost from the just-saved state and stop if
-    // a ceiling is crossed. `state.currentStepIdx` is the step that just ran.
-    if (budget) {
-      const after = RunStateStore.load(root, runId);
-      const stepCosts = after ? after.steps.map((s) => s.costUsd) : [];
-      const lastStepCost = after?.steps[state.currentStepIdx]?.costUsd;
-      const verdict = checkBudget({ stepCosts, budget, lastStepCost });
-      if (!verdict.ok) {
-        const scope = verdict.exceeded === 'step' ? 'per-step' : 'total';
-        info(
-          chalk.yellow(`\n⚠  Budget exceeded (${scope}): spent $${verdict.spent.toFixed(4)}, limit $${verdict.limit.toFixed(2)}.`),
-        );
-        if (budget.on_exceed === 'fail') {
-          return { kind: 'error' };
-        }
-        info(chalk.dim(`  Paused. Raise the budget in workspace.yaml or resume: aidlc run exec ${runId}`));
-        return { kind: 'budget_pause' };
-      }
-      info(chalk.dim(`  budget: $${verdict.spent.toFixed(4)} / $${budget.max_usd.toFixed(2)}`));
-    }
-
-    // Check --until boundary
-    if (untilIdx >= 0 && state.currentStepIdx >= untilIdx) {
-      info(chalk.dim(`\nStopped at step ${untilIdx} as requested.`));
-      return { kind: 'until' };
-    }
-  }
-}
-
-async function execStep(
-  root: string,
-  state: RunState,
-  runId: string,
-  opts: { json?: boolean; message?: string; dryRun?: boolean },
-): Promise<boolean> {
-  const stepIdx  = state.currentStepIdx;
-  const stepRec  = state.steps[stepIdx];
-  const agentId  = stepRec.agent;
-
-  // Load workspace
-  let ws;
-  try {
-    ws = WorkspaceLoader.load(root);
-  } catch (err) {
-    console.error(chalk.red(`Failed to load workspace: ${err instanceof Error ? err.message : String(err)}`));
-    return false;
-  }
-
-  const pipeline = ws.config.pipelines.find((p: PipelineConfig) => p.id === state.pipelineId);
-  if (!pipeline) {
-    console.error(chalk.red(`Pipeline "${state.pipelineId}" not found in workspace.yaml.`));
-    return false;
-  }
-
-  const agent = ws.config.agents.find(a => a.id === agentId);
-  if (!agent) {
-    console.error(chalk.red(`Agent "${agentId}" not found in workspace.yaml.`));
-    return false;
-  }
-
-  // Load skill(s) — concatenated when an agent declares multiple
-  let skillText: string;
-  try {
-    skillText = loadAgentSkills(ws.skills, agent);
-  } catch (err) {
-    console.error(chalk.red(`Failed to load skills for agent "${agentId}": ${err instanceof Error ? err.message : String(err)}`));
-    return false;
-  }
-
-  // Resolve env (workspace layer + agent layer)
-  const env = ws.envResolver.resolveLayered(ws.config.environment ?? {}, agent.env ?? {});
-
-  // Build user message: explicit --message → context pairs → agent name as fallback.
-  // claude --print always requires a non-empty prompt.
-  const contextStr = Object.entries(state.context).map(([k, v]) => `${k}=${v}`).join(' ');
-  const userMessage = opts.message ?? (contextStr || `Execute step: ${agentId}`);
-
-  // Dry run — print prompt and exit
-  if (opts.dryRun) {
-    info(chalk.bold(`\n── System prompt (skills: ${formatSkillsList(agent)}) ──`));
-    info(chalk.dim(skillText));
-    info(chalk.bold('\n── User message ───────────────────────────────────────'));
-    info(userMessage || chalk.dim('(empty)'));
-    info(chalk.bold('\n── Env vars ───────────────────────────────────────────'));
-    for (const [k, v] of Object.entries(env)) {
-      const masked = k.toLowerCase().includes('key') || k.toLowerCase().includes('token')
-        ? '***' : v;
-      info(chalk.dim(`  ${k}=${masked}`));
-    }
-    info();
-    return true;
-  }
-
-  // Execute
-  info(chalk.bold(`\n▶  Step ${stepIdx}: ${agentId}`) + chalk.dim(` (rev ${stepRec.revision})`));
-  info(chalk.dim(`   skills: ${formatSkillsList(agent)}  model: ${agent.model ?? 'claude-sonnet-4-5'}`));
-  if (userMessage) { info(chalk.dim(`   context: ${userMessage}`)); }
-  info(chalk.dim('─'.repeat(60)));
-
-  // In --json mode keep stdout clean for the final summary: claude's own
-  // streamed output goes to stderr instead.
+  // In --json mode claude's stream goes to stderr so stdout stays clean for
+  // the final summary object.
   const claudeOut = opts.json ? process.stderr : process.stdout;
-  const runner = ws.runners.resolve(agent);
-  const result = await runner.run({
-    skill: skillText,
-    env,
-    args: userMessage ? [userMessage] : [],
-    workspaceRoot: root,
+
+  return runExecLoop(
+    root,
+    runId,
+    { untilIdx, autoApprove: opts.autoApprove, message: opts.message, dryRun: opts.dryRun },
+    cliExecHooks(runId, claudeOut),
+  );
+}
+
+/**
+ * Map the core engine's I/O hooks back to the CLI's chalk output — the exact
+ * lines the inline loop printed before `runExecLoop` was extracted into core.
+ */
+function cliExecHooks(runId: string, claudeOut: NodeJS.WriteStream): ExecHooks {
+  const sep = (): void => info(chalk.dim('─'.repeat(60)));
+  return {
     onOutput: (chunk) => claudeOut.write(chunk),
-    onError:  (chunk) => process.stderr.write(chalk.dim(chunk)),
-    claude: null,
-  });
+    onErrorOutput: (chunk) => process.stderr.write(chalk.dim(chunk)),
 
-  info(chalk.dim('─'.repeat(60)));
+    onRunCompleted: () => info(chalk.green('\n🎉 Run completed — all steps approved.')),
+    onRunFailed: (reason) => console.error(chalk.red(`\n${reason}`)),
 
-  if (!result.success) {
-    console.error(chalk.red(`\n✘  Step "${agentId}" failed (non-zero exit).`));
-    console.error(chalk.dim('   Fix the issue then retry: aidlc run exec ' + runId));
-    return false;
-  }
+    onStepStart: (e) => {
+      info(chalk.bold(`\n▶  Step ${e.stepIdx}: ${e.agent}`) + chalk.dim(` (rev ${e.revision})`));
+      info(chalk.dim(`   skills: ${e.skills.join(', ')}  model: ${e.model ?? 'claude-sonnet-4-5'}`));
+      if (e.context) { info(chalk.dim(`   context: ${e.context}`)); }
+      sep();
+    },
+    onStepResult: (e) => {
+      sep();
+      if (e.status === 'awaiting_auto_review') {
+        info(chalk.cyan(`\n✔  Step "${e.agent}" done — auto-review pending.`));
+      } else if (e.status === 'awaiting_review') {
+        info(chalk.cyan(`\n✔  Step "${e.agent}" done — awaiting review.`));
+      } else {
+        info(chalk.green(`\n✔  Step "${e.agent}" approved.`));
+      }
+      if (typeof e.costUsd === 'number') { info(chalk.dim(`   cost: $${e.costUsd.toFixed(4)}`)); }
+    },
+    onStepFailed: (e) => {
+      if (e.missing?.length) {
+        console.error(chalk.red('\n✘  Step completed but missing expected artifacts:'));
+        for (const m of e.missing) { console.error(chalk.dim(`   ✘ ${m}`)); }
+        console.error(chalk.dim('\n   Produce the files above, then: aidlc run mark-done ' + runId));
+      } else {
+        console.error(chalk.red(`\n✘  ${e.message ?? `Step "${e.agent}" failed.`}`));
+        console.error(chalk.dim('   Fix the issue then retry: aidlc run exec ' + runId));
+      }
+    },
 
-  // markStepDone — validates produces paths
-  let next: RunState;
-  try {
-    const freshState = RunStateStore.load(root, runId)!;
-    // Record this step's LLM cost (when the runner reported it) before the
-    // transition, so the budget guard in execLoop can sum across steps and it
-    // survives the reload-each-iteration loop.
-    if (typeof result.costUsd === 'number') {
-      freshState.steps[stepIdx].costUsd = result.costUsd;
-    }
-    next = markStepDone({ state: freshState, pipeline, workspaceRoot: root });
-  } catch (err) {
-    if (err instanceof PipelineRunError && err.missing?.length) {
-      console.error(chalk.red('\n✘  Step completed but missing expected artifacts:'));
-      for (const m of err.missing) { console.error(chalk.dim(`   ✘ ${m}`)); }
-      console.error(chalk.dim('\n   Produce the files above, then: aidlc run mark-done ' + runId));
-    } else {
-      console.error(chalk.red(`\n✘  ${err instanceof Error ? err.message : String(err)}`));
-    }
-    return false;
-  }
+    onAwaitingReview: (e) => {
+      info(chalk.cyan(`\n⏸  Step "${e.agent}" is awaiting human review.`));
+      info(chalk.dim(`  Approve: aidlc run approve ${e.runId}`));
+      info(chalk.dim(`  Reject:  aidlc run reject ${e.runId} --reason "..."`));
+    },
+    onRejected: (e) => {
+      info(chalk.red(`\n✘  Step "${e.agent}" was rejected.`));
+      info(chalk.dim(`  Rerun: aidlc run rerun ${e.runId} [--feedback "..."]`));
+    },
 
-  RunStateStore.save(root, next);
+    onAutoReviewStart: (e) => info(chalk.bold(`\n🔍  Auto-review: "${e.agent}"`)),
+    onAutoReviewResult: (e) => {
+      if (e.decision === 'pass') {
+        info(chalk.green('✔  Auto-review passed') + chalk.dim(` — ${e.reason}`));
+      } else {
+        info(chalk.red('✘  Auto-review rejected') + chalk.dim(` — ${e.reason}`));
+        info(chalk.dim(`  Fix the issue, then: aidlc run rerun ${e.runId} [--feedback "..."]`));
+      }
+    },
+    onAutoApproved: (e) => info(chalk.green(`✔  Auto-approved "${e.agent}" (--auto-approve)`)),
 
-  const doneStep = next.steps[stepIdx];
-  if (doneStep.status === 'awaiting_auto_review') {
-    info(chalk.cyan(`\n✔  Step "${agentId}" done — auto-review pending.`));
-  } else if (doneStep.status === 'awaiting_review') {
-    info(chalk.cyan(`\n✔  Step "${agentId}" done — awaiting review.`));
-  } else {
-    info(chalk.green(`\n✔  Step "${agentId}" approved.`));
-  }
-  if (typeof result.costUsd === 'number') {
-    info(chalk.dim(`   cost: $${result.costUsd.toFixed(4)}`));
-  }
+    onBudget: (e) => {
+      if (!e.ok) {
+        const scope = e.exceeded === 'step' ? 'per-step' : 'total';
+        info(chalk.yellow(`\n⚠  Budget exceeded (${scope}): spent $${e.spent.toFixed(4)}, limit $${e.limit.toFixed(2)}.`));
+        if (e.onExceed !== 'fail') {
+          info(chalk.dim(`  Paused. Raise the budget in workspace.yaml or resume: aidlc run exec ${e.runId}`));
+        }
+      } else {
+        info(chalk.dim(`  budget: $${e.spent.toFixed(4)} / $${e.limit.toFixed(2)}`));
+      }
+    },
 
-  return true;
+    onUntilStop: (e) => info(chalk.dim(`\nStopped at step ${e.untilIdx} as requested.`)),
+
+    onDryRunPreview: (e) => {
+      info(chalk.bold(`\n── System prompt (skills: ${e.skills}) ──`));
+      info(chalk.dim(e.skillText));
+      info(chalk.bold('\n── User message ───────────────────────────────────────'));
+      info(e.userMessage || chalk.dim('(empty)'));
+      info(chalk.bold('\n── Env vars ───────────────────────────────────────────'));
+      for (const [k, v] of Object.entries(e.env)) {
+        const masked = k.toLowerCase().includes('key') || k.toLowerCase().includes('token') ? '***' : v;
+        info(chalk.dim(`  ${k}=${masked}`));
+      }
+      info();
+    },
+  };
 }
 
-async function runAutoReviewStep(root: string, runId: string): Promise<boolean> {
-  const state = RunStateStore.load(root, runId);
-  if (!state) {
-    console.error(chalk.red(`Run "${runId}" disappeared.`));
-    return false;
-  }
-  const pipeline = requirePipelineForRun(root, state);
-  const step = state.steps[state.currentStepIdx];
-
-  info(chalk.bold(`\n🔍  Auto-review: "${step.agent}"`));
-
-  let verdict;
-  try {
-    verdict = await runAutoReview({ workspaceRoot: root, state, pipeline });
-  } catch (err) {
-    // Config-level failure (missing/unloadable runner). The validator's own
-    // errors are already converted to a `reject` verdict inside runAutoReview;
-    // this only fires for a misconfigured auto_review_runner.
-    console.error(chalk.red(`✘  Auto-review could not run: ${err instanceof Error ? err.message : String(err)}`));
-    return false;
-  }
-
-  let next: RunState;
-  try {
-    next = submitAutoReviewVerdict({ state, pipeline, verdict });
-  } catch (err) {
-    console.error(chalk.red(`✘  ${err instanceof Error ? err.message : String(err)}`));
-    return false;
-  }
-
-  RunStateStore.save(root, next);
-
-  if (verdict.decision === 'pass') {
-    info(chalk.green(`✔  Auto-review passed`) + chalk.dim(` — ${verdict.reason}`));
-  } else {
-    info(chalk.red(`✘  Auto-review rejected`) + chalk.dim(` — ${verdict.reason}`));
-    info(chalk.dim(`  Fix the issue, then: aidlc run rerun ${runId} [--feedback "..."]`));
-  }
-  return true;
-}
-
-async function autoApproveStep(root: string, state: RunState, runId: string): Promise<void> {
-  const ws = WorkspaceLoader.load(root);
-  const pipeline = ws.config.pipelines.find((p: PipelineConfig) => p.id === state.pipelineId)!;
-  const next = approveStep({ state, pipeline });
-  RunStateStore.save(root, next);
-  const step = state.steps[state.currentStepIdx];
-  info(chalk.green(`✔  Auto-approved "${step.agent}" (--auto-approve)`));
-}

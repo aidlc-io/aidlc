@@ -47,6 +47,15 @@ export {
 export type { TaskTypeVerdict, Confidence } from './runs/TaskClassifier';
 
 export {
+  buildPhaseCatalog,
+  buildAdaptationPrompt,
+  parseAdaptationVerdict,
+  applyAdaptation,
+  PipelineAdaptError,
+} from './runs/PipelineAdapter';
+export type { PhaseCatalogEntry, AdaptationVerdict } from './runs/PipelineAdapter';
+
+export {
   scaffoldEpic,
   mirrorRunStateToEpic,
   mapStepStatusToEpic,
@@ -146,6 +155,8 @@ export {
 } from './runs/PipelineRunner';
 export { checkBudget } from './runs/budget';
 export type { BudgetCheckArgs, BudgetVerdict } from './runs/budget';
+export { runExecLoop } from './runs/execEngine';
+export type { ExecOutcome, ExecOptions, ExecHooks } from './runs/execEngine';
 export { verifyRun } from './runs/verifyRun';
 export type { VerifyReport, StepDrift } from './runs/verifyRun';
 export { renderRunReport } from './runs/runReport';

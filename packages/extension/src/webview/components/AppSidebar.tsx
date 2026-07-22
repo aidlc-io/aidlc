@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, type MouseEvent as ReactMouseEvent } from 'react';
 import {
   Bot,
   GitBranch,
@@ -161,6 +161,7 @@ export function AppSidebar({ state }: { state: SidebarState | null }) {
               project={state.projectTemplates}
               configExists={state.configExists}
               workspaceName={state.workspaceName}
+              autopilotEnabled={state.autopilotEnabled}
               collapsed={collapsed.workflows}
               onToggle={() => toggleSection('workflows')}
             />
@@ -597,6 +598,7 @@ function WorkflowsSection({
   project,
   configExists,
   workspaceName,
+  autopilotEnabled,
   collapsed,
   onToggle,
 }: {
@@ -604,6 +606,7 @@ function WorkflowsSection({
   project: TemplateRef[];
   configExists: boolean;
   workspaceName: string;
+  autopilotEnabled: boolean;
   collapsed: boolean;
   onToggle: () => void;
 }) {
@@ -643,6 +646,7 @@ function WorkflowsSection({
               {builtins.map((t) => (
                 <TemplateRow key={t.id} template={t} builtin onApply={onApplyClick} />
               ))}
+              <AutopilotRow enabled={autopilotEnabled} />
             </>
           )}
           {project.length > 0 && (
@@ -689,6 +693,34 @@ function WorkflowsSection({
   );
 }
 
+// Lightweight hover tooltip. Native `title` tooltips are unreliable / slow in
+// the VS Code webview, so we render our own: on hover we anchor a fixed-
+// position card to the row's rect (fixed → escapes the sidebar's overflow
+// clipping), clamped to the viewport.
+function useTooltip() {
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  const onMouseEnter = (e: ReactMouseEvent<HTMLElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    setPos({
+      x: Math.max(8, Math.min(r.left, window.innerWidth - 312)),
+      y: r.bottom + 6,
+    });
+  };
+  const onMouseLeave = () => setPos(null);
+  return { pos, onMouseEnter, onMouseLeave };
+}
+
+function Tooltip({ pos, text }: { pos: { x: number; y: number }; text: string }) {
+  return (
+    <div
+      style={{ position: 'fixed', left: pos.x, top: pos.y, zIndex: 9999, maxWidth: 300 }}
+      className="pointer-events-none whitespace-pre-line rounded-md border border-border bg-card px-3 py-2 text-[11px] leading-relaxed text-foreground shadow-lg"
+    >
+      {text}
+    </div>
+  );
+}
+
 function TemplateRow({
   template,
   builtin,
@@ -699,6 +731,10 @@ function TemplateRow({
   onApply: (template: TemplateRef) => void;
 }) {
   const Icon = builtin ? Sparkles : Diamond;
+  const tip = useTooltip();
+  const tipText = template.description
+    ? `${template.name}\n\n${template.description}\n\nClick to apply.`
+    : `Apply template ${template.id}`;
   return (
     <div
       role="button"
@@ -710,7 +746,8 @@ function TemplateRow({
           onApply(template);
         }
       }}
-      title={`Apply template ${template.id}`}
+      onMouseEnter={tip.onMouseEnter}
+      onMouseLeave={tip.onMouseLeave}
       className="flex cursor-pointer items-center gap-2 rounded-md border border-border bg-card/50 px-2.5 py-1.5 text-[11px] transition-colors hover:bg-accent"
     >
       <Icon className="h-3 w-3 shrink-0 text-primary opacity-80" />
@@ -718,6 +755,67 @@ function TemplateRow({
         {template.name}
       </span>
       <span className="truncate text-muted-foreground">· {template.description || template.id}</span>
+      {tip.pos && <Tooltip pos={tip.pos} text={tipText} />}
+    </div>
+  );
+}
+
+// The AIDLC Autopilot entry in the Common workflows. It isn't a template you
+// apply — it's a behavior gated by the `aidlc.autopilot.enabled` setting — so
+// the row mirrors that setting: "Coming soon" (disabled look) when off, "On"
+// (active look) when enabled. Clicking either state deep-links to the setting
+// so the user can flip it. The shared concept blurb frames the feature.
+const AUTOPILOT_CONCEPT =
+  'AIDLC Autopilot\n\n' +
+  "Reads your project's real context — codebase, tests, spec, and design — " +
+  'sizes the epic, then drafts a plan tailored to it: which agents run in ' +
+  'which phases, what to clarify first, and which phases to add. A near-' +
+  'superpower that stays grounded in your business and codebase, not generic ' +
+  'boilerplate.';
+
+function AutopilotRow({ enabled }: { enabled: boolean }) {
+  const tip = useTooltip();
+  const tipText =
+    AUTOPILOT_CONCEPT +
+    (enabled
+      ? '\n\n✅ On — runs automatically when you start an epic. Click to manage the setting.'
+      : '\n\n🚧 Coming soon — ships disabled. Click to enable the experimental `aidlc.autopilot.enabled` setting.');
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => postMessage({ type: 'openAutopilotSetting' })}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          postMessage({ type: 'openAutopilotSetting' });
+        }
+      }}
+      onMouseEnter={tip.onMouseEnter}
+      onMouseLeave={tip.onMouseLeave}
+      className={cn(
+        'flex cursor-pointer items-center gap-2 rounded-md border px-2.5 py-1.5 text-[11px] transition-colors',
+        enabled
+          ? 'border-border bg-card/50 hover:bg-accent'
+          : 'border-dashed border-border bg-card/30 opacity-60 hover:opacity-100',
+      )}
+    >
+      <Zap className={cn('h-3 w-3 shrink-0', enabled ? 'text-primary opacity-80' : 'text-muted-foreground')} />
+      <span className={cn('shrink-0 truncate font-semibold max-w-[40%]', enabled ? 'text-primary' : 'text-muted-foreground')}>
+        AIDLC Autopilot
+      </span>
+      <span className="truncate text-muted-foreground">· Auto-plan epics from your project context</span>
+      <span
+        className={cn(
+          'ml-auto shrink-0 rounded-sm border px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-wider',
+          enabled
+            ? 'border-primary/40 text-primary'
+            : 'border-border text-muted-foreground',
+        )}
+      >
+        {enabled ? 'On' : 'Coming soon'}
+      </span>
+      {tip.pos && <Tooltip pos={tip.pos} text={tipText} />}
     </div>
   );
 }

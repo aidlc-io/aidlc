@@ -374,6 +374,10 @@ export interface SidebarState {
   mcpError: string | null;
   /** Extra projects from any in-progress epic (for sidebar display). */
   extraProjects?: ExtraProject[];
+  /** Value of the `aidlc.autopilot.enabled` setting. Drives whether the
+   * AIDLC Autopilot row in the Common workflows shows "Coming soon"
+   * (disabled) or an active "On" state. */
+  autopilotEnabled: boolean;
 }
 
 export type AssetScope = 'project' | 'aidlc' | 'global';
